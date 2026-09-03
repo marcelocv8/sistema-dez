@@ -1,0 +1,38 @@
+{
+  "name": "sistema-dez-frontend",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@11.19.0",
+  "scripts": {
+    "dev": "pnpm --filter @dez/equipe dev",
+    "dev:equipe": "pnpm --filter @dez/equipe dev",
+    "dev:agendamento": "pnpm --filter @dez/agendamento dev",
+    "dev:painel-tv": "pnpm --filter @dez/painel-tv dev",
+    "dev:paciente": "pnpm --filter @dez/paciente dev",
+    "build": "pnpm -r --if-present build",
+    "typecheck": "pnpm -r --if-present typecheck",
+    "test": "vitest run",
+    "storybook": "storybook dev -p 6006",
+    "build:storybook": "storybook build",
+    "test:e2e": "playwright test"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.62.1",
+    "@storybook/addon-a11y": "^10.0.0",
+    "@storybook/react-vite": "^10.0.0",
+    "@types/react": "^19.2.0",
+    "@types/react-dom": "^19.2.0",
+    "@vitejs/plugin-react": "^5.1.0",
+    "jsdom": "^27.0.0",
+    "storybook": "^10.0.0",
+    "typescript": "^5.9.0",
+    "vite": "^8.0.0",
+    "vitest": "^4.0.0"
+  },
+  "msw": {
+    "workerDirectory": [
+      "apps\\equipe\\public",
+      "apps\\agendamento\\public"
+    ]
+  }
+}

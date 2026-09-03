@@ -1,0 +1,35 @@
+# Raiz — Sistema DEZ
+/root .env* (segredos locais do compose raiz, se existirem)
+*.dump
+*.sql
+
+# Backend (Laravel) — espelha backend/.gitignore
+backend/vendor/
+backend/node_modules/
+backend/.env
+backend/.env.backup
+backend/.env.production
+backend/public/build
+backend/public/hot
+backend/public/storage
+backend/storage/*.key
+backend/storage/pail/
+backend/.phpunit.cache/
+backend/.phpunit.result.cache
+
+# Frontend (Vite/pnpm)
+frontend/node_modules/
+frontend/**/node_modules/
+frontend/**/dist/
+frontend/**/.vite/
+frontend/storybook-static/
+frontend/playwright-report/
+frontend/test-results/
+frontend/.env.local
+
+# OS / editores
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.log

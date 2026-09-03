@@ -1,0 +1,712 @@
+openapi: 3.1.0
+info:
+  title: Sistema DEZ API
+  version: 0.5.0
+servers:
+  - url: http://localhost:8000/api/v1
+paths:
+  /public/services:
+    get:
+      summary: Lista procedimentos e ofertas disponíveis online
+      parameters:
+        - { name: unit_id, in: query, schema: { type: string, format: uuid } }
+        - { name: agreement_id, in: query, schema: { type: string, format: uuid } }
+        - { name: modality, in: query, schema: { $ref: '#/components/schemas/Modality' } }
+        - { name: type, in: query, schema: { type: string, enum: [CONSULTATION, EXAM] } }
+        - { name: search, in: query, schema: { type: string, maxLength: 100 } }
+      responses:
+        '200': { description: Catálogo público }
+        '422': { $ref: '#/components/responses/ValidationError' }
+  /public/availability:
+    get:
+      summary: Consulta horários, blocos ou informação de demanda espontânea
+      description: Apenas ofertas publicadas e elegíveis. Janela de hoje até 29 dias à frente, limitada à validade da publicação; antecedência mínima de 30 minutos.
+      parameters:
+        - { name: procedure_id, in: query, required: true, schema: { type: string, format: uuid } }
+        - { name: unit_id, in: query, required: true, schema: { type: string, format: uuid } }
+        - { name: agreement_id, in: query, required: true, schema: { type: string, format: uuid } }
+        - { name: modality, in: query, required: true, schema: { $ref: '#/components/schemas/Modality' } }
+        - { name: professional_id, in: query, schema: { type: string, format: uuid } }
+        - { name: offering_id, in: query, schema: { type: string, format: uuid } }
+        - { name: from, in: query, required: true, schema: { type: string, format: date } }
+        - { name: to, in: query, required: true, schema: { type: string, format: date } }
+      responses:
+        '200': { description: Disponibilidade por oferta e dia }
+        '422': { $ref: '#/components/responses/ValidationError' }
+  /public/appointments:
+    post:
+      summary: Cria um agendamento idempotente
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/BookAppointment' }
+      responses:
+        '201': { $ref: '#/components/responses/PatientAppointment' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+        '429': { description: Limite de tentativas excedido }
+  /public/appointments/{id}:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+    get:
+      summary: Consulta reserva pelo link privado, sem dados pessoais do paciente
+      description: Token somente no cabeçalho Authorization. Nunca aceitar token em query string. Resposta no-store; acesso expira 24 horas após o atendimento. Máximo de 30 requisições por minuto/IP nas rotas de gestão.
+      security: [{ managementToken: [] }]
+      responses:
+        '200': { $ref: '#/components/responses/PatientAppointment' }
+        '404': { description: Link inválido ou expirado; não distingue reserva inexistente }
+        '429': { description: Limite de tentativas excedido }
+  /public/appointments/{id}/availability:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+    get:
+      summary: Vagas públicas da mesma oferta, desconsiderando a própria reserva
+      security: [{ managementToken: [] }]
+      responses:
+        '200': { description: Disponibilidade por oferta e dia, com Cache-Control no-store }
+        '404': { description: Link inválido ou expirado }
+        '429': { description: Limite de tentativas excedido }
+  /public/appointments/{id}/reschedule:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+    patch:
+      summary: Remarca reserva futura na mesma oferta, com capacidade e preço revalidados
+      description: Somente CONFIRMED antes do início. Não aceita offering_id. Aplica janela pública, antecedência e validade da publicação. Atualiza preço congelado e validade do link; audita alteração.
+      security: [{ managementToken: [] }]
+      requestBody: { required: true, content: { application/json: { schema: { type: object, additionalProperties: false, required: [starts_at, reason], properties: { starts_at: { type: string, format: date-time }, reason: { type: string, minLength: 3, maxLength: 1000 } } } } } }
+      responses:
+        '200': { $ref: '#/components/responses/PatientAppointment' }
+        '404': { description: Link inválido ou expirado }
+        '422': { $ref: '#/components/responses/ValidationError' }
+        '429': { description: Limite de tentativas excedido }
+  /public/appointments/{id}/cancel:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+    patch:
+      summary: Cancela reserva futura com motivo, preservando histórico e liberando a vaga
+      description: Repetir cancelamento já concluído é idempotente. Não exige que a oferta continue publicada.
+      security: [{ managementToken: [] }]
+      requestBody: { required: true, content: { application/json: { schema: { type: object, required: [reason], properties: { reason: { type: string, minLength: 3, maxLength: 1000 } } } } } }
+      responses:
+        '200': { $ref: '#/components/responses/PatientAppointment' }
+        '404': { description: Link inválido ou expirado }
+        '422': { $ref: '#/components/responses/ValidationError' }
+        '429': { description: Limite de tentativas excedido }
+  /auth/login:
+    post:
+      summary: Autentica um usuário da equipe por sessão stateful
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/Login' }
+      responses:
+        '200': { description: Usuário autenticado }
+        '422': { $ref: '#/components/responses/ValidationError' }
+        '429': { description: Limite de tentativas excedido }
+  /auth/logout:
+    post:
+      summary: Encerra e invalida a sessão atual
+      security: [{ cookieAuth: [] }]
+      responses:
+        '204': { description: Sessão encerrada }
+        '401': { description: Não autenticado }
+  /me:
+    get:
+      summary: Retorna identidade, perfil e permissões da equipe
+      security: [{ cookieAuth: [] }]
+      responses:
+        '200':
+          description: Identidade atual
+          content:
+            application/json:
+              schema:
+                type: object
+                properties: { data: { $ref: '#/components/schemas/CurrentUser' } }
+        '401': { description: Não autenticado }
+  /team/price-options:
+    get:
+      summary: Lista convênios ativos e subgrupos disponíveis para consulta de preços
+      security: [{ cookieAuth: [] }]
+      responses:
+        '200': { description: Opções operacionais }
+        '401': { description: Não autenticado }
+        '403': { description: Sem a permissão prices.view }
+  /team/prices:
+    get:
+      summary: Pesquisa preços vigentes e conciliados do catálogo STG
+      security: [{ cookieAuth: [] }]
+      parameters:
+        - { name: q, in: query, required: true, schema: { type: string, minLength: 3, maxLength: 100 } }
+        - { name: type, in: query, schema: { $ref: '#/components/schemas/ProcedureType' } }
+        - { name: group, in: query, schema: { type: string, maxLength: 255 } }
+        - { name: agreement_id, in: query, description: Particular é usado quando omitido., schema: { type: string, format: uuid } }
+      responses:
+        '200':
+          description: Resultados agrupados por tipo e subgrupo
+          content:
+            application/json:
+              schema:
+                type: object
+                properties: { data: { $ref: '#/components/schemas/TeamPriceResult' } }
+        '401': { description: Não autenticado }
+        '403': { description: Sem a permissão prices.view }
+        '422': { $ref: '#/components/responses/ValidationError' }
+  /team/catalog/{resource}:
+    parameters:
+      - { name: resource, in: path, required: true, schema: { type: string, enum: [units, agreements, procedures, professionals] } }
+    get:
+      summary: Lista um domínio do catálogo administrativo
+      security: [{ cookieAuth: [] }]
+      parameters:
+        - { name: q, in: query, schema: { type: string, maxLength: 100 } }
+        - { name: active, in: query, schema: { type: boolean } }
+        - { name: page, in: query, schema: { type: integer, minimum: 1 } }
+      responses:
+        '200': { description: Página do catálogo }
+        '403': { description: Sem a permissão catalog.view }
+    post:
+      summary: Cria cadastro manual com auditoria
+      security: [{ cookieAuth: [] }]
+      requestBody: { required: true, content: { application/json: { schema: { type: object } } } }
+      responses:
+        '201': { description: Cadastro criado }
+        '403': { description: Sem a permissão catalog.manage }
+        '422': { $ref: '#/components/responses/ValidationError' }
+  /team/catalog/{resource}/{id}:
+    parameters:
+      - { name: resource, in: path, required: true, schema: { type: string, enum: [units, agreements, procedures, professionals] } }
+      - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+    get:
+      summary: Exibe um cadastro
+      security: [{ cookieAuth: [] }]
+      responses: { '200': { description: Cadastro }, '404': { description: Não encontrado } }
+    put:
+      summary: Atualiza cadastro com auditoria antes/depois
+      security: [{ cookieAuth: [] }]
+      requestBody: { required: true, content: { application/json: { schema: { type: object } } } }
+      responses: { '200': { description: Cadastro atualizado }, '422': { $ref: '#/components/responses/ValidationError' } }
+    delete:
+      summary: Desativa cadastro sem excluir seu histórico
+      security: [{ cookieAuth: [] }]
+      responses: { '200': { description: Cadastro desativado } }
+  /team/catalog-link-options:
+    get:
+      summary: Lista entidades ativas para criação de vínculos
+      security: [{ cookieAuth: [] }]
+      responses: { '200': { description: Opções de vínculo }, '403': { description: Sem catalog-links.view } }
+  /team/catalog-links:
+    get:
+      summary: Lista vínculos profissional–procedimento–convênio–unidade
+      security: [{ cookieAuth: [] }]
+      responses: { '200': { description: Vínculos validados } }
+    post:
+      summary: Cria vínculo cadastral sem publicar service_offering
+      security: [{ cookieAuth: [] }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/CatalogLinkInput' } } } }
+      responses: { '201': { description: Vínculo criado }, '422': { $ref: '#/components/responses/ValidationError' } }
+  /team/catalog-links/{id}:
+    parameters: [{ name: id, in: path, required: true, schema: { type: string, format: uuid } }]
+    put:
+      summary: Atualiza vínculo cadastral
+      security: [{ cookieAuth: [] }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/CatalogLinkInput' } } } }
+      responses: { '200': { description: Vínculo atualizado } }
+    delete:
+      summary: Desativa vínculo cadastral
+      security: [{ cookieAuth: [] }]
+      responses: { '200': { description: Vínculo desativado } }
+  /team/users:
+    get:
+      summary: Lista usuários da equipe
+      security: [{ cookieAuth: [] }]
+      responses: { '200': { description: Usuários }, '403': { description: Exclusivo team.manage } }
+    post:
+      summary: Cria usuário sem senha padrão
+      security: [{ cookieAuth: [] }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/TeamUserInput' } } } }
+      responses: { '201': { description: Usuário criado }, '422': { $ref: '#/components/responses/ValidationError' } }
+  /team/users/{id}:
+    parameters: [{ name: id, in: path, required: true, schema: { type: integer } }]
+    put:
+      summary: Atualiza perfil, situação e opcionalmente senha
+      security: [{ cookieAuth: [] }]
+      responses: { '200': { description: Usuário atualizado }, '422': { $ref: '#/components/responses/ValidationError' } }
+    delete:
+      summary: Desativa usuário preservando auditoria
+      security: [{ cookieAuth: [] }]
+      responses: { '200': { description: Usuário desativado }, '422': { description: Último Admin não pode ser desativado } }
+  /team/import-issues:
+    get:
+      summary: Lista pendências da última importação STG
+      security: [{ cookieAuth: [] }]
+      responses: { '200': { description: Pendências reconciliáveis } }
+  /team/import-issues/{id}:
+    parameters: [{ name: id, in: path, required: true, schema: { type: string, format: uuid } }]
+    put:
+      summary: Resolve, ignora justificadamente ou reabre uma pendência
+      security: [{ cookieAuth: [] }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/ImportIssueResolution' } } } }
+      responses: { '200': { description: Resolução registrada e auditada }, '422': { $ref: '#/components/responses/ValidationError' } }
+  /team/audit-logs:
+    get:
+      summary: Consulta trilha administrativa imutável
+      security: [{ cookieAuth: [] }]
+      responses: { '200': { description: Eventos de auditoria }, '403': { description: Sem audit.view } }
+  /dashboard:
+    get:
+      summary: Visão geral real do dia, sem módulo financeiro integrado
+      security: [{ cookieAuth: [] }]
+      responses:
+        '200': { description: Fluxo e fila do dia, content: { application/json: { schema: { type: object, properties: { data: { $ref: '#/components/schemas/DashboardSummary' } } } } } }
+        '401': { description: Sessão necessária }
+        '403': { description: Requer schedule.view }
+  /team/service-offering-options:
+    get:
+      summary: Unidades operacionais, vínculos ativos e preços vigentes compatíveis
+      security: [{ cookieAuth: [] }]
+      parameters:
+        - { name: catalog_link_id, in: query, schema: { type: string, format: uuid } }
+      responses:
+        '200': { description: Opções para configuração de oferta }
+        '403': { description: Requer schedule.view }
+  /team/service-offerings:
+    get:
+      summary: Lista ofertas internas das unidades operacionais
+      security: [{ cookieAuth: [] }]
+      parameters:
+        - { name: unit_id, in: query, schema: { type: string, format: uuid } }
+        - { name: professional_id, in: query, schema: { type: string, format: uuid } }
+      responses:
+        '200': { description: Ofertas com escalas e exceções, content: { application/json: { schema: { type: object, properties: { data: { type: array, items: { $ref: '#/components/schemas/ServiceOffering' } } } } } } }
+        '403': { description: Requer schedule.view }
+    post:
+      summary: Cria oferta offline a partir de vínculo e preço válidos
+      security: [{ cookieAuth: [] }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/ServiceOfferingInput' } } } }
+      responses:
+        '201': { description: Oferta criada offline }
+        '403': { description: Requer schedule.manage }
+        '422': { $ref: '#/components/responses/ValidationError' }
+  /team/service-offerings/{id}:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+    put:
+      summary: Atualiza oferta sem trocar vínculo; preço é atualizado pela fonte selecionada
+      security: [{ cookieAuth: [] }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/ServiceOfferingInput' } } } }
+      responses:
+        '200': { description: Oferta atualizada e ocorrências recalculadas }
+        '403': { description: Requer schedule.manage }
+        '422': { $ref: '#/components/responses/ValidationError' }
+    delete:
+      summary: Desativa oferta preservando agendamentos
+      security: [{ cookieAuth: [] }]
+      responses:
+        '200': { description: Oferta desativada }
+        '403': { description: Requer schedule.manage }
+  /team/service-offerings/{id}/publication:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+    put:
+      summary: Publica explicitamente uma oferta validada, com prazo de até 30 dias
+      description: Requer schedule.manage, confirmação explícita, entidades habilitadas online, vínculo válido, preço vigente igual à fotografia e escala com disponibilidade. Convênios requires_authorization ficam impedidos. Editar a oferta desliga sua publicação.
+      security: [{ cookieAuth: [] }]
+      requestBody: { required: true, content: { application/json: { schema: { type: object, required: [published_until, confirmed], properties: { published_until: { type: string, format: date }, confirmed: { type: boolean, const: true } } } } } }
+      responses:
+        '200': { description: Publicação registrada e auditada }
+        '403': { description: Requer schedule.manage }
+        '422': { $ref: '#/components/responses/ValidationError' }
+    delete:
+      summary: Retira oferta do catálogo público sem excluir reservas existentes
+      security: [{ cookieAuth: [] }]
+      responses:
+        '200': { description: Oferta retirada e ação auditada }
+        '403': { description: Requer schedule.manage }
+  /team/service-offerings/{id}/schedule-windows:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+    get:
+      summary: Lista escalas da oferta
+      security: [{ cookieAuth: [] }]
+      responses:
+        '200': { description: Escalas }
+    post:
+      summary: Cria escala sem sobreposição e materializa 90 dias
+      security: [{ cookieAuth: [] }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/ScheduleWindowInput' } } } }
+      responses:
+        '201': { description: Escala criada }
+        '403': { description: Requer schedule.manage }
+        '422': { $ref: '#/components/responses/ValidationError' }
+  /team/service-offerings/{id}/schedule-windows/{window_id}:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      - { name: window_id, in: path, required: true, schema: { type: string, format: uuid } }
+    put:
+      summary: Atualiza escala pertencente à oferta
+      security: [{ cookieAuth: [] }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/ScheduleWindowInput' } } } }
+      responses:
+        '200': { description: Escala atualizada }
+        '404': { description: Escala não pertence à oferta }
+        '422': { $ref: '#/components/responses/ValidationError' }
+    delete:
+      summary: Desativa escala sem apagar histórico
+      security: [{ cookieAuth: [] }]
+      responses:
+        '200': { description: Escala desativada }
+        '403': { description: Requer schedule.manage }
+  /team/service-offerings/{id}/schedule-exceptions:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+    get:
+      summary: Lista exceções da oferta
+      security: [{ cookieAuth: [] }]
+      responses:
+        '200': { description: Exceções }
+    post:
+      summary: Bloqueia dia ou intervalo, preservando reservas existentes
+      security: [{ cookieAuth: [] }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/ScheduleExceptionInput' } } } }
+      responses:
+        '201': { description: Exceção criada }
+        '403': { description: Requer schedule.manage }
+        '422': { $ref: '#/components/responses/ValidationError' }
+  /team/service-offerings/{id}/schedule-exceptions/{exception_id}:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      - { name: exception_id, in: path, required: true, schema: { type: string, format: uuid } }
+    put:
+      summary: Atualiza exceção pertencente à oferta
+      security: [{ cookieAuth: [] }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/ScheduleExceptionInput' } } } }
+      responses:
+        '200': { description: Exceção atualizada }
+        '404': { description: Exceção não pertence à oferta }
+        '422': { $ref: '#/components/responses/ValidationError' }
+    delete:
+      summary: Libera bloqueio preservando auditoria
+      security: [{ cookieAuth: [] }]
+      responses:
+        '200': { description: Bloqueio liberado }
+        '403': { description: Requer schedule.manage }
+  /team/availability:
+    get:
+      summary: Consulta disponibilidade interna de uma oferta, até 90 dias
+      security: [{ cookieAuth: [] }]
+      parameters:
+        - { name: offering_id, in: query, required: true, schema: { type: string, format: uuid } }
+        - { name: from, in: query, required: true, schema: { type: string, format: date } }
+        - { name: to, in: query, required: true, schema: { type: string, format: date } }
+        - { name: exclude_appointment_id, in: query, schema: { type: string, format: uuid }, description: Agendamento desconsiderado na prévia de remarcação }
+      responses:
+        '200': { description: Mesmo agrupamento da disponibilidade pública, incluindo ofertas offline }
+        '403': { description: Requer schedule.view }
+        '422': { $ref: '#/components/responses/ValidationError' }
+  /team/appointments:
+    get:
+      summary: Lista agenda interna em ordem cronológica determinística
+      security: [{ cookieAuth: [] }]
+      parameters:
+        - { name: date, in: query, schema: { type: string, format: date } }
+        - { name: from, in: query, schema: { type: string, format: date } }
+        - { name: to, in: query, schema: { type: string, format: date } }
+        - { name: unit_id, in: query, schema: { type: string, format: uuid } }
+        - { name: professional_id, in: query, schema: { type: string, format: uuid } }
+        - { name: status, in: query, schema: { type: string, enum: [CONFIRMED, CHECKED_IN, DONE, CANCELLED] } }
+      responses:
+        '200': { description: Agenda no fuso da unidade, content: { application/json: { schema: { type: object, properties: { data: { type: object, properties: { date: { type: string, format: date }, appointments: { type: array, items: { $ref: '#/components/schemas/TeamAppointment' } } } } } } } } }
+        '403': { description: Requer schedule.view }
+    post:
+      summary: Reserva interna idempotente com lock da ocorrência, origem RECEPTION e operador
+      security: [{ cookieAuth: [] }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/BookAppointment' } } } }
+      responses:
+        '201': { description: Agendamento criado, content: { application/json: { schema: { type: object, properties: { data: { $ref: '#/components/schemas/TeamAppointment' } } } } } }
+        '403': { description: Requer appointments.manage }
+        '422': { $ref: '#/components/responses/ValidationError' }
+  /team/appointments/{id}/reschedule:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+    patch:
+      summary: Remarca agendamento confirmado e atualiza fotografia do preço
+      security: [{ cookieAuth: [] }]
+      requestBody: { required: true, content: { application/json: { schema: { type: object, required: [offering_id, starts_at, reason], properties: { offering_id: { type: string, format: uuid }, starts_at: { type: string, format: date-time }, reason: { type: string, minLength: 3, maxLength: 1000 } } } } } }
+      responses:
+        '200': { description: Agendamento remarcado e auditado }
+        '403': { description: Requer appointments.manage }
+        '422': { $ref: '#/components/responses/ValidationError' }
+  /team/appointments/{id}/cancel:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+    patch:
+      summary: Cancela agendamento confirmado sem exclusão física
+      security: [{ cookieAuth: [] }]
+      requestBody: { required: true, content: { application/json: { schema: { type: object, required: [reason], properties: { reason: { type: string, minLength: 3, maxLength: 1000 } } } } } }
+      responses:
+        '200': { description: Agendamento cancelado e auditado }
+        '403': { description: Requer appointments.manage }
+        '422': { $ref: '#/components/responses/ValidationError' }
+  /team/patients/lookup:
+    post:
+      summary: Localiza paciente por CPF normalizado, sem incluir CPF em URL
+      security: [{ cookieAuth: [] }]
+      requestBody: { required: true, content: { application/json: { schema: { type: object, required: [cpf], properties: { cpf: { type: string } } } } } }
+      responses:
+        '200': { description: Dados mínimos do paciente ou data nulo }
+        '403': { description: Requer appointments.manage }
+        '422': { $ref: '#/components/responses/ValidationError' }
+components:
+  securitySchemes:
+    managementToken:
+      type: http
+      scheme: bearer
+      bearerFormat: 64 hexadecimal characters
+      description: Credencial privada da reserva, entregue somente na criação/repetição idempotente; não é uma sessão da equipe. Link frontend usa fragmento, nunca query string.
+    cookieAuth:
+      type: apiKey
+      in: cookie
+      name: sistema_dez_session
+  schemas:
+    ServiceOfferingInput:
+      type: object
+      required: [catalog_link_id, procedure_price_id, booking_mode, modality, arrival_block_minutes, arrival_block_capacity, active]
+      properties:
+        catalog_link_id: { type: string, format: uuid }
+        procedure_price_id: { type: string, format: uuid }
+        booking_mode: { type: string, enum: [FIXED_SLOT, ARRIVAL_BLOCK, WALK_IN_INFO] }
+        modality: { $ref: '#/components/schemas/Modality' }
+        duration_override_minutes: { type: [integer, 'null'], minimum: 1, maximum: 480 }
+        daily_capacity: { type: [integer, 'null'], minimum: 1, maximum: 1000 }
+        arrival_block_minutes: { type: integer, minimum: 1, maximum: 480 }
+        arrival_block_capacity: { type: integer, minimum: 1, maximum: 1000 }
+        active: { type: boolean }
+    ServiceOffering:
+      allOf:
+        - { $ref: '#/components/schemas/ServiceOfferingInput' }
+        - type: object
+          properties:
+            id: { type: string, format: uuid }
+            price: { type: string }
+            online_enabled: { type: boolean, description: Falso na criação e edição; somente a ação explícita de publicação habilita. }
+            published_until: { type: [string, 'null'], format: date }
+            published_at: { type: [string, 'null'], format: date-time }
+            unit: { $ref: '#/components/schemas/NamedEntity' }
+            procedure: { $ref: '#/components/schemas/NamedEntity' }
+            professional: { $ref: '#/components/schemas/NamedEntity' }
+            agreement: { $ref: '#/components/schemas/NamedEntity' }
+            schedule_windows: { type: array, items: { $ref: '#/components/schemas/ScheduleWindow' } }
+            schedule_exceptions: { type: array, items: { $ref: '#/components/schemas/ScheduleException' } }
+    ScheduleWindow:
+      allOf:
+        - { $ref: '#/components/schemas/ScheduleWindowInput' }
+        - { type: object, required: [id], properties: { id: { type: string, format: uuid } } }
+    ScheduleException:
+      allOf:
+        - { $ref: '#/components/schemas/ScheduleExceptionInput' }
+        - { type: object, required: [id], properties: { id: { type: string, format: uuid } } }
+    ScheduleWindowInput:
+      type: object
+      required: [effective_from, weekday, starts_at, ends_at, active]
+      properties:
+        effective_from: { type: string, format: date }
+        effective_to: { type: [string, 'null'], format: date }
+        weekday: { type: integer, minimum: 0, maximum: 6 }
+        starts_at: { type: string, description: HH:mm na escrita; HH:mm:ss na leitura }
+        ends_at: { type: string, description: HH:mm na escrita; HH:mm:ss na leitura }
+        slot_minutes: { type: [integer, 'null'], minimum: 1, maximum: 480 }
+        daily_capacity_override: { type: [integer, 'null'], minimum: 1, maximum: 1000 }
+        active: { type: boolean }
+    ScheduleExceptionInput:
+      type: object
+      required: [date, reason, blocked]
+      properties:
+        date: { type: string, format: date }
+        starts_at: { type: [string, 'null'], description: Ambos os horários nulos bloqueiam o dia inteiro }
+        ends_at: { type: [string, 'null'] }
+        reason: { type: string, minLength: 3, maxLength: 255 }
+        blocked: { type: boolean }
+    NamedEntity:
+      type: object
+      required: [id, name]
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+    PublicAppointment:
+      type: object
+      required: [id, status, scheduled_at, booking_mode, service, price, can_cancel, can_reschedule, unit, professional, agreement]
+      properties:
+        id: { type: string, format: uuid }
+        status: { type: string, enum: [CONFIRMED, CHECKED_IN, DONE, CANCELLED] }
+        scheduled_at: { type: string, format: date-time }
+        recommended_arrival_at: { type: [string, 'null'], format: date-time }
+        booking_mode: { type: string, enum: [FIXED_SLOT, ARRIVAL_BLOCK, WALK_IN_INFO] }
+        service:
+          type: object
+          required: [offering_id, procedure_id, procedure_name]
+          properties:
+            offering_id: { type: string, format: uuid }
+            procedure_id: { type: string, format: uuid }
+            procedure_name: { type: string }
+        price: { type: string }
+        management_token: { type: string, pattern: '^[a-f0-9]{64}$', description: Somente criação/repetição idempotente; armazenar link com segurança. }
+        management_expires_at: { type: [string, 'null'], format: date-time }
+        can_cancel: { type: boolean }
+        can_reschedule: { type: boolean }
+        unit: { $ref: '#/components/schemas/NamedEntity' }
+        professional: { anyOf: [{ $ref: '#/components/schemas/NamedEntity' }, { type: 'null' }] }
+        agreement: { $ref: '#/components/schemas/NamedEntity' }
+    AgreementPublicationPolicy:
+      type: object
+      description: Campos adicionais aceitos e retornados no cadastro administrativo de convênios.
+      properties:
+        online_enabled: { type: boolean }
+        requires_authorization: { type: boolean, default: false, description: Exige guia/autorização; impede publicação e reserva online. }
+    TeamAppointment:
+      type: object
+      required: [id, offering_id, scheduled_at, ends_at, status, origin, price]
+      properties:
+        id: { type: string, format: uuid }
+        offering_id: { type: string, format: uuid }
+        scheduled_at: { type: string, format: date-time }
+        ends_at: { type: string, format: date-time }
+        status: { type: string, enum: [CONFIRMED, CHECKED_IN, DONE, CANCELLED] }
+        kind: { type: string }
+        origin: { type: string }
+        price: { type: string }
+        patient_name: { type: [string, 'null'] }
+        cancellation_reason: { type: [string, 'null'] }
+        professional: { anyOf: [{ $ref: '#/components/schemas/NamedEntity' }, { type: 'null' }] }
+        procedure: { $ref: '#/components/schemas/NamedEntity' }
+        unit: { $ref: '#/components/schemas/NamedEntity' }
+        agreement: { $ref: '#/components/schemas/NamedEntity' }
+    DashboardSummary:
+      type: object
+      properties:
+        date: { type: string, format: date }
+        patient_flow: { type: object, properties: { waiting: { type: integer }, in_care: { type: integer }, checkout: { type: integer }, finished: { type: integer } } }
+        queue: { type: array, items: { type: object } }
+        financials_available: { type: boolean }
+    ProcedureType:
+      type: string
+      enum: [CONSULTATION, EXAM]
+    Modality:
+      type: string
+      enum: [PRESENTIAL, TELECONSULTATION]
+    BookAppointment:
+      type: object
+      required: [idempotency_key, offering_id, starts_at, patient, privacy_consent]
+      properties:
+        idempotency_key: { type: string, format: uuid }
+        offering_id: { type: string, format: uuid }
+        starts_at: { type: string, format: date-time }
+        patient:
+          type: object
+          required: [name, cpf, phone]
+          properties:
+            name: { type: string }
+            cpf: { type: string, description: Aceita pontuação; nunca é persistido em texto puro. }
+            birth_date: { type: string, format: date }
+            phone: { type: string }
+            email: { type: string, format: email }
+        privacy_consent: { type: boolean, const: true }
+    Login:
+      type: object
+      required: [email, password]
+      properties:
+        email: { type: string, format: email }
+        password: { type: string, format: password }
+    CurrentUser:
+      type: object
+      required: [id, name, email, role, role_label, permissions]
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        email: { type: string, format: email }
+        role: { type: string, enum: [ADMIN, SUPERVISOR, RECEPTION] }
+        role_label: { type: string }
+        permissions: { type: array, items: { type: string } }
+    CatalogLinkInput:
+      type: object
+      required: [unit_id, procedure_id, professional_id, agreement_id, active]
+      properties:
+        unit_id: { type: string, format: uuid }
+        procedure_id: { type: string, format: uuid }
+        professional_id: { type: string, format: uuid }
+        agreement_id: { type: string, format: uuid }
+        active: { type: boolean }
+    TeamUserInput:
+      type: object
+      required: [name, email, role, active, password]
+      properties:
+        name: { type: string }
+        email: { type: string, format: email }
+        role: { type: string, enum: [ADMIN, SUPERVISOR, RECEPTION] }
+        active: { type: boolean }
+        password: { type: [string, 'null'], minLength: 12, format: password }
+    ImportIssueResolution:
+      type: object
+      required: [resolution_status]
+      properties:
+        resolution_status: { type: string, enum: [OPEN, RESOLVED, IGNORED, UNMATCHED] }
+        resolution_note: { type: [string, 'null'], maxLength: 2000 }
+    TeamPriceItem:
+      type: object
+      required: [id, procedure, agreement, nature, amount]
+      properties:
+        id: { type: string, format: uuid }
+        procedure:
+          type: object
+          properties:
+            id: { type: string, format: uuid }
+            legacy_id: { type: string }
+            tuss_code: { type: [string, 'null'] }
+            name: { type: string }
+        agreement:
+          type: object
+          properties:
+            id: { type: string, format: uuid }
+            legacy_id: { type: string }
+            name: { type: string }
+        unit:
+          anyOf:
+            - type: object
+              properties:
+                id: { type: string, format: uuid }
+                legacy_id: { type: string }
+                name: { type: string }
+            - type: 'null'
+        nature: { type: string, enum: [PRIVATE, PLAN] }
+        amount: { type: string, pattern: '^\\d+\\.\\d{2}$' }
+    TeamPriceResult:
+      type: object
+      required: [agreement_id, query, types]
+      properties:
+        agreement_id: { type: string, format: uuid }
+        query: { type: string }
+        types:
+          type: array
+          items:
+            type: object
+            properties:
+              type: { $ref: '#/components/schemas/ProcedureType' }
+              groups:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    group_name: { type: string }
+                    items: { type: array, items: { $ref: '#/components/schemas/TeamPriceItem' } }
+  responses:
+    PatientAppointment:
+      description: Reserva sem dados pessoais do paciente; Cache-Control no-store e Referrer-Policy no-referrer
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [data]
+            properties:
+              data: { $ref: '#/components/schemas/PublicAppointment' }
+    ValidationError:
+      description: Dados inválidos ou disponibilidade esgotada

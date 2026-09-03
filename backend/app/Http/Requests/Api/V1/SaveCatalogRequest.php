@@ -1,0 +1,56 @@
+<?php
+
+namespace App\Http\Requests\Api\V1;
+
+use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Validation\Rule;
+
+class SaveCatalogRequest extends FormRequest
+{
+    /** @return array<string, mixed> */
+    public function rules(): array
+    {
+        $resource = (string) $this->route('resource');
+        $id = $this->route('id');
+        $table = match ($resource) {
+            'units' => 'units',
+            'agreements' => 'agreements',
+            'procedures' => 'procedures',
+            'professionals' => 'professionals',
+            default => 'invalid_resource',
+        };
+        $common = [
+            'legacy_id' => ['nullable', 'string', 'max:80', Rule::unique($table, 'legacy_id')->ignore($id)],
+            'name' => ['required', 'string', 'max:255'],
+            'active' => ['required', 'boolean'],
+        ];
+
+        return match ($resource) {
+            'units' => $common + [
+                'operational_enabled' => ['sometimes', 'boolean'],
+                'timezone' => ['required', 'timezone:all'],
+                'cnpj' => ['nullable', 'digits:14', Rule::unique('units', 'cnpj')->ignore($id)],
+            ],
+            'agreements' => $common + [
+                'requires_authorization' => ['sometimes', 'boolean'],
+                'type' => ['required', Rule::in(['PRIVATE', 'AGREEMENT', 'B2B', 'HEALTH_PLAN'])],
+                'is_default' => ['required', 'boolean'],
+                'online_enabled' => ['required', 'boolean'],
+            ],
+            'procedures' => $common + [
+                'type' => ['required', Rule::in(['CONSULTATION', 'EXAM'])],
+                'group_name' => ['nullable', 'string', 'max:255'],
+                'tuss_code' => ['nullable', 'string', 'max:30'],
+                'duration_minutes' => ['required', 'integer', 'min:5', 'max:480'],
+                'legacy' => ['required', 'boolean'],
+                'online_enabled' => ['required', 'boolean'],
+            ],
+            'professionals' => $common + [
+                'council_acronym' => ['nullable', 'string', 'max:20'],
+                'council_number' => ['nullable', 'string', 'max:40'],
+                'online_enabled' => ['required', 'boolean'],
+            ],
+            default => [],
+        };
+    }
+}

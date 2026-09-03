@@ -1,0 +1,75 @@
+services:
+  api:
+    build: .
+    ports:
+      - "8000:8000"
+    environment: &app-environment
+      APP_ENV: local
+      APP_DEBUG: "true"
+      APP_KEY: "base64:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
+      DB_CONNECTION: pgsql
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_DATABASE: sistema_dez
+      DB_USERNAME: sistema_dez
+      DB_PASSWORD: local_change_me
+      REDIS_HOST: redis
+      CACHE_STORE: redis
+      QUEUE_CONNECTION: redis
+      SESSION_DRIVER: database
+      SANCTUM_STATEFUL_DOMAINS: localhost:5173,127.0.0.1:5173,localhost:5175
+      FRONTEND_URLS: http://localhost:5173,http://localhost:5174,http://localhost:5175
+      STG_IMPORT_PATH: /data/stg
+    volumes: &app-volumes
+      # Fontes da extração STG (legado, fora deste repo).
+      # Na máquina do dono: C:\Projects\STG\dezstg2\_extracoes_stg.
+      # Sobrescreva com STG_IMPORT_SOURCE=/outro/caminho se necessário.
+      - ${STG_IMPORT_SOURCE:-C:/Projects/STG/dezstg2/_extracoes_stg}:/data/stg:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  postgres:
+    image: postgres:17-alpine
+    ports:
+      - "5433:5432"
+    environment:
+      POSTGRES_DB: sistema_dez
+      POSTGRES_USER: sistema_dez
+      POSTGRES_PASSWORD: local_change_me
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U sistema_dez -d sistema_dez"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  scheduler:
+    build: .
+    command: ["php", "artisan", "schedule:work"]
+    environment: *app-environment
+    volumes: *app-volumes
+    depends_on:
+      api:
+        condition: service_started
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  redis:
+    image: redis:7.4-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  postgres_data:

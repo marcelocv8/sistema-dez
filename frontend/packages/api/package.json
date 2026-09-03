@@ -1,0 +1,22 @@
+{
+  "name": "@dez/api",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./mocks": "./src/mocks/browser.ts",
+    "./schema": "./src/schema.generated.ts"
+  },
+  "dependencies": {
+    "@dez/domain": "workspace:*",
+    "msw": "^2.12.0"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json",
+    "generate:openapi": "openapi-typescript ../../../sistema-dez-api/openapi.yaml -o src/schema.generated.ts"
+  },
+  "devDependencies": {
+    "openapi-typescript": "7.13.0"
+  }
+}
