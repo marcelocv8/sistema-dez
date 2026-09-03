@@ -46,7 +46,7 @@ test('piloto real: login, oferta, escala, reserva, remarcação e cancelamento',
   await page.getByLabel('Oferta de atendimento').selectOption(offer.data.id);
   await page.getByLabel('Data do agendamento').fill(date);
   await page.getByLabel('Horário disponível').selectOption({ label: '08:00 · 1 vaga(s)' });
-  await page.getByLabel('CPF do paciente').fill('123.456.789-09');
+  await page.getByLabel('CPF do paciente').fill('111.444.777-35');
   await page.getByRole('button', { name: 'Localizar paciente' }).click();
   await expect(page.getByRole('status')).toContainText(/Paciente/);
   await page.getByLabel('Nome do paciente').fill('Paciente Piloto E2E');

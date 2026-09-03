@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api\V1;
 
 use App\Actions\Scheduling\MaterializeScheduleOccurrences;
+use App\Actions\Scheduling\RefreshOfferingVisibility;
 use App\Http\Controllers\Controller;
 use App\Models\ScheduleException;
 use App\Models\ServiceOffering;
@@ -13,7 +14,7 @@ use Illuminate\Support\Facades\DB;
 
 class ScheduleExceptionController extends Controller
 {
-    public function __construct(private readonly AuditRecorder $audit, private readonly MaterializeScheduleOccurrences $materialize) {}
+    public function __construct(private readonly AuditRecorder $audit, private readonly MaterializeScheduleOccurrences $materialize, private readonly RefreshOfferingVisibility $visibility) {}
 
     public function index(ServiceOffering $serviceOffering): JsonResponse
     {
@@ -47,6 +48,7 @@ class ScheduleExceptionController extends Controller
             $before = $exception->exists ? $exception->attributesToArray() : null;
             $exception->fill([...$data, 'service_offering_id' => $offering->id, 'created_by' => $exception->created_by ?? $request->user()->id])->save();
             $this->materialize->handle($offering);
+            $this->visibility->handle($offering);
             $this->audit->record($request, $exception, $before ? 'updated' : 'created', $before, $exception->attributesToArray());
         }, 3);
 
@@ -61,6 +63,7 @@ class ScheduleExceptionController extends Controller
             $before = $scheduleException->attributesToArray();
             $scheduleException->update(['blocked' => false]);
             $this->materialize->handle($serviceOffering);
+            $this->visibility->handle($serviceOffering);
             $this->audit->record($request, $scheduleException, 'unblocked', $before, $scheduleException->attributesToArray());
         });
 

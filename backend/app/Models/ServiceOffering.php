@@ -27,6 +27,7 @@ class ServiceOffering extends Model
             'modality' => Modality::class,
             'price' => 'decimal:2',
             'online_enabled' => 'boolean',
+            'online_paused' => 'boolean',
             'active' => 'boolean',
             'published_until' => 'immutable_date:Y-m-d',
             'published_at' => 'immutable_datetime',
@@ -35,8 +36,7 @@ class ServiceOffering extends Model
 
     public function scopePubliclyAvailable(Builder $query): void
     {
-        $query->where('active', true)->where('online_enabled', true)
-            ->where('published_until', '>=', now(config('sistema_dez.timezone'))->toDateString())
+        $query->where('active', true)->where('online_enabled', true)->where('online_paused', false)
             ->eligibleForPublication();
     }
 
@@ -45,9 +45,9 @@ class ServiceOffering extends Model
         $today = now(config('sistema_dez.timezone'))->toDateString();
         $query->where('active', true)
             ->whereHas('unit', fn (Builder $query) => $query->where('active', true)->where('operational_enabled', true))
-            ->whereHas('procedure', fn (Builder $query) => $query->where('active', true)->where('online_enabled', true))
-            ->whereHas('professional', fn (Builder $query) => $query->where('active', true)->where('online_enabled', true))
-            ->whereHas('agreement', fn (Builder $query) => $query->where('active', true)->where('online_enabled', true)->where('requires_authorization', false))
+            ->whereHas('procedure', fn (Builder $query) => $query->where('active', true))
+            ->whereHas('professional', fn (Builder $query) => $query->where('active', true))
+            ->whereHas('agreement', fn (Builder $query) => $query->where('active', true)->where('is_default', true)->where('requires_authorization', false))
             ->whereHas('catalogLink', fn (Builder $query) => $query->where('active', true)
                 ->whereColumn('catalog_links.unit_id', 'service_offerings.unit_id')
                 ->whereColumn('catalog_links.procedure_id', 'service_offerings.procedure_id')

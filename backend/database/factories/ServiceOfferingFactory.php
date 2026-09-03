@@ -48,12 +48,13 @@ class ServiceOfferingFactory extends Factory
     public function published(): static
     {
         return $this->afterCreating(function (ServiceOffering $offering): void {
+            $offering->agreement->update(['is_default' => true, 'requires_authorization' => false]);
             $link = CatalogLink::create(['unit_id' => $offering->unit_id, 'procedure_id' => $offering->procedure_id,
                 'professional_id' => $offering->professional_id, 'agreement_id' => $offering->agreement_id, 'active' => true]);
             $price = ProcedurePrice::factory()->create(['procedure_id' => $offering->procedure_id, 'unit_id' => $offering->unit_id,
                 'agreement_id' => $offering->agreement_id, 'amount' => $offering->price]);
             $offering->forceFill(['catalog_link_id' => $link->id, 'procedure_price_id' => $price->id,
-                'online_enabled' => true, 'published_at' => now(), 'published_until' => today()->addDays(29)])->save();
+                'online_enabled' => true, 'online_paused' => false, 'published_at' => now(), 'published_until' => null])->save();
         });
     }
 

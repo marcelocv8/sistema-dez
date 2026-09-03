@@ -65,11 +65,11 @@ class PatientAppointmentTest extends TestCase
         $this->assertDatabaseHas('appointments', ['id' => $receipt['id'], 'status' => 'CONFIRMED']);
     }
 
-    public function test_unpublication_blocks_new_booking_but_keeps_existing_cancellation(): void
+    public function test_pause_blocks_new_booking_but_keeps_existing_cancellation(): void
     {
         [$offering, $payload] = $this->offering();
         $receipt = $this->postJson('/api/v1/public/appointments', $payload)->assertCreated()->json('data');
-        $offering->update(['online_enabled' => false]);
+        $offering->update(['online_paused' => true, 'online_enabled' => false]);
         $headers = ['Authorization' => 'Bearer '.$receipt['management_token']];
         $url = '/api/v1/public/appointments/'.$receipt['id'];
         $this->patchJson($url.'/reschedule', ['starts_at' => '2026-09-02T08:30:00-03:00', 'reason' => 'Outro'], $headers)->assertUnprocessable();
@@ -83,7 +83,6 @@ class PatientAppointmentTest extends TestCase
         [$offering, $payload] = $this->offering();
         $query = ['procedure_id' => $offering->procedure_id, 'unit_id' => $offering->unit_id, 'agreement_id' => $offering->agreement_id,
             'modality' => 'PRESENTIAL', 'from' => '2026-09-02', 'to' => '2026-09-02'];
-        $offering->forceFill(['published_until' => '2026-09-02'])->save();
         $this->getJson('/api/v1/public/availability?'.http_build_query($query))->assertOk()->assertJsonPath('data.0.slots.0.starts_at', '2026-09-02T08:00:00-03:00');
         $this->travelTo(CarbonImmutable::parse('2026-09-02T07:31:00-03:00'));
         $this->postJson('/api/v1/public/appointments', $payload)->assertUnprocessable();

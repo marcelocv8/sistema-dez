@@ -14,7 +14,7 @@
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json",
-    "generate:openapi": "openapi-typescript ../../../sistema-dez-api/openapi.yaml -o src/schema.generated.ts"
+    "generate:openapi": "openapi-typescript ../../../backend/openapi.yaml -o src/schema.generated.ts"
   },
   "devDependencies": {
     "openapi-typescript": "7.13.0"

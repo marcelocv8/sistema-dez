@@ -32,14 +32,15 @@ class InternalSchedulingTest extends TestCase
         $this->assertDatabaseHas('audit_logs', ['entity_type' => ServiceOffering::class, 'action' => 'created']);
     }
 
-    public function test_reception_cannot_manage_offerings_and_online_input_is_rejected(): void
+    public function test_reception_cannot_manage_offerings_and_online_input_is_ignored(): void
     {
         [$link, $price] = $this->catalog();
         $payload = $this->offeringPayload($link, $price);
         $this->actingAs(User::factory()->create())->postJson('/api/v1/team/service-offerings', $payload)->assertForbidden();
         $this->actingAs(User::factory()->create(['role' => UserRole::Admin]))
-            ->postJson('/api/v1/team/service-offerings', [...$payload, 'online_enabled' => true])->assertUnprocessable()->assertJsonValidationErrors('online_enabled');
-        $this->assertDatabaseCount('service_offerings', 0);
+            ->postJson('/api/v1/team/service-offerings', [...$payload, 'online_enabled' => true])->assertCreated()
+            ->assertJsonPath('data.online_enabled', false);
+        $this->assertDatabaseCount('service_offerings', 1);
     }
 
     public function test_offering_rejects_inactive_link_quarantined_price_and_non_operational_unit(): void

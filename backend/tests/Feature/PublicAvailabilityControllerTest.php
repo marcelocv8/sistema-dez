@@ -74,7 +74,7 @@ class PublicAvailabilityControllerTest extends TestCase
     {
         $this->travelTo(CarbonImmutable::parse('2026-08-31T07:00:00-03:00'));
         $unit = Unit::factory()->create();
-        $agreement = Agreement::factory()->create();
+        $agreement = Agreement::factory()->create(['is_default' => true]);
         $procedure = Procedure::factory()->create(['duration_minutes' => 30]);
         $offering = ServiceOffering::factory()->published()->for($unit)->for($agreement)->for($procedure)->create([
             'booking_mode' => $mode,

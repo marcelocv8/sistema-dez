@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 
-test('Admin publica e paciente reserva, reabre o link, remarca e cancela', async ({ page, browser }, testInfo) => {
+test('Oferta entra no ar sozinha e paciente reserva, remarca e cancela; pausa tira do ar', async ({ page, browser }, testInfo) => {
   test.skip(!process.env.E2E_PASSWORD, 'Use somente credencial temporária de sistema_dez_test.');
   const errors: string[] = [];
   page.on('pageerror', (error) => errors.push(error.message));
@@ -23,12 +23,8 @@ test('Admin publica e paciente reserva, reabre o link, remarca e cancela', async
   await page.getByLabel('Hora final', { exact: true }).fill('10:00');
   await page.getByRole('button', { name: 'Adicionar escala' }).click();
   await expect(page.locator('.schedule-rule').filter({ hasText: '08:00–10:00' })).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Confirmar publicação online' })).toBeDisabled();
-  await page.getByLabel('Publicar até').fill(date);
-  await page.getByLabel('Conferi preço e escala e autorizo a oferta online.').check();
-  await page.getByRole('button', { name: 'Confirmar publicação online' }).click();
-  await expect(page.getByText(`Publicação autorizada até ${date}.`, { exact: false })).toBeVisible();
-  await page.screenshot({ path: testInfo.outputPath('publicacao-autorizada.png'), fullPage: true });
+  await expect(page.getByText('Visível no site ·', { exact: false })).toBeVisible();
+  await page.screenshot({ path: testInfo.outputPath('visivel-no-site.png'), fullPage: true });
 
   const patientContext = await browser.newContext({ viewport: page.viewportSize()! });
   const patient = await patientContext.newPage();
@@ -42,7 +38,7 @@ test('Admin publica e paciente reserva, reabre o link, remarca e cancela', async
   await patient.locator('.date-list button').first().click();
   await patient.locator('.slot-list button').filter({ hasText: '08:00' }).click();
   await patient.getByRole('button', { name: 'Continuar', exact: true }).click();
-  await patient.getByLabel('Nome completo').fill('Paciente Publicação E2E');
+  await patient.getByLabel('Nome completo').fill('Paciente Visibilidade E2E');
   await patient.getByLabel('CPF', { exact: true }).fill('12345678909');
   await patient.getByLabel('WhatsApp', { exact: true }).fill('85999999999');
   await patient.getByLabel('Concordo com o uso dos meus dados', { exact: false }).check();
@@ -67,8 +63,8 @@ test('Admin publica e paciente reserva, reabre o link, remarca e cancela', async
   await expect(patient.getByLabel('Novo horário')).toHaveCount(0);
   expect(await patient.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   await patient.screenshot({ path: testInfo.outputPath('paciente-cancelado.png'), fullPage: true });
-  await page.getByRole('button', { name: 'Retirar do online' }).click();
-  await expect(page.getByText('Oferta privada: disponível apenas para a equipe.')).toBeVisible();
+  await page.getByRole('button', { name: 'Pausar no site' }).click();
+  await expect(page.getByText('Oferta fora do site', { exact: false })).toBeVisible();
   await patient.getByRole('button', { name: 'Voltar aos serviços' }).click();
   await patient.reload();
   await expect(patient.getByText('Nenhum serviço disponível online')).toBeVisible();

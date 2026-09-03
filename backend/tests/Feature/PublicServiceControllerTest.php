@@ -17,7 +17,7 @@ class PublicServiceControllerTest extends TestCase
     public function test_it_lists_only_services_available_online_with_the_public_contract(): void
     {
         $unit = Unit::factory()->create(['name' => 'Clínica DEZ Aldeota']);
-        $agreement = Agreement::factory()->create(['name' => 'Particular']);
+        $agreement = Agreement::factory()->create(['name' => 'Particular', 'is_default' => true]);
         $procedure = Procedure::factory()->create(['name' => 'Consulta Endocrinológica']);
         $offering = ServiceOffering::factory()->published()->for($unit)->for($agreement)->for($procedure)->create([
             'modality' => Modality::Presential,

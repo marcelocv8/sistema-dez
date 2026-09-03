@@ -42,9 +42,8 @@ class ChangeAppointment
             }
             if ($public && (! ServiceOffering::query()->whereKey($offering->id)->publiclyAvailable()->exists()
                 || $startsAt->lessThan(now()->addMinutes(config('sistema_dez.public_booking_lead_minutes')))
-                || $startsAt->greaterThan(CarbonImmutable::today($offering->unit->timezone)->addDays(config('sistema_dez.public_booking_horizon_days') - 1)->endOfDay())
-                || $startsAt->toDateString() > $offering->published_until->toDateString())) {
-                throw ValidationException::withMessages(['starts_at' => 'Escolha uma oferta publicada e um horário com antecedência mínima de 30 minutos nos próximos 30 dias.']);
+                || $startsAt->greaterThan(CarbonImmutable::today($offering->unit->timezone)->addDays(config('sistema_dez.public_booking_horizon_days') - 1)->endOfDay()))) {
+                throw ValidationException::withMessages(['starts_at' => 'Escolha uma oferta visível no site e um horário com antecedência mínima de 30 minutos nos próximos 30 dias.']);
             }
             $materialize->handle($offering, $startsAt->startOfDay(), $startsAt->startOfDay());
             $occurrence = ScheduleOccurrence::query()->where('service_offering_id', $offering->id)->where('date', $startsAt->toDateString())

@@ -38,8 +38,7 @@ class BookAppointment
                 ->lockForUpdate()->findOrFail($data['offering_id']);
             if (! $actor && (! ServiceOffering::query()->whereKey($offering->id)->publiclyAvailable()->exists()
                 || $startsAt->lessThan(now()->addMinutes(config('sistema_dez.public_booking_lead_minutes')))
-                || $startsAt->greaterThan(CarbonImmutable::today($offering->unit->timezone)->addDays(config('sistema_dez.public_booking_horizon_days') - 1)->endOfDay())
-                || $startsAt->toDateString() > $offering->published_until->toDateString())) {
+                || $startsAt->greaterThan(CarbonImmutable::today($offering->unit->timezone)->addDays(config('sistema_dez.public_booking_horizon_days') - 1)->endOfDay()))) {
                 throw ValidationException::withMessages(['starts_at' => 'Oferta indisponível online ou horário fora da janela permitida (antecedência mínima de 30 minutos).']);
             }
             if ($actor && (! $offering->active || ! $offering->unit->operational_enabled || ! $offering->unit->active

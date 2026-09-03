@@ -47,3 +47,35 @@
 - Legado e referências (NÃO mover para cá): `C:\Projects\STG\dezstg2`,
   `C:\Projects\STG\_extracoes_stg`, `C:\Projects\STG\_extracoes_laudos`,
   `C:\Projects\STG\mockups_sistema_clinica_dez`, `C:\Projects\STG\VALIDACAO_LAUDOS.md`.
+
+## 5. Ambiente local do dono (PHP nativo — PROIBIDO composer/teste via Docker)
+
+- O PC do dono tem **PHP 8.4 nativo** em `%LOCALAPPDATA%\php\php.exe` (com
+  `composer.phar` ao lado e `pdo_pgsql`) e o PATH de usuário já inclui a pasta.
+  **NUNCA** rode `composer install`, Pint, PHPUnit/artisan-test nem `php artisan
+  serve` dentro de containers (`docker run composer`, `compose exec api`, etc.):
+  o bind-mount do Docker Desktop no Windows trava o PC inteiro. Docker serve
+  **só** para `postgres` + `redis`.
+- Comandos padrão (sempre com caminho completo do PHP, pois cada chamada de
+  shell nasce sem o PATH recarregado):
+  - `& "$env:LOCALAPPDATA\php\php.exe" "$env:LOCALAPPDATA\php\composer.phar" install`
+    em `backend/`; `vendor/` é gitignored.
+  - Pint: `php vendor/bin/pint --dirty` (obrigatório após editar PHP).
+  - Testes: `php artisan test --compact` em `backend/` com
+    `DB_CONNECTION=pgsql DB_HOST=localhost DB_PORT=5433 DB_DATABASE=sistema_dez_test
+    DB_USERNAME=sistema_dez DB_PASSWORD=local_change_me` (mesmas do CI em
+    `.github/workflows/backend-tests.yml`). Nunca em outro banco.
+- Frontends dev sobem com `VITE_API_URL` explícito, senão chamam o próprio Vite:
+  `$env:VITE_API_URL='http://localhost:8000'; pnpm --filter @dez/equipe dev --port 5175`
+  (agendamento na 5174). Sem `VITE_API_URL`, login e catálogo falham com
+  "Não foi possível concluir a solicitação."
+- API de E2E (porta 18001, banco `sistema_dez_test`, seed `SchedulingE2ESeeder`
+  com `E2E_PASSWORD` ≥ 12 chars): subir com `SESSION_DRIVER=database`,
+  `CACHE_STORE=database` e `SANCTUM_STATEFUL_DOMAINS` contendo **só a porta da
+  equipe (4175)** — a porta do agendamento (4176) tem que ficar DE FORA, senão
+  o POST público anônimo cai no `VerifyCsrfToken` (419) por causa do
+  `statefulApi()`. Nunca `SESSION_DRIVER=array` (sessão morre entre requests).
+- Segredos locais do compose vivem em `backend/compose.local.yaml` (untracked,
+  **nunca commitar**); todo `docker compose up` precisa de
+  `-f compose.yaml -f compose.local.yaml`. Antes de parar containers, confira
+  que não vai derrubar o uso do dono.

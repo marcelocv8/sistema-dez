@@ -1,16 +1,17 @@
 openapi: 3.1.0
 info:
   title: Sistema DEZ API
-  version: 0.5.0
+  version: 0.6.0
 servers:
   - url: http://localhost:8000/api/v1
 paths:
   /public/services:
     get:
-      summary: Lista procedimentos e ofertas disponíveis online
+      summary: Lista procedimentos e ofertas disponíveis online (convênio padrão)
+      description: O online exibe somente ofertas do convênio padrão com vínculo, preço e escala válidos. O parâmetro agreement_id é aceito por compatibilidade e ignorado.
       parameters:
         - { name: unit_id, in: query, schema: { type: string, format: uuid } }
-        - { name: agreement_id, in: query, schema: { type: string, format: uuid } }
+        - { name: agreement_id, in: query, description: Ignorado; o online usa sempre o convênio padrão., schema: { type: string, format: uuid } }
         - { name: modality, in: query, schema: { $ref: '#/components/schemas/Modality' } }
         - { name: type, in: query, schema: { type: string, enum: [CONSULTATION, EXAM] } }
         - { name: search, in: query, schema: { type: string, maxLength: 100 } }
@@ -20,7 +21,7 @@ paths:
   /public/availability:
     get:
       summary: Consulta horários, blocos ou informação de demanda espontânea
-      description: Apenas ofertas publicadas e elegíveis. Janela de hoje até 29 dias à frente, limitada à validade da publicação; antecedência mínima de 30 minutos.
+      description: Apenas ofertas visíveis e elegíveis do convênio padrão. Janela de hoje até 29 dias à frente, sem vencimento de publicação; antecedência mínima de 30 minutos.
       parameters:
         - { name: procedure_id, in: query, required: true, schema: { type: string, format: uuid } }
         - { name: unit_id, in: query, required: true, schema: { type: string, format: uuid } }
@@ -71,7 +72,7 @@ paths:
       - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
     patch:
       summary: Remarca reserva futura na mesma oferta, com capacidade e preço revalidados
-      description: Somente CONFIRMED antes do início. Não aceita offering_id. Aplica janela pública, antecedência e validade da publicação. Atualiza preço congelado e validade do link; audita alteração.
+      description: Somente CONFIRMED antes do início. Não aceita offering_id. Aplica janela pública, antecedência e visibilidade online. Atualiza preço congelado e validade do link; audita alteração.
       security: [{ managementToken: [] }]
       requestBody: { required: true, content: { application/json: { schema: { type: object, additionalProperties: false, required: [starts_at, reason], properties: { starts_at: { type: string, format: date-time }, reason: { type: string, minLength: 3, maxLength: 1000 } } } } } }
       responses:
@@ -84,7 +85,7 @@ paths:
       - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
     patch:
       summary: Cancela reserva futura com motivo, preservando histórico e liberando a vaga
-      description: Repetir cancelamento já concluído é idempotente. Não exige que a oferta continue publicada.
+      description: Repetir cancelamento já concluído é idempotente. Não exige que a oferta continue visível.
       security: [{ managementToken: [] }]
       requestBody: { required: true, content: { application/json: { schema: { type: object, required: [reason], properties: { reason: { type: string, minLength: 3, maxLength: 1000 } } } } } }
       responses:
@@ -305,24 +306,18 @@ paths:
       responses:
         '200': { description: Oferta desativada }
         '403': { description: Requer schedule.manage }
-  /team/service-offerings/{id}/publication:
+  /team/service-offerings/{id}/visibility:
     parameters:
       - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
-    put:
-      summary: Publica explicitamente uma oferta validada, com prazo de até 30 dias
-      description: Requer schedule.manage, confirmação explícita, entidades habilitadas online, vínculo válido, preço vigente igual à fotografia e escala com disponibilidade. Convênios requires_authorization ficam impedidos. Editar a oferta desliga sua publicação.
+    patch:
+      summary: Pausa ou retoma a visibilidade online da oferta (opt-out)
+      description: Requer schedule.manage. Ofertas do convênio padrão com vínculo, preço e escala válidos ficam visíveis sozinhas; esta ação apenas pausa (tira do ar) ou retoma. Toda transição é auditada.
       security: [{ cookieAuth: [] }]
-      requestBody: { required: true, content: { application/json: { schema: { type: object, required: [published_until, confirmed], properties: { published_until: { type: string, format: date }, confirmed: { type: boolean, const: true } } } } } }
+      requestBody: { required: true, content: { application/json: { schema: { type: object, required: [paused], properties: { paused: { type: boolean } } } } } }
       responses:
-        '200': { description: Publicação registrada e auditada }
+        '200': { description: Visibilidade atualizada e auditada }
         '403': { description: Requer schedule.manage }
         '422': { $ref: '#/components/responses/ValidationError' }
-    delete:
-      summary: Retira oferta do catálogo público sem excluir reservas existentes
-      security: [{ cookieAuth: [] }]
-      responses:
-        '200': { description: Oferta retirada e ação auditada }
-        '403': { description: Requer schedule.manage }
   /team/service-offerings/{id}/schedule-windows:
     parameters:
       - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
@@ -489,8 +484,8 @@ components:
           properties:
             id: { type: string, format: uuid }
             price: { type: string }
-            online_enabled: { type: boolean, description: Falso na criação e edição; somente a ação explícita de publicação habilita. }
-            published_until: { type: [string, 'null'], format: date }
+            online_enabled: { type: boolean, description: Visível no site quando verdadeiro; ofertas do convênio padrão com vínculo, preço e escala válidos ligam sozinhas, salvo pausa manual. }
+            online_paused: { type: boolean, description: Pausa manual da equipe (opt-out); impede a visibilidade automática. }
             published_at: { type: [string, 'null'], format: date-time }
             unit: { $ref: '#/components/schemas/NamedEntity' }
             procedure: { $ref: '#/components/schemas/NamedEntity' }

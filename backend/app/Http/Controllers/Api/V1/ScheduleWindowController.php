@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api\V1;
 
 use App\Actions\Scheduling\MaterializeScheduleOccurrences;
+use App\Actions\Scheduling\RefreshOfferingVisibility;
 use App\Enums\BookingMode;
 use App\Http\Controllers\Controller;
 use App\Models\ScheduleWindow;
@@ -16,7 +17,7 @@ use Illuminate\Validation\ValidationException;
 
 class ScheduleWindowController extends Controller
 {
-    public function __construct(private readonly AuditRecorder $audit, private readonly MaterializeScheduleOccurrences $materialize) {}
+    public function __construct(private readonly AuditRecorder $audit, private readonly MaterializeScheduleOccurrences $materialize, private readonly RefreshOfferingVisibility $visibility) {}
 
     public function index(ServiceOffering $serviceOffering): JsonResponse
     {
@@ -65,6 +66,7 @@ class ScheduleWindowController extends Controller
             $before = $window->exists ? $window->attributesToArray() : null;
             $window->fill([...$data, 'service_offering_id' => $offering->id])->save();
             $this->materialize->handle($offering);
+            $this->visibility->handle($offering);
             $this->audit->record($request, $window, $before ? 'updated' : 'created', $before, $window->attributesToArray());
         }, 3);
 
@@ -79,6 +81,7 @@ class ScheduleWindowController extends Controller
             $before = $scheduleWindow->attributesToArray();
             $scheduleWindow->update(['active' => false]);
             $this->materialize->handle($serviceOffering);
+            $this->visibility->handle($serviceOffering);
             $this->audit->record($request, $scheduleWindow, 'deactivated', $before, $scheduleWindow->attributesToArray());
         });
 

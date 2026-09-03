@@ -6,7 +6,7 @@ use App\Http\Controllers\Api\V1\CatalogController;
 use App\Http\Controllers\Api\V1\CatalogLinkController;
 use App\Http\Controllers\Api\V1\DashboardController;
 use App\Http\Controllers\Api\V1\ImportIssueController;
-use App\Http\Controllers\Api\V1\OfferingPublicationController;
+use App\Http\Controllers\Api\V1\OfferingVisibilityController;
 use App\Http\Controllers\Api\V1\PatientAppointmentController;
 use App\Http\Controllers\Api\V1\PublicAppointmentController;
 use App\Http\Controllers\Api\V1\PublicAvailabilityController;
@@ -53,8 +53,7 @@ Route::prefix('v1')->middleware(['auth:sanctum', 'throttle:team-api'])->group(fu
         Route::get('service-offerings', [ServiceOfferingController::class, 'index'])->middleware('permission:schedule.view')->name('api.v1.team.service-offerings.index');
         Route::get('service-offering-options', [ServiceOfferingController::class, 'options'])->middleware('permission:schedule.view')->name('api.v1.team.service-offerings.options');
         Route::middleware('permission:schedule.manage')->group(function (): void {
-            Route::put('service-offerings/{serviceOffering}/publication', [OfferingPublicationController::class, 'update'])->name('api.v1.team.publication.update');
-            Route::delete('service-offerings/{serviceOffering}/publication', [OfferingPublicationController::class, 'destroy'])->name('api.v1.team.publication.destroy');
+            Route::patch('service-offerings/{serviceOffering}/visibility', [OfferingVisibilityController::class, 'update'])->name('api.v1.team.visibility.update');
             Route::post('service-offerings', [ServiceOfferingController::class, 'store'])->name('api.v1.team.service-offerings.store');
             Route::put('service-offerings/{serviceOffering}', [ServiceOfferingController::class, 'update'])->name('api.v1.team.service-offerings.update');
             Route::delete('service-offerings/{serviceOffering}', [ServiceOfferingController::class, 'destroy'])->name('api.v1.team.service-offerings.destroy');

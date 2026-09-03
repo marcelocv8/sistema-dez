@@ -28,7 +28,7 @@ class SchedulingE2ESeeder extends Seeder
         $price = ProcedurePrice::factory()->create(['amount' => '150.00']);
         $price->unit->update(['name' => 'CLINICA DEZ MESSEJANA', 'operational_enabled' => true]);
         $price->procedure->update(['name' => 'CONSULTA PILOTO E2E']);
-        $price->agreement->update(['name' => 'PARTICULAR PILOTO']);
+        $price->agreement->update(['name' => 'PARTICULAR PILOTO', 'is_default' => true, 'requires_authorization' => false]);
         $professional = Professional::factory()->create(['name' => 'PROFISSIONAL PILOTO E2E']);
         CatalogLink::create(['unit_id' => $price->unit_id, 'procedure_id' => $price->procedure_id, 'professional_id' => $professional->id, 'agreement_id' => $price->agreement_id, 'active' => true]);
     }

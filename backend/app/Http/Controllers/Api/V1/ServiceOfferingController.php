@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api\V1;
 
 use App\Actions\Scheduling\MaterializeScheduleOccurrences;
+use App\Actions\Scheduling\RefreshOfferingVisibility;
 use App\Enums\BookingMode;
 use App\Enums\Modality;
 use App\Http\Controllers\Controller;
@@ -20,7 +21,7 @@ use Illuminate\Validation\ValidationException;
 
 class ServiceOfferingController extends Controller
 {
-    public function __construct(private readonly AuditRecorder $audit, private readonly MaterializeScheduleOccurrences $materialize) {}
+    public function __construct(private readonly AuditRecorder $audit, private readonly MaterializeScheduleOccurrences $materialize, private readonly RefreshOfferingVisibility $visibility) {}
 
     public function index(Request $request): JsonResponse
     {
@@ -70,10 +71,10 @@ class ServiceOfferingController extends Controller
             'daily_capacity' => ['nullable', 'integer', 'min:1', 'max:1000'],
             'arrival_block_minutes' => ['required', 'integer', 'min:1', 'max:480'],
             'arrival_block_capacity' => ['required', 'integer', 'min:1', 'max:1000'],
-            'active' => ['required', 'boolean'], 'online_enabled' => ['prohibited'],
+            'active' => ['required', 'boolean'],
         ]);
         $created = ! $offering->exists;
-        $offering = DB::transaction(function () use ($request, $data, $offering): ServiceOffering {
+        $offering = DB::transaction(function () use ($request, $data, $offering, $created): ServiceOffering {
             $link = CatalogLink::query()->with(['unit', 'procedure', 'professional', 'agreement'])->lockForUpdate()->findOrFail($data['catalog_link_id']);
             if (! $link->active || ! $link->unit->active || ! $link->unit->operational_enabled || ! $link->procedure->active
                 || ! $link->professional?->active || ! $link->agreement->active) {
@@ -92,8 +93,12 @@ class ServiceOfferingController extends Controller
             $before = $offering->exists ? $offering->attributesToArray() : null;
             $offering->fill([...$data, 'unit_id' => $link->unit_id, 'procedure_id' => $link->procedure_id,
                 'professional_id' => $link->professional_id, 'agreement_id' => $link->agreement_id,
-                'price' => $price->amount, 'online_enabled' => false])->save();
+                'price' => $price->amount])->save();
+            if ($created) {
+                $offering->forceFill(['online_paused' => false])->save();
+            }
             $this->materialize->handle($offering);
+            $offering = $this->visibility->handle($offering);
             $this->audit->record($request, $offering, $before ? 'updated' : 'created', $before, $offering->attributesToArray());
 
             return $offering;

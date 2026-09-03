@@ -808,6 +808,57 @@ O dono informou que configurou vínculos e “Ofertas e horários” em um exemp
 
 Permanecem pendentes Semana/Mês, fila/check-in, caixa, percentuais por pagamento, 2FA, Doctoralia, WhatsApp, laudos/prontuário/resultados e demais módulos. Recepção/fila, Laudos, Relatórios, Painel TV e o app separado do paciente continuam mockados ou sem integração operacional. Avisos/resolução de conflitos de escala com pacientes existentes, importação da planilha de escala e publicação de demanda espontânea com tratamento completo dos bloqueios devem ser homologados/complementados antes de uso amplo. O STG não foi desativado.
 
+### 14.9 Simplificação do online — publicação automática (04/09/2026)
+
+**Decisão do dono:** o fluxo vínculo → oferta → escala → publicar era burocrático demais.
+Nova regra: **oferta do convênio padrão (`is_default`, hoje PARTICULAR M) com vínculo,
+preço e escala válidos entra no ar sozinha** (opt-out com botão Pausar); **sem
+vencimento**; o preço espelha a origem vigente sozinho (a fotografia continua
+congelada em cada reserva). Flags "Habilitado online" dos cadastros deixam de
+travar o online (colunas preservadas, ignoradas na regra). Site público sem
+seletor de convênio. Inter (boletos) confirmado como **última prioridade** —
+Fase 3 entrega fatura/baixa manuais.
+
+#### Entregue
+
+- **Elegibilidade** (`ServiceOffering::eligibleForPublication`): sem `online_enabled`
+  de procedimento/profissional/convênio e sem `published_until`; exige convênio
+  padrão + vínculo/preço/escala válidos; guia continua bloqueado; janela 30 dias
+  e antecedência 30 min intactas.
+- **Auto-ON + opt-out:** `RefreshOfferingVisibility` (preço espelhado + visibilidade
+  + auditoria `visibility.refreshed`, inclusive de sistema) roda no save de oferta,
+  escalas, exceções e no `schedule:materialize` — que agora revisa **todas** as
+  ofertas (é ele que tira do ar unidade/vínculo/preço/escala que perder
+  elegibilidade). `PATCH .../visibility` (pausar/retomar, auditado) substitui o
+  `PUT/DELETE .../publication` (removido). Editar oferta não derruba mais do ar.
+- **Reserva/remarcação** (`BookAppointment`, `ChangeAppointment`): sem checagem de
+  `published_until` (campo segue na tabela, sem uso).
+- **Frontend:** painel "Publicação online controlada" virou toggle Pausar/Retomar
+  com preço e data de atualização; alerta "Online automático"; tipos regenerados
+  (OpenAPI **v0.6.0**; path quebrado do `generate:openapi` corrigido para
+  `../../../backend/openapi.yaml`).
+- **Testes:** `ControlledPublicationTest` substituído por `OnlineVisibilityTest`
+  (auto-ON, pausa com RBAC/auditoria, inelegibilidade por matriz, preço espelhado
+  com snapshot preservado); `SchedulingE2ESeeder` marca PARTICULAR PILOTO como
+  padrão; spec Playwright reescrito (entra no ar sozinha → reserva → remarca →
+  cancela → pausa tira do ar); piloto interno usa CPF próprio (`111.444.777-35`)
+  para não colidir com o paciente da publicação no mesmo banco de teste.
+
+#### Validação final e ambiente
+
+- **Backend:** 57 testes / 355 asserções em `sistema_dez_test` (PHP 8.4 **nativo**,
+  sem Docker — ver `AGENTS.md` §5); Pint aprovado.
+- **Frontend:** 10 Vitest, typecheck 7 projetos, 4 builds.
+- **Playwright** (API nativa `:18001` + `sistema_dez_test` zerado por config):
+  visibilidade desktop + mobile e regressão piloto desktop + mobile, sem erros
+  de console e sem rolagem horizontal.
+- **Dados reais:** oferta-exemplo `01a06398…` (CLINICA MEDICA / ANDRE DIEGO /
+  PARTICULAR M / R$130) **entrou no ar sozinha no localhost** via
+  `schedule:materialize` — comportamento aprovado, sem exposição externa.
+
 ---
 
-*Documento vivo — a cada decisão, uma nova versão. Próximo passo: homologação local da Fase 2B e decisão de oferta/publicação externa; depois, detalhar a Fase 3, mantendo as decisões ainda pendentes do §11.*
+*Documento vivo — a cada decisão, uma nova versão. Próximo passo: homologação da
+simplificação pelo dono no localhost (pausar/retomar + reserva no site) e decisão
+de oferta para pacientes reais; depois, Fase 3A-1 (fundação pagamento-antes +
+perfis CAIXA/GERENTE/MÉDICO). Inter segue adiada para pós-3D.*

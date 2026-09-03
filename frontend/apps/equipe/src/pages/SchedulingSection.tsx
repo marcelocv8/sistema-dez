@@ -28,7 +28,7 @@ export function SchedulingSection() {
   const field = <K extends keyof ServiceOfferingInput>(key: K, value: ServiceOfferingInput[K]) => setForm((current) => ({ ...current, [key]: value }));
 
   return <div className="scheduling-section">
-    <Alert tone="info" title="Piloto interno">Somente unidades habilitadas para operação. Criar uma oferta não publica o serviço no site.</Alert>
+    <Alert tone="info" title="Online automático">Ofertas do convênio padrão com preço e escala válidos aparecem sozinhas no site. Use Pausar para tirar do ar.</Alert>
     <div className="catalog-layout">
       <Panel className="catalog-list-panel">
         {offerings.isLoading ? <LoadingState label="Carregando ofertas" /> : null}
@@ -36,7 +36,7 @@ export function SchedulingSection() {
         {offerings.data?.length === 0 ? <EmptyState title="Nenhuma oferta configurada" description="Valide um vínculo na aba Vínculos e crie sua primeira oferta interna." /> : null}
         {offerings.data?.map((offering) => <div className="catalog-row" key={offering.id}>
           <span><strong>{offering.procedure.name}</strong><small>{offering.professional?.name} · {offering.agreement.name}</small><small>{offering.unit.name} · {formatMoney(offering.price)} · {modeLabels[offering.booking_mode]}</small></span>
-          <StatusPill tone={offering.online_enabled && (offering.published_until ?? '') >= today() ? 'warning' : offering.active ? 'success' : 'neutral'}>{offering.online_enabled && (offering.published_until ?? '') >= today() ? 'Publicada' : offering.active ? 'Interna' : 'Inativa'}</StatusPill>
+          <StatusPill tone={offering.online_enabled ? 'warning' : offering.active ? 'success' : 'neutral'}>{offering.online_enabled ? 'Visível no site' : offering.active ? 'Interna' : 'Inativa'}</StatusPill>
           <div className="catalog-actions"><Button variant="outline" onClick={() => edit(offering)}>Configurar</Button>{offering.active ? <Button variant="danger" disabled={deactivate.isPending} onClick={() => deactivate.mutate(offering.id)}>Desativar oferta</Button> : null}</div>
         </div>)}
         {deactivate.isError ? <Alert tone="danger" title="Falha ao desativar">{apiErrorMessage(deactivate.error)}</Alert> : null}
@@ -65,21 +65,17 @@ export function SchedulingSection() {
         </form>
       </Panel>
     </div>
-    {selected ? <><PublicationEditor key={`publication-${selected.id}`} offering={selected} refresh={refresh} /><ScheduleEditor key={selected.id} offering={selected} refresh={refresh} /></> : null}
+    {selected ? <><VisibilityToggle key={`visibility-${selected.id}`} offering={selected} refresh={refresh} /><ScheduleEditor key={selected.id} offering={selected} refresh={refresh} /></> : null}
   </div>;
 }
 
-function PublicationEditor({ offering, refresh }: { offering: ServiceOffering; refresh: () => Promise<unknown> }) {
-  const [until, setUntil] = useState(offering.published_until?.slice(0, 10) ?? today());
-  const [confirmed, setConfirmed] = useState(false);
-  const publish = useMutation({ mutationFn: () => api.publishOffering(offering.id, until), onSuccess: async () => { setConfirmed(false); await refresh(); } });
-  const unpublish = useMutation({ mutationFn: () => api.unpublishOffering(offering.id), onSuccess: refresh });
-  return <Panel className="schedule-config"><h2>Publicação online controlada</h2><p>Criar ou editar uma oferta não a publica. Confirme preço e escala antes de disponibilizar ao paciente. A publicação tem validade máxima de 30 dias; editar a oferta a retira do online.</p>
-    <p>Unidade operacional, vínculo, procedimento, profissional, convênio e preço devem estar válidos. Habilite “Habilitado online” nos cadastros correspondentes; convênios com guia ficam bloqueados.</p>
-    {offering.online_enabled ? <p role="status">Publicação autorizada até {offering.published_until?.slice(0, 10)}. Validade, escala e cadastros são reavaliados a cada consulta.</p> : <p>Oferta privada: disponível apenas para a equipe.</p>}
-    <div className="catalog-form-grid"><TextField label="Publicar até" type="date" min={today()} value={until} onChange={(event) => setUntil(event.target.value)} /><label className="catalog-check"><input type="checkbox" checked={confirmed} onChange={(event) => setConfirmed(event.target.checked)} />Conferi preço e escala e autorizo a oferta online.</label></div>
-    {publish.isError || unpublish.isError ? <Alert tone="danger" title="Publicação não alterada">{apiErrorMessage(publish.error ?? unpublish.error)}</Alert> : null}
-    <div className="catalog-form-actions">{offering.online_enabled ? <Button variant="danger" disabled={unpublish.isPending || publish.isPending} onClick={() => unpublish.mutate()}>Retirar do online</Button> : null}<Button disabled={!confirmed || !until || publish.isPending || unpublish.isPending} onClick={() => publish.mutate()}>Confirmar publicação online</Button></div>
+function VisibilityToggle({ offering, refresh }: { offering: ServiceOffering; refresh: () => Promise<unknown> }) {
+  const toggle = useMutation({ mutationFn: () => api.setOfferingVisibility(offering.id, !offering.online_paused), onSuccess: refresh });
+  const updatedAt = new Intl.DateTimeFormat('pt-BR', { day: '2-digit', month: '2-digit', timeZone: 'America/Fortaleza' }).format(new Date(offering.updated_at));
+  return <Panel className="schedule-config"><h2>Visibilidade no site</h2><p>Ofertas do convênio padrão com preço e escala válidos aparecem automaticamente no agendamento online. Sem vencimento; o preço acompanha a tabela vigente sozinho.</p>
+    {offering.online_enabled ? <p role="status">Visível no site · {formatMoney(offering.price)} (atualizado em {updatedAt}).</p> : <p>Oferta fora do site: {offering.online_paused ? 'pausada pela equipe.' : 'sem preço ou escala válidos no momento.'}</p>}
+    {toggle.isError ? <Alert tone="danger" title="Visibilidade não alterada">{apiErrorMessage(toggle.error)}</Alert> : null}
+    <div className="catalog-form-actions">{offering.online_paused ? <Button disabled={toggle.isPending} onClick={() => toggle.mutate()}>Retomar no site</Button> : <Button variant="danger" disabled={toggle.isPending} onClick={() => toggle.mutate()}>Pausar no site</Button>}</div>
   </Panel>;
 }
 

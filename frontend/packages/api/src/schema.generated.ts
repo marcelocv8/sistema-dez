@@ -11,11 +11,15 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Lista procedimentos e ofertas disponíveis online */
+        /**
+         * Lista procedimentos e ofertas disponíveis online (convênio padrão)
+         * @description O online exibe somente ofertas do convênio padrão com vínculo, preço e escala válidos. O parâmetro agreement_id é aceito por compatibilidade e ignorado.
+         */
         get: {
             parameters: {
                 query?: {
                     unit_id?: string;
+                    /** @description Ignorado; o online usa sempre o convênio padrão. */
                     agreement_id?: string;
                     modality?: components["schemas"]["Modality"];
                     type?: "CONSULTATION" | "EXAM";
@@ -54,7 +58,7 @@ export interface paths {
         };
         /**
          * Consulta horários, blocos ou informação de demanda espontânea
-         * @description Apenas ofertas publicadas e elegíveis. Janela de hoje até 29 dias à frente, limitada à validade da publicação; antecedência mínima de 30 minutos.
+         * @description Apenas ofertas visíveis e elegíveis do convênio padrão. Janela de hoje até 29 dias à frente, sem vencimento de publicação; antecedência mínima de 30 minutos.
          */
         get: {
             parameters: {
@@ -250,7 +254,7 @@ export interface paths {
         head?: never;
         /**
          * Remarca reserva futura na mesma oferta, com capacidade e preço revalidados
-         * @description Somente CONFIRMED antes do início. Não aceita offering_id. Aplica janela pública, antecedência e validade da publicação. Atualiza preço congelado e validade do link; audita alteração.
+         * @description Somente CONFIRMED antes do início. Não aceita offering_id. Aplica janela pública, antecedência e visibilidade online. Atualiza preço congelado e validade do link; audita alteração.
          */
         patch: {
             parameters: {
@@ -308,7 +312,7 @@ export interface paths {
         head?: never;
         /**
          * Cancela reserva futura com motivo, preservando histórico e liberando a vaga
-         * @description Repetir cancelamento já concluído é idempotente. Não exige que a oferta continue publicada.
+         * @description Repetir cancelamento já concluído é idempotente. Não exige que a oferta continue visível.
          */
         patch: {
             parameters: {
@@ -1419,7 +1423,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/team/service-offerings/{id}/publication": {
+    "/team/service-offerings/{id}/visibility": {
         parameters: {
             query?: never;
             header?: never;
@@ -1429,11 +1433,16 @@ export interface paths {
             cookie?: never;
         };
         get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
         /**
-         * Publica explicitamente uma oferta validada, com prazo de até 30 dias
-         * @description Requer schedule.manage, confirmação explícita, entidades habilitadas online, vínculo válido, preço vigente igual à fotografia e escala com disponibilidade. Convênios requires_authorization ficam impedidos. Editar a oferta desliga sua publicação.
+         * Pausa ou retoma a visibilidade online da oferta (opt-out)
+         * @description Requer schedule.manage. Ofertas do convênio padrão com vínculo, preço e escala válidos ficam visíveis sozinhas; esta ação apenas pausa (tira do ar) ou retoma. Toda transição é auditada.
          */
-        put: {
+        patch: {
             parameters: {
                 query?: never;
                 header?: never;
@@ -1445,15 +1454,12 @@ export interface paths {
             requestBody: {
                 content: {
                     "application/json": {
-                        /** Format: date */
-                        published_until: string;
-                        /** @constant */
-                        confirmed: true;
+                        paused: boolean;
                     };
                 };
             };
             responses: {
-                /** @description Publicação registrada e auditada */
+                /** @description Visibilidade atualizada e auditada */
                 200: {
                     headers: {
                         [name: string]: unknown;
@@ -1470,38 +1476,6 @@ export interface paths {
                 422: components["responses"]["ValidationError"];
             };
         };
-        post?: never;
-        /** Retira oferta do catálogo público sem excluir reservas existentes */
-        delete: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path: {
-                    id: string;
-                };
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description Oferta retirada e ação auditada */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content?: never;
-                };
-                /** @description Requer schedule.manage */
-                403: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content?: never;
-                };
-            };
-        };
-        options?: never;
-        head?: never;
-        patch?: never;
         trace?: never;
     };
     "/team/service-offerings/{id}/schedule-windows": {
@@ -2120,10 +2094,10 @@ export interface components {
             /** Format: uuid */
             id?: string;
             price?: string;
-            /** @description Falso na criação e edição; somente a ação explícita de publicação habilita. */
+            /** @description Visível no site quando verdadeiro; ofertas do convênio padrão com vínculo */
             online_enabled?: boolean;
-            /** Format: date */
-            published_until?: string | null;
+            /** @description Pausa manual da equipe (opt-out); impede a visibilidade automática. */
+            online_paused?: boolean;
             /** Format: date-time */
             published_at?: string | null;
             unit?: components["schemas"]["NamedEntity"];

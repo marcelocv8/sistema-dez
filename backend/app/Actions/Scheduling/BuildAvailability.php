@@ -57,8 +57,7 @@ class BuildAvailability
         for ($date = $from; $date->lessThanOrEqualTo($to); $date = $date->addDay()) {
             foreach ($offerings as $offering) {
                 if (! ($filters['internal'] ?? false) && ($date->lessThan(CarbonImmutable::today($timezone))
-                    || $date->greaterThan(CarbonImmutable::today($timezone)->addDays(config('sistema_dez.public_booking_horizon_days') - 1))
-                    || $date->toDateString() > $offering->published_until->toDateString())) {
+                    || $date->greaterThan(CarbonImmutable::today($timezone)->addDays(config('sistema_dez.public_booking_horizon_days') - 1)))) {
                     continue;
                 }
                 $result = [...$result, ...$this->forDate($offering, $date, $timezone, ! ($filters['internal'] ?? false))];
