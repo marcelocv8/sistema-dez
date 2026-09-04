@@ -14,7 +14,7 @@ class CreateTeamUser extends Command
     protected $signature = 'team:user
         {email : E-mail de acesso}
         {--name= : Nome completo}
-        {--role=RECEPTION : ADMIN, SUPERVISOR ou RECEPTION}
+        {--role=RECEPTION : ADMIN, SUPERVISOR, RECEPTION, CASHIER, MANAGER ou DOCTOR}
         {--password= : Senha; se omitida, será solicitada sem eco}';
 
     protected $description = 'Cria ou atualiza um usuário da equipe sem senha padrão';

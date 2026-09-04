@@ -84,6 +84,9 @@ class ChangeAppointment
             if ($appointment->status !== 'CONFIRMED' || ($public && $appointment->scheduled_at->isPast())) {
                 throw ValidationException::withMessages(['status' => 'Somente agendamentos futuros e confirmados podem ser cancelados pela agenda.']);
             }
+            if ($appointment->payment_status === 'PAID') {
+                throw ValidationException::withMessages(['payment' => 'Ficha paga exige estorno no caixa (supervisor) antes do cancelamento.']);
+            }
             $before = $appointment->attributesToArray();
             $appointment->update(['status' => 'CANCELLED', 'cancellation_reason' => $data['reason']]);
             $this->record($request, $appointment, 'appointment.cancelled', $before, $appointment->attributesToArray(), $public);

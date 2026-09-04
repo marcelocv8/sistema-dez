@@ -50,6 +50,12 @@ export default function AgendaPage({ user }: { user: CurrentUser }) {
   const { data, isLoading, isError } = useQuery({ queryKey: ['appointments', date, professionalId], queryFn: () => api.appointments(date, { professional_id: professionalId || undefined }) });
   const professionals = [...new Map((offerings.data ?? []).flatMap((item) => item.professional ? [[item.professional.id, item.professional] as const] : [])).values()];
   const canManage = user.permissions.includes('appointments.manage');
+  // O modal edita sempre a cópia mais recente da lista: após check-in,
+  // cobrança ou remarcação, a remontagem troca o estado sem fechar a tela.
+  const editorAppointment = !editor || editor === 'new' ? editor
+    : (data?.data.appointments.find((item) => item.id === editor.id) ?? editor);
+  const editorKey = editorAppointment === 'new' || !editorAppointment ? 'new'
+    : `${editorAppointment.id}-${editorAppointment.status}-${editorAppointment.payment_status}-${editorAppointment.care_started_at ?? ''}`;
 
   const appointments = useMemo(() => (data?.data.appointments ?? []).filter((item) => !hidden.has(item.status)), [data, hidden]);
   const slots = useMemo(() => [...new Set(appointments.map((item) => item.scheduled_at.slice(11, 16)))].sort(), [appointments]);
@@ -67,7 +73,7 @@ export default function AgendaPage({ user }: { user: CurrentUser }) {
 
   return <div className="page agenda-page">
     <div className="page-heading"><div><h1>Agenda</h1><p>{formatClinicDate(`${date}T12:00:00`, { weekday: 'long' })} · Piloto interno</p></div>{canManage ? <Button onClick={() => setEditor('new')}>Novo agendamento</Button> : null}</div>
-    {editor && canManage ? <AppointmentEditor key={editor === 'new' ? 'new' : editor.id} appointment={editor === 'new' ? undefined : editor} initialDate={date} offerings={offerings.data ?? []} onClose={() => setEditor(null)} onSaved={async () => { await Promise.all([queryClient.invalidateQueries({ queryKey: ['appointments'] }), queryClient.invalidateQueries({ queryKey: ['team-availability'] })]); }} /> : null}
+    {editor && canManage ? <AppointmentEditor key={editorKey} appointment={editorAppointment === 'new' || !editorAppointment ? undefined : editorAppointment} initialDate={date} offerings={offerings.data ?? []} onClose={() => setEditor(null)} onSaved={async () => { await Promise.all([queryClient.invalidateQueries({ queryKey: ['appointments'] }), queryClient.invalidateQueries({ queryKey: ['team-availability'] })]); }} /> : null}
     <div className="agenda-layout">
       <aside>
         <Panel className="mini-calendar">
@@ -121,9 +127,16 @@ export default function AgendaPage({ user }: { user: CurrentUser }) {
 
 function AppointmentCard({ appointment, onClick }: { appointment: Appointment; onClick: () => void }) {
   const meta = statusLabel[appointment.status] ?? statusLabel.CONFIRMED;
+  const payment = appointment.payment_status === 'PAID'
+    ? { label: `Pago${appointment.receipt_number ? ` · recibo ${appointment.receipt_number}` : ''}`, tone: 'success' as const }
+    : appointment.payment_status === 'AUTHORIZED'
+      ? { label: 'Autorizado B2B', tone: 'info' as const }
+      : { label: 'Aguardando pagamento', tone: 'warning' as const };
   return <button onClick={onClick} className={`appointment appointment--${meta.tone}`} title={`${appointment.procedure.name}${appointment.patient_name ? ` · ${appointment.patient_name}` : ''}`}>
     <time>{appointment.scheduled_at.slice(11, 16)} – {appointment.ends_at.slice(11, 16)}</time>
     <strong>{appointment.patient_name ?? appointment.procedure.name}</strong>
     <span>{appointment.procedure.name}</span>
+    <StatusPill tone={payment.tone}>{payment.label}</StatusPill>
+    {appointment.care_started_at ? <span>Em atendimento</span> : null}
   </button>;
 }

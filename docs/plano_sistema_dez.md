@@ -856,9 +856,102 @@ Fase 3 entrega fatura/baixa manuais.
   PARTICULAR M / R$130) **entrou no ar sozinha no localhost** via
   `schedule:materialize` — comportamento aprovado, sem exposição externa.
 
+### 14.10 Fase 3A-1 — fundação pagamento-antes + perfis de caixa (04/09/2026)
+
+**Situação: implementada e validada localmente, sem commit.** Gate 3A-0 baixado por
+decisão do dono (homologação considerada feita).
+
+**Decisões aplicadas:** fase fatiada 3A→3D; Inter por último (pós-3D — Fase 3 com
+fatura/baixa manuais); perfis novos já nesta etapa; `users.role` segue perfil
+único (perfis cumulativos do §7.5 ficam para 3B+).
+
+#### Entregue
+
+- **State machine (T6, base):** `appointments` com `payment_status`
+  (`PENDING`/`PAID`/`AUTHORIZED`), `paid_at`, `payment_method_id`,
+  `cash_movement_id`, `b2b_authorization_code`, `care_started_at`.
+  `POST .../check-in` (CONFIRMED→CHECKED_IN + fila WAITING),
+  `POST .../start-care` (trava antifraude: só CHECKED_IN + PAID/AUTHORIZED,
+  fila IN_SERVICE), `POST .../authorize-b2b` (convênio empresarial ativo +
+  código; provisório até 3D). Tudo com auditoria.
+- **Caixa (T7, base):** `payment_methods` (ESPECIE/DEBITO/CREDITO/PIX com
+  `% extra`), `cash_registers` (unidade/turno/fundo/status/abertura/fechamento
+  + `last_receipt_number`) e `cash_movements` (RECEBIMENTO com recibo sequencial
+  por caixa, sem lacuna, sob lock). `POST .../checkout` cobra preço congelado +
+  % da forma; `GET .../current` com resumo por forma e dinheiro esperado;
+  `POST .../close` com fotografia dos totais (imutável após). Receitas do caixa
+  sem fechamento em lote, quebra, sangria e dupla assinatura ficam para 3B.
+- **RBAC:** `CASHIER`, `MANAGER`, `DOCTOR` + permissões `cash.view`,
+  `cash.operate`, `cash.close`, `discounts.validate`. Recepção segue sem ver
+  valores de caixa; caixa não gerencia catálogo (testado).
+- **Frontend:** `/caixa` (abrir com turno/fundo, resumo, fichas pendentes por
+  data, cobrar com recibo, fechar) com gate por permissão; agenda com badge de
+  pagamento por ficha; editor com check-in/início de atendimento (o modal agora
+  remonta com o dado fresco da lista após cada ação).
+- **Contratos:** OpenAPI **v0.7.0** + tipos regenerados.
+
+#### Validação final e ambiente
+
+- **Backend:** 63 testes / 419 asserções em `sistema_dez_test` (PHP nativo);
+  Pint aprovado. Inclui `CashFoundationTest` (6 testes: abertura, recibo
+  sequencial, dupla cobrança/fechamento/método inválido rejeitados, fluxo
+  visita completo, B2B sem caixa, matriz RBAC).
+- **Frontend:** 13 Vitest (inclui 3 da `/caixa`), typecheck 7 projetos, 4 builds.
+- **Playwright** (API `:18001`, banco zerado por run): caixa desktop + mobile,
+  regressão publicação desktop + mobile e piloto desktop + mobile — 6 fluxos,
+  sem erros de console e sem rolagem horizontal.
+- **Dados reais:** migrations aplicadas (`payment_methods` com 4 formas);
+  nenhum caixa aberto, nenhuma cobrança real.
+
 ---
 
-*Documento vivo — a cada decisão, uma nova versão. Próximo passo: homologação da
-simplificação pelo dono no localhost (pausar/retomar + reserva no site) e decisão
-de oferta para pacientes reais; depois, Fase 3A-1 (fundação pagamento-antes +
-perfis CAIXA/GERENTE/MÉDICO). Inter segue adiada para pós-3D.*
+### 14.11 Fase 3B — fechamento consolidado + quebra/sangria + estorno (04/09/2026)
+
+**Situação: implementada e validada tecnicamente, sem commit.** Validação manual
+acumulada para o final, por decisão do dono (3A-1 + 3B + 3C + 3D juntas).
+
+**Decisões aplicadas:** lote parcial com relatório; contado só em dinheiro
+(cartão/PIX por extrato); qualquer quebra exige justificativa + supervisor
+(`discounts.validate`); sangria em registro simples auditado (sem dupla
+confirmação); estorno com supervisor antes de cancelar ficha paga.
+
+#### Entregue
+
+- **Fechamento:** `POST .../close` com `counted_cash` + `note`; fotografia com
+  contado/diferença/justificativa; `POST .../close-batch` parcial
+  (`closed[]/failed[]`); reabertura bloqueada (422).
+- **Sangria:** `POST .../sangrias` (valor/motivo/comprovante, só ESPECIE, só
+  caixa ABERTO, recibo sequencial compartilhado, auditoria
+  `cash.sangria_created`); abate o dinheiro esperado.
+- **Estorno:** `POST .../appointments/{id}/void-payment` (só PAID + caixa
+  ABERTO, `discounts.validate`, ficha volta a PENDING, auditoria
+  `payment.voided`); cancelar ficha PAID sem estorno retorna 422.
+- **Relatório:** `GET .../daily-report?unit_id&date` (esperado x contado,
+  sangrias, estornos, alerta de lacuna de recibo); `GET .../cash-registers`
+  com filtros `status/from/to`.
+- **Resumo:** `expected_cash = fundo + ESPECIE(RECEBIMENTO − ESTORNO) − SANGRIA`;
+  `by_method` segue só recebimentos.
+- **Frontend:** `/caixa` com fechamento contado/justificativa + aviso
+  supervisor, sangria, fichas pagas/estorno (só `discounts.validate`),
+  lote multi-caixa e relatório diário; tipos regenerados (OpenAPI **v0.8.0**).
+- **Contratos:** OpenAPI v0.8.0 + `schema.generated.ts` regenerado.
+
+#### Validação técnica
+
+- **Backend:** 69 testes / 477 asserções em `sistema_dez_test` (PHP nativo);
+  inclui `CashClosingTest` (6 testes: exato, quebra nota+supervisor, lote
+  parcial, sangria, estorno/desbloqueio-cancelamento, relatório+RBAC). Pint.
+- **Frontend:** 14 Vitest (4 da `/caixa`), typecheck 7 projetos, 4 builds.
+- **Playwright** (API `:18001` com `FRONTEND_URLS=http://localhost:4175`,
+  banco zerado por fluxo): novo `cash-closing` desktop + mobile (cobrar →
+  sangria R$30 → fechar exato R$220 → relatório sem lacuna) + regressão
+  `cash-checkout` desktop + mobile — 4 fluxos, sem erro console/rolagem.
+- **Dados reais:** nenhuma cobrança/fechamento real; E2E usou só
+  `sistema_dez_test` (API de testes parada após a validação).
+
+---
+
+*Documento vivo — a cada decisão, uma nova versão. Próximo passo: 3C
+(repasses: comissão customizável + confirmação auditável do médico + baixa
+manual), depois 3D (B2B manual). Validação manual acumulada para após a 3D.
+Inter segue adiada para pós-3D.*

@@ -22,6 +22,7 @@ class SchedulingE2ESeeder extends Seeder
         }
         User::updateOrCreate(['email' => 'admin-piloto@example.test'], ['name' => 'Admin do piloto de testes', 'role' => UserRole::Admin, 'active' => true, 'password' => $password]);
         User::updateOrCreate(['email' => 'recepcao-piloto@example.test'], ['name' => 'Recepção do piloto de testes', 'role' => UserRole::Reception, 'active' => true, 'password' => $password]);
+        User::updateOrCreate(['email' => 'caixa-piloto@example.test'], ['name' => 'Caixa do piloto de testes', 'role' => UserRole::Cashier, 'active' => true, 'password' => $password]);
         if (CatalogLink::query()->whereHas('professional', fn ($query) => $query->where('name', 'PROFISSIONAL PILOTO E2E'))->exists()) {
             return;
         }

@@ -27,6 +27,7 @@ class TeamAppointmentController extends Controller
             'from' => ['nullable', 'date_format:Y-m-d'],
             'to' => ['nullable', 'date_format:Y-m-d', 'after_or_equal:from'],
             'status' => ['nullable', Rule::in(['CONFIRMED', 'CHECKED_IN', 'DONE', 'CANCELLED'])],
+            'payment_status' => ['nullable', Rule::in(['PENDING', 'PAID', 'AUTHORIZED'])],
         ]);
 
         $date = $validated['date'] ?? today()->toDateString();
@@ -44,6 +45,8 @@ class TeamAppointmentController extends Controller
                 'serviceOffering.unit',
                 'serviceOffering.agreement',
                 'scheduleOccurrence',
+                'paymentMethod:id,code,name',
+                'cashMovement:id,receipt_number',
             ])
             ->when($professionalId, fn ($query) => $query->whereHas(
                 'serviceOffering',
@@ -51,6 +54,7 @@ class TeamAppointmentController extends Controller
             ))
             ->when($validated['unit_id'] ?? null, fn ($query, $id) => $query->whereHas('serviceOffering', fn ($offering) => $offering->where('unit_id', $id)))
             ->when($validated['status'] ?? null, fn ($query, $status) => $query->where('status', $status))
+            ->when($validated['payment_status'] ?? null, fn ($query, $status) => $query->where('payment_status', $status))
             ->whereBetween('scheduled_at', [$from->utc(), $to->utc()])
             ->orderBy('scheduled_at')
             ->orderBy('id')
@@ -125,6 +129,11 @@ class TeamAppointmentController extends Controller
                 'group_name' => $procedure->group_name,
             ],
             'price' => $appointment->price_snapshot,
+            'payment_status' => $appointment->payment_status,
+            'paid_at' => $appointment->paid_at?->toIso8601String(),
+            'payment_method_code' => $appointment->paymentMethod?->code,
+            'receipt_number' => $appointment->cashMovement?->receipt_number,
+            'care_started_at' => $appointment->care_started_at?->toIso8601String(),
         ];
     }
 }

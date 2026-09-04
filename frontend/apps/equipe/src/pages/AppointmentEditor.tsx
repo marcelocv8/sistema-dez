@@ -21,9 +21,19 @@ export function AppointmentEditor({ appointment, initialDate, offerings, onClose
     : api.bookInternal({ idempotency_key: idempotencyKey, offering_id: offeringId, starts_at: startsAt, patient: { ...patient, birth_date: patient.birth_date || undefined, email: patient.email || undefined }, privacy_consent: true }),
   onSuccess: async () => { await onSaved(); onClose(); } });
   const cancel = useMutation({ mutationFn: () => api.cancelAppointment(appointment!.id, reason), onSuccess: async () => { await onSaved(); onClose(); } });
+  const checkIn = useMutation({ mutationFn: () => api.checkInAppointment(appointment!.id), onSuccess: () => onSaved() });
+  const startCare = useMutation({ mutationFn: () => api.startCareAppointment(appointment!.id), onSuccess: () => onSaved() });
   const editable = !appointment || appointment.status === 'CONFIRMED';
+  const canStartCare = appointment?.status === 'CHECKED_IN' && (appointment.payment_status === 'PAID' || appointment.payment_status === 'AUTHORIZED');
 
   return <Panel className="appointment-editor"><div className="schedule-editor-heading"><h2>{appointment ? `Agendamento de ${appointment.patient_name ?? 'paciente'}` : 'Novo agendamento interno'}</h2><Button variant="outline" onClick={onClose}>Fechar</Button></div>
+    {appointment ? <div className="visit-flow">
+      <p role="status">Pagamento: <strong>{appointment.payment_status === 'PAID' ? `Pago${appointment.receipt_number ? ` (recibo ${appointment.receipt_number})` : ''}` : appointment.payment_status === 'AUTHORIZED' ? 'Autorizado B2B (fatura no fim do mês)' : 'Pendente — cobrar no caixa antes do atendimento'}</strong>{appointment.care_started_at ? ' · Em atendimento' : ''}</p>
+      {appointment.status === 'CONFIRMED' ? <div className="catalog-form-actions"><Button disabled={checkIn.isPending} onClick={() => checkIn.mutate()}>{checkIn.isPending ? 'Registrando...' : 'Fazer check-in (chegada)'}</Button></div> : null}
+      {appointment.status === 'CHECKED_IN' && !appointment.care_started_at ? <div className="catalog-form-actions"><Button disabled={!canStartCare || startCare.isPending} onClick={() => startCare.mutate()}>{startCare.isPending ? 'Iniciando...' : 'Iniciar atendimento'}</Button></div> : null}
+      {appointment.status === 'CHECKED_IN' && !canStartCare && !appointment.care_started_at ? <p>O atendimento só inicia com pagamento confirmado no caixa ou autorização B2B.</p> : null}
+      {checkIn.isError || startCare.isError ? <Alert tone="danger" title="Ação não concluída">{apiErrorMessage(checkIn.error ?? startCare.error)}</Alert> : null}
+    </div> : null}
     {!editable ? <p>Este agendamento está {appointment?.status === 'CANCELLED' ? 'cancelado' : 'em andamento ou concluído'} e não pode ser alterado pela agenda. {appointment?.cancellation_reason}</p> : <form className="schedule-form" onSubmit={(event) => { event.preventDefault(); save.mutate(); }}>
       <div className="catalog-form-grid">
         <SelectField label="Oferta de atendimento" value={offeringId} required onChange={(event) => { setOfferingId(event.target.value); setStartsAt(''); }}><option value="">Selecione</option>{offerings.filter((item) => item.active).map((item) => <option key={item.id} value={item.id}>{item.procedure.name} · {item.professional?.name} · {item.agreement.name}</option>)}</SelectField>

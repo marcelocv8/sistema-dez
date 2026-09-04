@@ -12,7 +12,7 @@ export type CurrentUser = {
   id: UUID;
   name: string;
   email: string;
-  role: 'ADMIN' | 'SUPERVISOR' | 'RECEPTION';
+  role: 'ADMIN' | 'SUPERVISOR' | 'RECEPTION' | 'CASHIER' | 'MANAGER' | 'DOCTOR';
   roleLabel: string;
   permissions: Permission[];
 };
@@ -110,6 +110,11 @@ export type Appointment = {
   professional: { id: UUID; name: string } | null;
   procedure: { id: UUID; name: string; group_name: string | null };
   price: string;
+  payment_status: 'PENDING' | 'PAID' | 'AUTHORIZED';
+  paid_at: string | null;
+  payment_method_code: string | null;
+  receipt_number: number | null;
+  care_started_at: string | null;
 };
 
 export type QueueItem = {
@@ -118,6 +123,60 @@ export type QueueItem = {
   procedure_name: string | null;
   checked_in_at: string | null;
   status: string;
+};
+
+export type PaymentMethodCode = 'ESPECIE' | 'DEBITO' | 'CREDITO' | 'PIX';
+export type CashRegister = {
+  id: UUID;
+  unit_id: UUID;
+  unit?: { id: UUID; name: string };
+  shift: string;
+  float_amount: string;
+  counted_cash: string | null;
+  cash_difference: string | null;
+  close_note: string | null;
+  status: 'ABERTO' | 'FECHADO';
+  opened_at: string;
+  closed_at: string | null;
+  last_receipt_number: number;
+};
+export type CashSummaryMethod = { method: string; name: string; count: number; gross: string; fee: string; net: string };
+export type CashSummary = { receipt_count: number; by_method: CashSummaryMethod[]; float_amount: string; expected_cash: string; especie_in: string; sangria_total: string; void_total: string };
+export type CloseBatchItem = { id: UUID; counted_cash: string; note?: string };
+export type CloseBatchResult = {
+  closed: Array<{ id: UUID; status: string; expected_cash: string; counted_cash: string; cash_difference: string }>;
+  failed: Array<{ id: UUID; code: number; message?: string; errors?: Record<string, string[]> }>;
+};
+export type SangriaInput = { amount: string; description: string; proof_reference?: string };
+export type CashMovement = {
+  id: UUID;
+  type: 'RECEBIMENTO' | 'SANGRIA' | 'ESTORNO';
+  receipt_number: number;
+  gross_amount: string;
+  fee_amount: string;
+  net_amount: string;
+  appointment_id: UUID | null;
+  proof_reference: string | null;
+  payment_method: { id: UUID; code: string; name: string };
+};
+export type DailyReport = {
+  date: string;
+  unit_id: UUID;
+  registers: Array<CashRegister & { summary: CashSummary; receipt_gaps: number[] }>;
+  totals: { expected_cash: string; counted_cash: string; cash_difference: string; sangria_total: string; void_total: string };
+  receipt_gaps: Array<{ cash_register_id: UUID; missing_receipts: number[] }>;
+};
+export type CashRegisterWithSummary = CashRegister & { summary: CashSummary };
+export type CheckoutReceipt = {
+  appointment_id: UUID;
+  payment_status: 'PAID';
+  paid_at: string;
+  receipt_number: number;
+  cash_register_id: UUID;
+  method: { code: string; name: string };
+  gross_amount: string;
+  fee_amount: string;
+  net_amount: string;
 };
 
 export type DashboardSummary = {
@@ -262,7 +321,7 @@ export const api = {
   deactivateTeamUser: async (id: string) => (await request<ApiData<TeamUser>>(`/api/v1/team/users/${id}`, { method: 'DELETE' })).data,
   auditLogs: () => request<{ data: AuditEntry[]; meta: PageMeta }>('/api/v1/team/audit-logs'),
   dashboard: () => request<ApiData<DashboardSummary>>('/api/v1/dashboard'),
-  appointments: (date?: string, filters: { professional_id?: string; unit_id?: string; status?: string; from?: string; to?: string } = {}) => {
+  appointments: (date?: string, filters: { professional_id?: string; unit_id?: string; status?: string; payment_status?: string; from?: string; to?: string } = {}) => {
     const query = `?${queryString({ date, ...filters })}`;
     return request<ApiData<{ date: string; appointments: Appointment[] }>>(`/api/v1/team/appointments${query}`);
   },
@@ -280,6 +339,18 @@ export const api = {
   bookInternal: async (input: BookAppointmentInput) => (await request<ApiData<Appointment>>('/api/v1/team/appointments', { method: 'POST', body: JSON.stringify(input) })).data,
   rescheduleAppointment: async (id: string, input: { offering_id: string; starts_at: string; reason: string }) => (await request<ApiData<Appointment>>(`/api/v1/team/appointments/${id}/reschedule`, { method: 'PATCH', body: JSON.stringify(input) })).data,
   cancelAppointment: async (id: string, reason: string) => (await request<ApiData<Appointment>>(`/api/v1/team/appointments/${id}/cancel`, { method: 'PATCH', body: JSON.stringify({ reason }) })).data,
+  checkInAppointment: async (id: string) => (await request<ApiData<{ id: UUID; status: string }>>(`/api/v1/team/appointments/${id}/check-in`, { method: 'POST' })).data,
+  startCareAppointment: async (id: string) => (await request<ApiData<{ id: UUID; status: string; care_started_at: string }>>(`/api/v1/team/appointments/${id}/start-care`, { method: 'POST' })).data,
+  authorizeB2BAppointment: async (id: string, authorization_code: string) => (await request<ApiData<{ id: UUID; payment_status: string }>>(`/api/v1/team/appointments/${id}/authorize-b2b`, { method: 'POST', body: JSON.stringify({ authorization_code }) })).data,
+  checkoutAppointment: async (id: string, payment_method_code: string) => (await request<ApiData<CheckoutReceipt>>(`/api/v1/team/appointments/${id}/checkout`, { method: 'POST', body: JSON.stringify({ payment_method_code }) })).data,
+  cashRegisters: async (unit_id?: string, filters: { status?: 'ABERTO' | 'FECHADO'; from?: string; to?: string } = {}) => (await request<ApiData<CashRegister[]>>(`/api/v1/team/cash-registers?${queryString({ unit_id, ...filters })}`)).data,
+  openCashRegister: async (input: { unit_id: UUID; shift: string; float_amount: string }) => (await request<ApiData<CashRegister>>('/api/v1/team/cash-registers', { method: 'POST', body: JSON.stringify(input) })).data,
+  currentCashRegister: async (unit_id?: string) => (await request<{ data: CashRegisterWithSummary | null }>(`/api/v1/team/cash-registers/current?${queryString({ unit_id })}`)).data,
+  cashDailyReport: async (unit_id: string, date: string) => (await request<ApiData<DailyReport>>(`/api/v1/team/cash-registers/daily-report?${queryString({ unit_id, date })}`)).data,
+  closeCashRegister: async (id: string, input: { counted_cash: string; note?: string }) => (await request<ApiData<CashRegister>>(`/api/v1/team/cash-registers/${id}/close`, { method: 'POST', body: JSON.stringify(input) })).data,
+  closeCashBatch: async (items: CloseBatchItem[]) => (await request<ApiData<CloseBatchResult>>('/api/v1/team/cash-registers/close-batch', { method: 'POST', body: JSON.stringify({ items }) })).data,
+  createSangria: async (id: string, input: SangriaInput) => (await request<ApiData<CashMovement>>(`/api/v1/team/cash-registers/${id}/sangrias`, { method: 'POST', body: JSON.stringify(input) })).data,
+  voidAppointmentPayment: async (id: string, reason: string) => (await request<ApiData<CashMovement>>(`/api/v1/team/appointments/${id}/void-payment`, { method: 'POST', body: JSON.stringify({ reason }) })).data,
   callPatient: (id: UUID) => request<{ ok: true }>(`/api/v1/queue/${id}/call`, { method: 'POST' }),
   publishReport: (id: UUID) => request<{ publishedAt: string }>(`/api/v1/reports/${id}/publish`, { method: 'POST' }),
 };

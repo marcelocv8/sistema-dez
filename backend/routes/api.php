@@ -1,7 +1,9 @@
 <?php
 
+use App\Http\Controllers\Api\V1\AppointmentPaymentController;
 use App\Http\Controllers\Api\V1\AuditLogController;
 use App\Http\Controllers\Api\V1\AuthController;
+use App\Http\Controllers\Api\V1\CashRegisterController;
 use App\Http\Controllers\Api\V1\CatalogController;
 use App\Http\Controllers\Api\V1\CatalogLinkController;
 use App\Http\Controllers\Api\V1\DashboardController;
@@ -49,7 +51,23 @@ Route::prefix('v1')->middleware(['auth:sanctum', 'throttle:team-api'])->group(fu
             Route::post('patients/lookup', [TeamAppointmentController::class, 'lookupPatient'])->name('api.v1.team.patients.lookup');
             Route::patch('appointments/{appointment}/reschedule', [TeamAppointmentController::class, 'reschedule'])->name('api.v1.team.appointments.reschedule');
             Route::patch('appointments/{appointment}/cancel', [TeamAppointmentController::class, 'cancel'])->name('api.v1.team.appointments.cancel');
+            Route::post('appointments/{appointment}/check-in', [AppointmentPaymentController::class, 'checkIn'])->name('api.v1.team.appointments.check-in');
+            Route::post('appointments/{appointment}/start-care', [AppointmentPaymentController::class, 'startCare'])->name('api.v1.team.appointments.start-care');
+            Route::post('appointments/{appointment}/authorize-b2b', [AppointmentPaymentController::class, 'authorizeB2B'])->name('api.v1.team.appointments.authorize-b2b');
         });
+        Route::middleware('permission:cash.operate')->group(function (): void {
+            Route::post('appointments/{appointment}/checkout', [AppointmentPaymentController::class, 'checkout'])->name('api.v1.team.appointments.checkout');
+            Route::post('cash-registers', [CashRegisterController::class, 'store'])->name('api.v1.team.cash-registers.store');
+        });
+        Route::middleware('permission:cash.view')->group(function (): void {
+            Route::get('cash-registers', [CashRegisterController::class, 'index'])->name('api.v1.team.cash-registers.index');
+            Route::get('cash-registers/current', [CashRegisterController::class, 'current'])->name('api.v1.team.cash-registers.current');
+            Route::get('cash-registers/daily-report', [CashRegisterController::class, 'dailyReport'])->name('api.v1.team.cash-registers.daily-report');
+        });
+        Route::post('cash-registers/close-batch', [CashRegisterController::class, 'closeBatch'])->middleware('permission:cash.close')->name('api.v1.team.cash-registers.close-batch');
+        Route::post('cash-registers/{cashRegister}/close', [CashRegisterController::class, 'close'])->middleware('permission:cash.close')->name('api.v1.team.cash-registers.close');
+        Route::post('cash-registers/{cashRegister}/sangrias', [CashRegisterController::class, 'sangria'])->middleware('permission:cash.operate')->name('api.v1.team.cash-registers.sangria');
+        Route::post('appointments/{appointment}/void-payment', [AppointmentPaymentController::class, 'voidPayment'])->middleware('permission:discounts.validate')->name('api.v1.team.appointments.void');
         Route::get('service-offerings', [ServiceOfferingController::class, 'index'])->middleware('permission:schedule.view')->name('api.v1.team.service-offerings.index');
         Route::get('service-offering-options', [ServiceOfferingController::class, 'options'])->middleware('permission:schedule.view')->name('api.v1.team.service-offerings.options');
         Route::middleware('permission:schedule.manage')->group(function (): void {

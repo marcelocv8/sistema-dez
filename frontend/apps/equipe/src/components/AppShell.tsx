@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react';
 import { useState } from 'react';
 import { NavLink } from 'react-router-dom';
-import { Activity, Bell, CalendarDays, ChevronLeft, ClipboardList, FileText, LayoutDashboard, LogOut, Menu, MessageCircle, Search, Settings, Tags, Users, WalletCards, X } from 'lucide-react';
+import { Activity, Banknote, Bell, CalendarDays, ChevronLeft, ClipboardList, FileText, LayoutDashboard, LogOut, Menu, MessageCircle, Search, Settings, Tags, Users, WalletCards, X } from 'lucide-react';
 import type { CurrentUser } from '@dez/api';
 import { BrandLogo, IconButton } from '@dez/ui';
 
@@ -11,6 +11,7 @@ const sections = [
     { to: '/agenda', label: 'Agenda', icon: CalendarDays },
     { to: '/recepcao', label: 'Recepção', icon: Users },
     { to: '/precos', label: 'Consulta de preços', icon: Tags, permission: 'prices.view' },
+    { to: '/caixa', label: 'Caixa', icon: Banknote, permission: 'cash.view' },
     { to: '/recepcao?fila=1', label: 'Fila de espera', icon: ClipboardList },
   ] },
   { label: 'Clínico', items: [

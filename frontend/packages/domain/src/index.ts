@@ -16,7 +16,11 @@ export type Permission =
   | 'audit.view'
   | 'schedule.view'
   | 'schedule.manage'
-  | 'appointments.manage';
+  | 'appointments.manage'
+  | 'cash.view'
+  | 'cash.operate'
+  | 'cash.close'
+  | 'discounts.validate';
 
 export const clinicTimeZone = 'America/Fortaleza';
 

@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Sistema DEZ API
-  version: 0.6.0
+  version: 0.8.0
 servers:
   - url: http://localhost:8000/api/v1
 paths:
@@ -410,6 +410,7 @@ paths:
         - { name: unit_id, in: query, schema: { type: string, format: uuid } }
         - { name: professional_id, in: query, schema: { type: string, format: uuid } }
         - { name: status, in: query, schema: { type: string, enum: [CONFIRMED, CHECKED_IN, DONE, CANCELLED] } }
+        - { name: payment_status, in: query, schema: { type: string, enum: [PENDING, PAID, AUTHORIZED] } }
       responses:
         '200': { description: Agenda no fuso da unidade, content: { application/json: { schema: { type: object, properties: { data: { type: object, properties: { date: { type: string, format: date }, appointments: { type: array, items: { $ref: '#/components/schemas/TeamAppointment' } } } } } } } } }
         '403': { description: Requer schedule.view }
@@ -442,6 +443,137 @@ paths:
       responses:
         '200': { description: Agendamento cancelado e auditado }
         '403': { description: Requer appointments.manage }
+        '422': { $ref: '#/components/responses/ValidationError' }
+  /team/appointments/{id}/checkout:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      summary: Cobra ficha no caixa aberto da unidade, gera recibo sequencial auditado
+      description: Requer cash.operate. Ficha CONFIRMED/CHECKED_IN com pagamento PENDING; caixa ABERTO da mesma unidade; forma ativa. Valor = preço congelado + % extra da forma. Gera movimento RECEBIMENTO com recibo sem lacuna e move a fila para CHECKOUT.
+      security: [{ cookieAuth: [] }]
+      requestBody: { required: true, content: { application/json: { schema: { type: object, required: [payment_method_code], properties: { payment_method_code: { type: string, enum: [ESPECIE, DEBITO, CREDITO, PIX] } } } } } }
+      responses:
+        '201': { description: Pagamento registrado e auditado }
+        '403': { description: Requer cash.operate }
+        '422': { $ref: '#/components/responses/ValidationError' }
+  /team/appointments/{id}/check-in:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      summary: Registra chegada na recepção (CONFIRMED vira CHECKED_IN, entra na fila)
+      security: [{ cookieAuth: [] }]
+      responses:
+        '200': { description: Check-in registrado e auditado }
+        '403': { description: Requer appointments.manage }
+        '422': { $ref: '#/components/responses/ValidationError' }
+  /team/appointments/{id}/start-care:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      summary: 'Inicia atendimento clínico (trava antifraude: exige pago ou autorizado)'
+      description: Requer appointments.manage. Somente CHECKED_IN com pagamento PAID ou AUTHORIZED; sem pagamento, retorna 422. Move a fila para IN_SERVICE.
+      security: [{ cookieAuth: [] }]
+      responses:
+        '200': { description: Atendimento iniciado e auditado }
+        '403': { description: Requer appointments.manage }
+        '422': { $ref: '#/components/responses/ValidationError' }
+  /team/appointments/{id}/authorize-b2b:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      summary: Autoriza ficha B2B sem passar pelo caixa (fatura no fim do mês)
+      description: Requer appointments.manage. Exige convênio empresarial ativo (não o Particular padrão) e código de autorização; provisório até a Fase 3D.
+      security: [{ cookieAuth: [] }]
+      requestBody: { required: true, content: { application/json: { schema: { type: object, required: [authorization_code], properties: { authorization_code: { type: string, minLength: 3, maxLength: 60 } } } } } }
+      responses:
+        '200': { description: Autorização registrada e auditada }
+        '403': { description: Requer appointments.manage }
+        '422': { $ref: '#/components/responses/ValidationError' }
+  /team/cash-registers:
+    get:
+      summary: Lista caixas recentes (abertos e fechados)
+      security: [{ cookieAuth: [] }]
+      parameters:
+        - { name: unit_id, in: query, schema: { type: string, format: uuid } }
+        - { name: status, in: query, schema: { type: string, enum: [ABERTO, FECHADO] } }
+        - { name: from, in: query, schema: { type: string, format: date } }
+        - { name: to, in: query, schema: { type: string, format: date } }
+      responses:
+        '200': { description: Caixas }
+        '403': { description: Requer cash.view }
+    post:
+      summary: Abre caixa do dia por unidade/turno com fundo de troco
+      description: Requer cash.operate. Falha se já houver caixa ABERTO para a unidade.
+      security: [{ cookieAuth: [] }]
+      requestBody: { required: true, content: { application/json: { schema: { type: object, required: [unit_id, shift, float_amount], properties: { unit_id: { type: string, format: uuid }, shift: { type: string, enum: [MANHA, TARDE, NOITE, UNICO] }, float_amount: { type: number, minimum: 0 } } } } } }
+      responses:
+        '201': { description: Caixa aberto e auditado }
+        '403': { description: Requer cash.operate }
+        '422': { $ref: '#/components/responses/ValidationError' }
+  /team/cash-registers/current:
+    get:
+      summary: Caixa aberto atual com resumo por forma e dinheiro esperado
+      security: [{ cookieAuth: [] }]
+      parameters:
+        - { name: unit_id, in: query, schema: { type: string, format: uuid } }
+      responses:
+        '200': { description: Caixa atual ou data nulo }
+        '403': { description: Requer cash.view }
+  /team/cash-registers/{id}/close:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      summary: Fecha caixa do dia com dinheiro contado e fotografia dos totais (imutável após)
+      description: Requer cash.close. Informa o dinheiro contado no cofre (só espécie; cartão/PIX conferem por extrato). Qualquer diferença exige justificativa e supervisor com discounts.validate.
+      security: [{ cookieAuth: [] }]
+      requestBody: { required: true, content: { application/json: { schema: { type: object, required: [counted_cash], properties: { counted_cash: { type: number, minimum: 0 }, note: { type: string, maxLength: 1000 } } } } } }
+      responses:
+        '200': { description: Caixa fechado e auditado }
+        '403': { description: Requer cash.close (quebra exige discounts.validate) }
+        '422': { $ref: '#/components/responses/ValidationError' }
+  /team/cash-registers/close-batch:
+    post:
+      summary: Fecha vários caixas diários em lote, um a um (parcial com relatório)
+      description: Requer cash.close. Fecha cada item com a mesma regra do fechamento único; falhas não desfazem os já fechados. Quebra por item exige justificativa e discounts.validate.
+      security: [{ cookieAuth: [] }]
+      requestBody: { required: true, content: { application/json: { schema: { type: object, required: [items], properties: { items: { type: array, minItems: 1, maxItems: 50, items: { type: object, required: [id, counted_cash], properties: { id: { type: string, format: uuid }, counted_cash: { type: number, minimum: 0 }, note: { type: string, maxLength: 1000 } } } } } } } } }
+      responses:
+        '200': { description: Relatório parcial com fechados e falhas }
+        '403': { description: Requer cash.close }
+        '422': { $ref: '#/components/responses/ValidationError' }
+  /team/cash-registers/daily-report:
+    get:
+      summary: Relatório diário do caixa por unidade/data (esperado x contado, sangrias, estornos, lacunas)
+      security: [{ cookieAuth: [] }]
+      parameters:
+        - { name: unit_id, in: query, required: true, schema: { type: string, format: uuid } }
+        - { name: date, in: query, required: true, schema: { type: string, format: date } }
+      responses:
+        '200': { description: Relatório diário com totais e alertas de recibo }
+        '403': { description: Requer cash.view }
+        '422': { $ref: '#/components/responses/ValidationError' }
+  /team/cash-registers/{id}/sangrias:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      summary: Registra sangria em dinheiro do caixa aberto (registro simples auditado)
+      security: [{ cookieAuth: [] }]
+      requestBody: { required: true, content: { application/json: { schema: { type: object, required: [amount, description], properties: { amount: { type: number, exclusiveMinimum: 0 }, description: { type: string, minLength: 3, maxLength: 1000 }, proof_reference: { type: string, maxLength: 120 } } } } } }
+      responses:
+        '201': { description: Sangria registrada e auditada }
+        '403': { description: Requer cash.operate }
+        '422': { $ref: '#/components/responses/ValidationError' }
+  /team/appointments/{id}/void-payment:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      summary: Estorna cobrança paga (ficha volta a PENDING); exige supervisor
+      description: Requer discounts.validate. Somente ficha PAID com caixa ainda ABERTO; após o fechamento o estorno é bloqueado. Cancelar ficha paga sem estorno prévio retorna 422.
+      security: [{ cookieAuth: [] }]
+      requestBody: { required: true, content: { application/json: { schema: { type: object, required: [reason], properties: { reason: { type: string, minLength: 3, maxLength: 1000 } } } } } }
+      responses:
+        '201': { description: Estorno registrado e auditado }
+        '403': { description: Requer discounts.validate }
         '422': { $ref: '#/components/responses/ValidationError' }
   /team/patients/lookup:
     post:
@@ -576,6 +708,62 @@ components:
         procedure: { $ref: '#/components/schemas/NamedEntity' }
         unit: { $ref: '#/components/schemas/NamedEntity' }
         agreement: { $ref: '#/components/schemas/NamedEntity' }
+        payment_status: { type: string, enum: [PENDING, PAID, AUTHORIZED] }
+        paid_at: { type: [string, 'null'], format: date-time }
+        payment_method_code: { type: [string, 'null'] }
+        receipt_number: { type: [integer, 'null'] }
+        care_started_at: { type: [string, 'null'], format: date-time }
+    PaymentMethod:
+      type: object
+      required: [id, code, name, extra_percent, active]
+      properties:
+        id: { type: string, format: uuid }
+        code: { type: string, enum: [ESPECIE, DEBITO, CREDITO, PIX] }
+        name: { type: string }
+        extra_percent: { type: string, description: Percentual extra sobre o preço congelado, definido no cadastro. }
+        active: { type: boolean }
+    CashRegister:
+      type: object
+      required: [id, unit_id, shift, float_amount, status, opened_at, last_receipt_number]
+      properties:
+        id: { type: string, format: uuid }
+        unit_id: { type: string, format: uuid }
+        unit: { $ref: '#/components/schemas/NamedEntity' }
+        shift: { type: string, enum: [MANHA, TARDE, NOITE, UNICO] }
+        float_amount: { type: string }
+        counted_cash: { type: [string, 'null'], description: Dinheiro contado no cofre ao fechar (só espécie). }
+        cash_difference: { type: [string, 'null'], description: Contado menos esperado; diferente de zero exige supervisor. }
+        close_note: { type: [string, 'null'], description: Justificativa da quebra, quando houver. }
+        status: { type: string, enum: [ABERTO, FECHADO] }
+        opened_at: { type: string, format: date-time }
+        closed_at: { type: [string, 'null'], format: date-time }
+        last_receipt_number: { type: integer }
+    CashMovement:
+      type: object
+      required: [id, type, receipt_number, gross_amount, fee_amount, net_amount]
+      properties:
+        id: { type: string, format: uuid }
+        type: { type: string, enum: [RECEBIMENTO, SANGRIA, ESTORNO] }
+        receipt_number: { type: integer, description: Sequencial por caixa, sem lacuna (recebimentos, sangrias e estornos consomem a sequência). }
+        gross_amount: { type: string }
+        fee_amount: { type: string }
+        net_amount: { type: string }
+        appointment_id: { type: [string, 'null'], format: uuid }
+        proof_reference: { type: [string, 'null'], description: Referência do comprovante da sangria. }
+        payment_method: { $ref: '#/components/schemas/PaymentMethod' }
+    CheckoutReceipt:
+      type: object
+      required: [appointment_id, payment_status, receipt_number, method, gross_amount, fee_amount, net_amount]
+      properties:
+        appointment_id: { type: string, format: uuid }
+        payment_status: { type: string, const: PAID }
+        paid_at: { type: string, format: date-time }
+        receipt_number: { type: integer }
+        cash_register_id: { type: string, format: uuid }
+        method: { type: object, properties: { code: { type: string }, name: { type: string } } }
+        gross_amount: { type: string }
+        fee_amount: { type: string }
+        net_amount: { type: string }
     DashboardSummary:
       type: object
       properties:
@@ -619,7 +807,7 @@ components:
         id: { type: string, format: uuid }
         name: { type: string }
         email: { type: string, format: email }
-        role: { type: string, enum: [ADMIN, SUPERVISOR, RECEPTION] }
+        role: { type: string, enum: [ADMIN, SUPERVISOR, RECEPTION, CASHIER, MANAGER, DOCTOR] }
         role_label: { type: string }
         permissions: { type: array, items: { type: string } }
     CatalogLinkInput:

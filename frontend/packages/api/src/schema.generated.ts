@@ -1843,6 +1843,7 @@ export interface paths {
                     unit_id?: string;
                     professional_id?: string;
                     status?: "CONFIRMED" | "CHECKED_IN" | "DONE" | "CANCELLED";
+                    payment_status?: "PENDING" | "PAID" | "AUTHORIZED";
                 };
                 header?: never;
                 path?: never;
@@ -2024,6 +2025,606 @@ export interface paths {
         };
         trace?: never;
     };
+    "/team/appointments/{id}/checkout": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Cobra ficha no caixa aberto da unidade, gera recibo sequencial auditado
+         * @description Requer cash.operate. Ficha CONFIRMED/CHECKED_IN com pagamento PENDING; caixa ABERTO da mesma unidade; forma ativa. Valor = preço congelado + % extra da forma. Gera movimento RECEBIMENTO com recibo sem lacuna e move a fila para CHECKOUT.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        /** @enum {string} */
+                        payment_method_code: "ESPECIE" | "DEBITO" | "CREDITO" | "PIX";
+                    };
+                };
+            };
+            responses: {
+                /** @description Pagamento registrado e auditado */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description Requer cash.operate */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                422: components["responses"]["ValidationError"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/team/appointments/{id}/check-in": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Registra chegada na recepção (CONFIRMED vira CHECKED_IN, entra na fila) */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Check-in registrado e auditado */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description Requer appointments.manage */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                422: components["responses"]["ValidationError"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/team/appointments/{id}/start-care": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Inicia atendimento clínico (trava antifraude: exige pago ou autorizado)
+         * @description Requer appointments.manage. Somente CHECKED_IN com pagamento PAID ou AUTHORIZED; sem pagamento, retorna 422. Move a fila para IN_SERVICE.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Atendimento iniciado e auditado */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description Requer appointments.manage */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                422: components["responses"]["ValidationError"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/team/appointments/{id}/authorize-b2b": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Autoriza ficha B2B sem passar pelo caixa (fatura no fim do mês)
+         * @description Requer appointments.manage. Exige convênio empresarial ativo (não o Particular padrão) e código de autorização; provisório até a Fase 3D.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        authorization_code: string;
+                    };
+                };
+            };
+            responses: {
+                /** @description Autorização registrada e auditada */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description Requer appointments.manage */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                422: components["responses"]["ValidationError"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/team/cash-registers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Lista caixas recentes (abertos e fechados) */
+        get: {
+            parameters: {
+                query?: {
+                    unit_id?: string;
+                    status?: "ABERTO" | "FECHADO";
+                    from?: string;
+                    to?: string;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Caixas */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description Requer cash.view */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        put?: never;
+        /**
+         * Abre caixa do dia por unidade/turno com fundo de troco
+         * @description Requer cash.operate. Falha se já houver caixa ABERTO para a unidade.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        /** Format: uuid */
+                        unit_id: string;
+                        /** @enum {string} */
+                        shift: "MANHA" | "TARDE" | "NOITE" | "UNICO";
+                        float_amount: number;
+                    };
+                };
+            };
+            responses: {
+                /** @description Caixa aberto e auditado */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description Requer cash.operate */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                422: components["responses"]["ValidationError"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/team/cash-registers/current": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Caixa aberto atual com resumo por forma e dinheiro esperado */
+        get: {
+            parameters: {
+                query?: {
+                    unit_id?: string;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Caixa atual ou data nulo */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description Requer cash.view */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/team/cash-registers/{id}/close": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Fecha caixa do dia com dinheiro contado e fotografia dos totais (imutável após)
+         * @description Requer cash.close. Informa o dinheiro contado no cofre (só espécie; cartão/PIX conferem por extrato). Qualquer diferença exige justificativa e supervisor com discounts.validate.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        counted_cash: number;
+                        note?: string;
+                    };
+                };
+            };
+            responses: {
+                /** @description Caixa fechado e auditado */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description Requer cash.close (quebra exige discounts.validate) */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                422: components["responses"]["ValidationError"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/team/cash-registers/close-batch": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Fecha vários caixas diários em lote, um a um (parcial com relatório)
+         * @description Requer cash.close. Fecha cada item com a mesma regra do fechamento único; falhas não desfazem os já fechados. Quebra por item exige justificativa e discounts.validate.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        items: {
+                            /** Format: uuid */
+                            id: string;
+                            counted_cash: number;
+                            note?: string;
+                        }[];
+                    };
+                };
+            };
+            responses: {
+                /** @description Relatório parcial com fechados e falhas */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description Requer cash.close */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                422: components["responses"]["ValidationError"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/team/cash-registers/daily-report": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Relatório diário do caixa por unidade/data (esperado x contado, sangrias, estornos, lacunas) */
+        get: {
+            parameters: {
+                query: {
+                    unit_id: string;
+                    date: string;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Relatório diário com totais e alertas de recibo */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description Requer cash.view */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                422: components["responses"]["ValidationError"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/team/cash-registers/{id}/sangrias": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Registra sangria em dinheiro do caixa aberto (registro simples auditado) */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        amount: number;
+                        description: string;
+                        proof_reference?: string;
+                    };
+                };
+            };
+            responses: {
+                /** @description Sangria registrada e auditada */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description Requer cash.operate */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                422: components["responses"]["ValidationError"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/team/appointments/{id}/void-payment": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Estorna cobrança paga (ficha volta a PENDING); exige supervisor
+         * @description Requer discounts.validate. Somente ficha PAID com caixa ainda ABERTO; após o fechamento o estorno é bloqueado. Cancelar ficha paga sem estorno prévio retorna 422.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        reason: string;
+                    };
+                };
+            };
+            responses: {
+                /** @description Estorno registrado e auditado */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description Requer discounts.validate */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                422: components["responses"]["ValidationError"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/team/patients/lookup": {
         parameters: {
             query?: never;
@@ -2201,6 +2802,81 @@ export interface components {
             procedure?: components["schemas"]["NamedEntity"];
             unit?: components["schemas"]["NamedEntity"];
             agreement?: components["schemas"]["NamedEntity"];
+            /** @enum {string} */
+            payment_status?: "PENDING" | "PAID" | "AUTHORIZED";
+            /** Format: date-time */
+            paid_at?: string | null;
+            payment_method_code?: string | null;
+            receipt_number?: number | null;
+            /** Format: date-time */
+            care_started_at?: string | null;
+        };
+        PaymentMethod: {
+            /** Format: uuid */
+            id: string;
+            /** @enum {string} */
+            code: "ESPECIE" | "DEBITO" | "CREDITO" | "PIX";
+            name: string;
+            /** @description Percentual extra sobre o preço congelado */
+            extra_percent: string;
+            active: boolean;
+        };
+        CashRegister: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            unit_id: string;
+            unit?: components["schemas"]["NamedEntity"];
+            /** @enum {string} */
+            shift: "MANHA" | "TARDE" | "NOITE" | "UNICO";
+            float_amount: string;
+            /** @description Dinheiro contado no cofre ao fechar (só espécie). */
+            counted_cash?: string | null;
+            /** @description Contado menos esperado; diferente de zero exige supervisor. */
+            cash_difference?: string | null;
+            /** @description Justificativa da quebra */
+            close_note?: string | null;
+            /** @enum {string} */
+            status: "ABERTO" | "FECHADO";
+            /** Format: date-time */
+            opened_at: string;
+            /** Format: date-time */
+            closed_at?: string | null;
+            last_receipt_number: number;
+        };
+        CashMovement: {
+            /** Format: uuid */
+            id: string;
+            /** @enum {string} */
+            type: "RECEBIMENTO" | "SANGRIA" | "ESTORNO";
+            /** @description Sequencial por caixa */
+            receipt_number: number;
+            gross_amount: string;
+            fee_amount: string;
+            net_amount: string;
+            /** Format: uuid */
+            appointment_id?: string | null;
+            /** @description Referência do comprovante da sangria. */
+            proof_reference?: string | null;
+            payment_method?: components["schemas"]["PaymentMethod"];
+        };
+        CheckoutReceipt: {
+            /** Format: uuid */
+            appointment_id: string;
+            /** @constant */
+            payment_status: "PAID";
+            /** Format: date-time */
+            paid_at?: string;
+            receipt_number: number;
+            /** Format: uuid */
+            cash_register_id?: string;
+            method: {
+                code?: string;
+                name?: string;
+            };
+            gross_amount: string;
+            fee_amount: string;
+            net_amount: string;
         };
         DashboardSummary: {
             /** Format: date */
@@ -2251,7 +2927,7 @@ export interface components {
             /** Format: email */
             email: string;
             /** @enum {string} */
-            role: "ADMIN" | "SUPERVISOR" | "RECEPTION";
+            role: "ADMIN" | "SUPERVISOR" | "RECEPTION" | "CASHIER" | "MANAGER" | "DOCTOR";
             role_label: string;
             permissions: string[];
         };

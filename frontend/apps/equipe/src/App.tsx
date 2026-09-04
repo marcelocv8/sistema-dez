@@ -12,6 +12,7 @@ const ReceptionPage = lazy(() => import('./pages/ReceptionPage'));
 const ReportPage = lazy(() => import('./pages/ReportPage'));
 const PricesPage = lazy(() => import('./pages/PricesPage'));
 const CatalogPage = lazy(() => import('./pages/CatalogPage'));
+const CashPage = lazy(() => import('./pages/CashPage'));
 
 export function App() {
   const queryClient = useQueryClient();
@@ -27,6 +28,7 @@ export function App() {
     <Route path="/laudos/:id?" element={<ReportPage />} />
     <Route path="/precos" element={<PricesPage />} />
     <Route path="/cadastros" element={<CatalogPage user={currentUser.data} />} />
+    <Route path="/caixa" element={<CashPage user={currentUser.data} />} />
     <Route path="*" element={<Navigate to="/visao-geral" replace />} />
   </Routes></Suspense></AppShell></BrowserRouter>;
 }
