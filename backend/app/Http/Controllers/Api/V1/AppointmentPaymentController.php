@@ -7,6 +7,8 @@ use App\Models\Appointment;
 use App\Models\CashMovement;
 use App\Models\CashRegister;
 use App\Models\PaymentMethod;
+use App\Models\Payout;
+use App\Models\PayoutItem;
 use App\Models\QueueEntry;
 use App\Services\AuditRecorder;
 use Carbon\CarbonImmutable;
@@ -136,6 +138,19 @@ class AppointmentPaymentController extends Controller
             $appointment = Appointment::query()->lockForUpdate()->findOrFail($appointment->id);
             if ($appointment->payment_status !== 'PAID' || ! $appointment->cash_movement_id) {
                 throw ValidationException::withMessages(['appointment' => 'Somente fichas pagas podem ser estornadas.']);
+            }
+            $payoutItem = PayoutItem::query()->where('appointment_id', $appointment->id)->lockForUpdate()->first();
+            if ($payoutItem) {
+                $payout = Payout::query()->lockForUpdate()->findOrFail($payoutItem->payout_id);
+                if (in_array($payout->status, ['CONFIRMED', 'PAID'], true)) {
+                    throw ValidationException::withMessages(['payout' => 'Ficha em repasse confirmado ou pago: desfaça o repasse antes de estornar.']);
+                }
+                $payoutItem->delete();
+                $payout->forceFill([
+                    'subtotal_gross' => (string) $payout->items()->sum('gross_amount'),
+                    'total_commission' => (string) $payout->items()->sum('commission_amount'),
+                ])->save();
+                $this->audit->record($request, $payout, 'payout.item_removed', ['appointment_id' => $appointment->id], $payout->attributesToArray());
             }
             $original = CashMovement::query()->lockForUpdate()->findOrFail($appointment->cash_movement_id);
             $register = CashRegister::query()->lockForUpdate()->findOrFail($original->cash_register_id);

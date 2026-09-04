@@ -10,6 +10,8 @@ use App\Http\Controllers\Api\V1\DashboardController;
 use App\Http\Controllers\Api\V1\ImportIssueController;
 use App\Http\Controllers\Api\V1\OfferingVisibilityController;
 use App\Http\Controllers\Api\V1\PatientAppointmentController;
+use App\Http\Controllers\Api\V1\PayoutController;
+use App\Http\Controllers\Api\V1\ProfessionalCommissionController;
 use App\Http\Controllers\Api\V1\PublicAppointmentController;
 use App\Http\Controllers\Api\V1\PublicAvailabilityController;
 use App\Http\Controllers\Api\V1\PublicServiceController;
@@ -68,6 +70,19 @@ Route::prefix('v1')->middleware(['auth:sanctum', 'throttle:team-api'])->group(fu
         Route::post('cash-registers/{cashRegister}/close', [CashRegisterController::class, 'close'])->middleware('permission:cash.close')->name('api.v1.team.cash-registers.close');
         Route::post('cash-registers/{cashRegister}/sangrias', [CashRegisterController::class, 'sangria'])->middleware('permission:cash.operate')->name('api.v1.team.cash-registers.sangria');
         Route::post('appointments/{appointment}/void-payment', [AppointmentPaymentController::class, 'voidPayment'])->middleware('permission:discounts.validate')->name('api.v1.team.appointments.void');
+        Route::middleware('permission:payouts.view')->group(function (): void {
+            Route::get('payouts', [PayoutController::class, 'index'])->name('api.v1.team.payouts.index');
+            Route::get('payouts/{payout}', [PayoutController::class, 'show'])->name('api.v1.team.payouts.show');
+        });
+        Route::post('payouts/generate', [PayoutController::class, 'generate'])->name('api.v1.team.payouts.generate');
+        Route::patch('payout-items/{payoutItem}/commission', [PayoutController::class, 'updateItem'])->middleware('permission:payouts.manage')->name('api.v1.team.payout-items.commission');
+        Route::post('payouts/{payout}/confirm', [PayoutController::class, 'confirm'])->middleware('permission:payouts.confirm')->name('api.v1.team.payouts.confirm');
+        Route::post('payouts/{payout}/contest', [PayoutController::class, 'contest'])->middleware('permission:payouts.confirm')->name('api.v1.team.payouts.contest');
+        Route::post('payouts/{payout}/pay', [PayoutController::class, 'pay'])->middleware('permission:payouts.pay')->name('api.v1.team.payouts.pay');
+        Route::get('professionals/mine', [ProfessionalCommissionController::class, 'mine'])->middleware('permission:payouts.view')->name('api.v1.team.professionals.mine');
+        Route::get('professionals/{professional}/commissions', [ProfessionalCommissionController::class, 'index'])->middleware('permission:catalog.view')->name('api.v1.team.professional-commissions.index');
+        Route::post('professionals/{professional}/commissions', [ProfessionalCommissionController::class, 'store'])->middleware('permission:catalog.manage')->name('api.v1.team.professional-commissions.store');
+        Route::delete('professionals/{professional}/commissions/{commission}', [ProfessionalCommissionController::class, 'destroy'])->middleware('permission:catalog.manage')->name('api.v1.team.professional-commissions.destroy');
         Route::get('service-offerings', [ServiceOfferingController::class, 'index'])->middleware('permission:schedule.view')->name('api.v1.team.service-offerings.index');
         Route::get('service-offering-options', [ServiceOfferingController::class, 'options'])->middleware('permission:schedule.view')->name('api.v1.team.service-offerings.options');
         Route::middleware('permission:schedule.manage')->group(function (): void {

@@ -39,6 +39,13 @@ async function render(page: React.ReactElement) {
   return root;
 }
 
+async function waitForText(text: string) {
+  for (let attempt = 0; attempt < 40; attempt++) {
+    if (document.body.textContent?.includes(text)) return;
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 50)); });
+  }
+}
+
 test('recepção sem permissão de caixa vê aviso de sem acesso', async () => {
   const root = await render(<CashPage user={user(['prices.view'])} />);
   expect(document.body.textContent).toContain('Sem acesso ao caixa');
@@ -65,6 +72,7 @@ test('caixa aberto mostra resumo e fichas pendentes', async () => {
     payment_status: 'PENDING', paid_at: null, payment_method_code: null, receipt_number: null, care_started_at: null,
   }] } } as never);
   const root = await render(<CashPage user={user(['cash.view', 'cash.operate', 'cash.close'])} />);
+  await waitForText('Paciente Caixa');
   expect(document.body.textContent).toContain('Dinheiro esperado no cofre');
   expect(document.body.textContent).toContain('Paciente Caixa');
   expect(document.body.textContent).toContain('Pendente');
@@ -81,14 +89,19 @@ test('supervisor vê estorno de fichas pagas', async () => {
     opened_at: '2026-09-04T10:00:00Z', closed_at: null, last_receipt_number: 1,
     summary: { receipt_count: 1, by_method: [], float_amount: '100.00', expected_cash: '100.00', especie_in: '0.00', sangria_total: '0.00', void_total: '0.00' },
   } as never);
-  vi.mocked(api.appointments).mockResolvedValueOnce({ data: { date: '2026-09-04', appointments: [] } } as never);
-  vi.mocked(api.appointments).mockResolvedValueOnce({ data: { date: '2026-09-04', appointments: [{
-    id: 'paid-1', scheduled_at: '2026-09-04T11:00:00Z', ends_at: '2026-09-04T11:30:00Z', status: 'CONFIRMED',
-    patient_name: 'Paciente Pago', professional: null,
-    procedure: { id: 'pr', name: 'Consulta', group_name: null }, price: '150.00',
-    payment_status: 'PAID', paid_at: '2026-09-04T11:05:00Z', payment_method_code: 'PIX', receipt_number: 1, care_started_at: null,
-  }] } } as never);
+  vi.mocked(api.appointments).mockImplementation(async (_date: unknown, filters?: { payment_status?: string }) => ({
+    data: {
+      date: '2026-09-04',
+      appointments: filters?.payment_status === 'PAID' ? [{
+        id: 'paid-1', scheduled_at: '2026-09-04T11:00:00Z', ends_at: '2026-09-04T11:30:00Z', status: 'CONFIRMED',
+        patient_name: 'Paciente Pago', professional: null,
+        procedure: { id: 'pr', name: 'Consulta', group_name: null }, price: '150.00',
+        payment_status: 'PAID', paid_at: '2026-09-04T11:05:00Z', payment_method_code: 'PIX', receipt_number: 1, care_started_at: null,
+      }] : [],
+    },
+  }) as never);
   const root = await render(<CashPage user={user(['cash.view', 'cash.operate', 'cash.close', 'discounts.validate'])} />);
+  await waitForText('Paciente Pago');
   expect(document.body.textContent).toContain('estorno do supervisor');
   expect(document.body.textContent).toContain('Paciente Pago');
   await act(async () => root.unmount());

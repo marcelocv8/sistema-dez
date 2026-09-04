@@ -951,7 +951,186 @@ confirmação); estorno com supervisor antes de cancelar ficha paga.
 
 ---
 
-*Documento vivo — a cada decisão, uma nova versão. Próximo passo: 3C
-(repasses: comissão customizável + confirmação auditável do médico + baixa
-manual), depois 3D (B2B manual). Validação manual acumulada para após a 3D.
-Inter segue adiada para pós-3D.*
+### 14.12 Fase 3C — repasses médicos com confirmação do médico (04/09/2026)
+
+**Situação: implementada e validada em backend + frontend, sem commit.**
+Validação manual acumulada para o final, por decisão do dono (3A-1 + 3B + 3C
++ 3D juntas). **E2E Playwright (`payouts.spec`) ainda não passou de ponta a
+ponta** — ver "Ponto de atenção" abaixo; funcionalidade comprovada em backend,
+frontend e evidência visual (telas de gerar/confirmar/pagar com valores
+corretos: comissão R$ 30,00 sobre ficha de R$ 150,00; cofre R$ 220,00 após o
+pagamento em espécie).
+
+**Decisões do dono aplicadas:** comissão **% padrão por médico + override por
+procedimento** (valor fixo como alternativa); entram fichas **PAID +
+AUTHORIZED** juntas (B2B autorizado entra mesmo antes da baixa da fatura, que
+é 3D); **médico loga (DOCTOR) e confirma** os próprios repasses; pagamento
+**em espécie abate o caixa, via PIX não** (só registra + comprovante).
+
+#### Entregue (backend, OpenAPI v0.9.0)
+
+- **Cadastro:** `professionals` com `commission_type` (PERCENT|FIXED, % ≤ 100),
+  `commission_value` e `user_id` (vínculo login DOCTOR ↔ profissional, único);
+  overrides por procedimento em `professional_procedure_commissions` (único por
+  par, auditado); papel DOCTOR liberado no select de usuários.
+- **Repasse:** tabelas `payouts` (OPEN|CONFIRMED|CONTESTED|PAID, totais,
+  confirmado/pago por/em, comprovante) + `payout_items` (fotografia de
+  bruto/comissão/regra por ficha; um atendimento paga comissão uma única vez).
+- **Fluxo:** `POST .../payouts/generate` (idempotente por atendimento; médico
+  gera só o próprio) → `POST .../confirm` / `.../contest {note}` (só o médico
+  vinculado; ADMIN/MANAGER como override) → `PATCH .../payout-items/{id}`
+  (ajuste do supervisor, só OPEN/CONTESTED) → `POST .../payouts/{id}/pay`
+  (só CONFIRMED; ESPECIE exige caixa ABERTO e cria movimento `REPASSE`
+  abatendo o dinheiro esperado; PIX exige comprovante e não movimenta o
+  caixa). Tudo auditado (`payout.generated/confirmed/contested/paid`,
+  `payout.item_adjusted`, `cash.repasse_paid`).
+- **Antifraude:** void/cancel de ficha em repasse CONFIRMED/PAID retorna 422;
+  em repasse OPEN/CONTESTED o item sai do lote com recálculo automático.
+- **RBAC novo:** `payouts.view|manage|confirm|pay` — ADMIN/MANAGER tudo;
+  SUPERVISOR ver+gerar/ajustar; CASHIER ver+pagar; DOCTOR ver+confirmar os
+  próprios (+ `catalog-links.view` p/ operar); RECEPTION nada.
+- **Caixa:** `summary()` e `daily-report` passam a abater `REPASSE` em espécie;
+  `GET .../professionals/mine` (profissional do login, com pré-seleção na tela).
+- **Frontend:** página `/repasses` (menu Gestão, gate `payouts.view`) — filtro
+  médico/período/situação, gerar, detalhe com itens, confirmar/contestar
+  (médico), ajustar (supervisor), pagar (ESPECIE c/ caixa aberto ou PIX c/
+  comprovante), histórico + export CSV; `/cadastros` com comissão, overrides e
+  vínculo de login; UI de erro + retry onde antes falhava em silêncio.
+
+#### Validação técnica
+
+- **Backend:** 77 testes / 564 asserções em `sistema_dez_test` (PHP nativo),
+  Pint aprovado; inclui `PayoutTest` (7 testes: cálculo %/fixo/override,
+  PAID+AUTHORIZED juntos, idempotência, confirm só do médico vinculado,
+  contest+ajuste, pay espécie abate / PIX não abate, travas void/cancel,
+  RBAC, `/mine`) e teste do `GET cash-registers` com filtros.
+- **Frontend:** 16 Vitest (2 da `/repasses`), typecheck 7 projetos, 4 builds.
+- **Playwright:** spec `payouts.spec.ts` + config `playwright.payouts.config.ts`
+  criados (admin configura 20% → recepção agenda → caixa cobra R$150 → médico
+  gera/confirma R$30 → caixa paga em espécie → cofre R$220); **sem passe
+  completo até o fechamento desta versão**.
+
+#### Ponto de atenção (E2E instável — ambiente, não produto)
+
+O spec trava em pontos aleatórios por espera estourada. Causas mapeadas:
+`localhost` resolvendo p/ `::1` sem nada escutando (serve duplo 127.0.0.1 +
+`[::1]` na :18001); `DB_HOST=localhost` com o mesmo problema (usar
+`127.0.0.1` nos comandos); serves PHP single-thread enfileirando sob
+StrictMode (tudo dispara dobrado) + checkpoints de 30–40s do Postgres no
+Docker Desktop; serves obsoletos servindo código velho (sempre reiniciar a
+:18001 após editar o backend); cookie Lax não viaja em POST cross-site
+(`localhost` × `127.0.0.1` são sites diferentes — não misturar hosts entre
+página e API). Bugs REAIS achados pelo E2E e já corrigidos estão embutidos
+acima. Lições de ambiente também viraram §15.
+
+---
+
+## 15. Ambiente em outro PC (só teste, sem prod)
+
+> **Premissa do dono (04/09/2026):** pode usar **bancos diferentes em cada PC**
+> nesta fase. **Não existe produção do Sistema DEZ** — tudo aqui é teste.
+> Cada PC tem seus próprios bancos (`sistema_dez` p/ dev, `sistema_dez_test`
+> p/ testes); nada é sincronizado entre máquinas.
+
+### 15.1 Pré-requisitos
+
+- **PHP 8.4** com extensões `pdo_pgsql`, `mbstring`, `openssl` (+ Composer).
+- **Node 22+** com **pnpm 11** (`npm i -g pnpm`).
+- **Docker Desktop** (só p/ `postgres` + `redis`) **ou** PostgreSQL 17 local.
+- Git + conta com acesso ao repo privado `marcelocv8/sistema-dez`.
+
+### 15.2 Clonar e subir o banco
+
+```powershell
+git clone https://github.com/marcelocv8/sistema-dez.git
+cd sistema-dez\backend
+docker compose up -d postgres redis   # sobe PG na 5433 e redis na 6379
+```
+
+O compose cria o banco `sistema_dez` (usuário/senha `sistema_dez` /
+`local_change_me`). Crie também o banco de testes (nome fixo exigido pelos
+testes e pela API de E2E):
+
+```sql
+CREATE DATABASE sistema_dez_test OWNER sistema_dez;
+```
+
+### 15.3 Backend (Laravel)
+
+```powershell
+cd backend
+Copy-Item .env.example .env
+php artisan key:generate
+# No .env, confira: DB_CONNECTION=pgsql, DB_HOST=127.0.0.1 (NÃO localhost —
+# localhost às vezes resolve p/ ::1 e a conexão falha de forma intermitente),
+# DB_PORT=5433, DB_DATABASE=sistema_dez, DB_USERNAME=sistema_dez,
+# DB_PASSWORD=local_change_me, IDENTITY_PEPPER=<hex aleatório>,
+# MANAGEMENT_TOKEN_SECRET=<hex aleatório>
+composer install
+php artisan migrate
+php artisan team:user admin@sua-clinica.test --name="Admin local" --role=ADMIN
+# (informe a senha quando pedir; sem senha padrão)
+php artisan serve --host=127.0.0.1 --port=8000
+```
+
+### 15.4 Frontend (React)
+
+```powershell
+cd frontend
+pnpm install
+# O app equipe precisa saber onde está a API:
+$env:VITE_API_URL='http://localhost:8000'; pnpm --filter @dez/equipe dev --port 5175
+```
+
+Sem `VITE_API_URL`, o frontend chama o próprio Vite e login/catálogo falham.
+Agendamento: `$env:VITE_API_URL='http://localhost:8000'; pnpm --filter
+@dez/agendamento dev --port 5174`.
+
+### 15.5 Testes
+
+```powershell
+# Backend (sempre no banco isolado sistema_dez_test, nunca em outro):
+$env:DB_CONNECTION='pgsql'; $env:DB_HOST='127.0.0.1'; $env:DB_PORT='5433'
+$env:DB_DATABASE='sistema_dez_test'; $env:DB_USERNAME='sistema_dez'
+$env:DB_PASSWORD='local_change_me'
+php artisan test --compact
+php vendor/bin/pint --dirty   # obrigatório após editar PHP
+# Frontend:
+pnpm test --run; pnpm typecheck; pnpm build
+```
+
+### 15.6 E2E local (quando precisar)
+
+API de testes na :18001 contra `sistema_dez_test`, com sessão em banco (nunca
+`SESSION_DRIVER=array`) e `SANCTUM_STATEFUL_DOMAINS` contendo **só** a porta
+da equipe:
+
+```powershell
+$env:DB_DATABASE='sistema_dez_test'; $env:APP_ENV='testing'
+$env:SESSION_DRIVER='database'; $env:CACHE_STORE='database'
+$env:SANCTUM_STATEFUL_DOMAINS='localhost:4175'; $env:FRONTEND_URLS='http://localhost:4175'
+$env:E2E_PASSWORD='<senha temporária ≥ 12 chars>'
+php artisan migrate:fresh --force; php artisan db:seed --class=SchedulingE2ESeeder --force
+php artisan serve --host=127.0.0.1 --port=18001
+# em outro shell: cd frontend; $env:E2E_PASSWORD='<a mesma>'; npx playwright test --config=playwright.payouts.config.ts
+```
+
+Se o Chromium preferir IPv6 (`localhost` → `::1`), suba também
+`php -S "[::1]:18001" -t public` com o mesmo ambiente. **Reinicie a :18001
+sempre que editar o backend** (serve não recarrega sozinho) e zere o banco a
+cada fluxo (slots de uso único conflitam entre runs).
+
+### 15.7 O que NÃO vai junto / não funciona no outro PC
+
+- **Dados do STG** (catálogo real, preços, laudos): ficam em `C:\Projects\STG\`
+  (fora do repo); sem copiá-los, `stg:*` não tem o que importar — testes e E2E
+  usam factories/seeds próprios e funcionam sem isso.
+- **`backend/compose.local.yaml`**: segredos locais, untracked, **nunca
+  commitar**; cada PC tem o seu.
+- `.env`, dumps, `vendor/`, `node_modules/`: nunca entram no git.
+
+---
+
+*Documento vivo — a cada decisão, uma nova versão. Próximo passo: 3D (B2B
+manual: fatura fim do mês + baixa + adimplência), depois E2E do repasse até o
+verde e validação manual acumulada (3A-1→3D). Inter segue adiada para pós-3D.*

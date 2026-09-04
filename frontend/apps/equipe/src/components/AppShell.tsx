@@ -20,6 +20,7 @@ const sections = [
   ] },
   { label: 'Gestão', items: [
     { to: '/cadastros', label: 'Cadastros e acessos', icon: Settings, permission: 'catalog.view' },
+    { to: '/repasses', label: 'Repasses médicos', icon: WalletCards, permission: 'payouts.view' },
     { to: '/visao-geral?financeiro=1', label: 'Financeiro', icon: WalletCards },
     { to: '/visao-geral?mensagens=1', label: 'Bate-papo', icon: MessageCircle },
     { to: '/visao-geral?config=1', label: 'Configurações', icon: Settings },

@@ -168,6 +168,23 @@ class CashClosingTest extends TestCase
         $this->patchJson("/api/v1/team/appointments/{$appointment}/cancel", ['reason' => 'Paciente desistiu'])->assertOk();
     }
 
+    public function test_index_lists_open_registers_with_filters(): void
+    {
+        $this->travelTo(CarbonImmutable::parse('2026-09-04T07:00:00-03:00'));
+        $offering = $this->offeringWithWindow();
+        $cashier = User::factory()->create(['role' => UserRole::Cashier]);
+        $this->actingAs($cashier);
+        $register = $this->postJson('/api/v1/team/cash-registers', [
+            'unit_id' => $offering->unit_id, 'shift' => 'UNICO', 'float_amount' => '100.00',
+        ])->assertCreated()->json('data');
+
+        $this->getJson('/api/v1/team/cash-registers?status=ABERTO')
+            ->assertOk()->assertJsonCount(1, 'data')->assertJsonPath('data.0.id', $register['id']);
+        $this->getJson('/api/v1/team/cash-registers?status=FECHADO')->assertOk()->assertJsonCount(0, 'data');
+        $this->getJson("/api/v1/team/cash-registers?unit_id={$offering->unit_id}&status=ABERTO&from=2026-09-04&to=2026-09-04")
+            ->assertOk()->assertJsonCount(1, 'data');
+    }
+
     public function test_daily_report_totals_and_rbac(): void
     {
         $this->travelTo(CarbonImmutable::parse('2026-09-04T07:00:00-03:00'));

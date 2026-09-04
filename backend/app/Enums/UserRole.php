@@ -33,6 +33,10 @@ enum UserRole: string
                 'cash.operate',
                 'cash.close',
                 'discounts.validate',
+                'payouts.view',
+                'payouts.manage',
+                'payouts.confirm',
+                'payouts.pay',
             ],
             self::Supervisor => [
                 'prices.view',
@@ -49,9 +53,11 @@ enum UserRole: string
                 'cash.view',
                 'cash.close',
                 'discounts.validate',
+                'payouts.view',
+                'payouts.manage',
             ],
             self::Reception => ['prices.view', 'catalog.view', 'catalog-links.view', 'schedule.view', 'appointments.manage'],
-            self::Cashier => ['prices.view', 'schedule.view', 'cash.view', 'cash.operate', 'cash.close'],
+            self::Cashier => ['prices.view', 'schedule.view', 'catalog-links.view', 'cash.view', 'cash.operate', 'cash.close', 'payouts.view', 'payouts.pay'],
             self::Manager => [
                 'prices.view',
                 'catalog.view',
@@ -68,8 +74,12 @@ enum UserRole: string
                 'cash.operate',
                 'cash.close',
                 'discounts.validate',
+                'payouts.view',
+                'payouts.manage',
+                'payouts.confirm',
+                'payouts.pay',
             ],
-            self::Doctor => ['schedule.view'],
+            self::Doctor => ['schedule.view', 'catalog-links.view', 'payouts.view', 'payouts.confirm'],
         };
     }
 

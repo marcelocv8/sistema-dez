@@ -20,7 +20,11 @@ export type Permission =
   | 'cash.view'
   | 'cash.operate'
   | 'cash.close'
-  | 'discounts.validate';
+  | 'discounts.validate'
+  | 'payouts.view'
+  | 'payouts.manage'
+  | 'payouts.confirm'
+  | 'payouts.pay';
 
 export const clinicTimeZone = 'America/Fortaleza';
 

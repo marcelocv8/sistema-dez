@@ -105,12 +105,14 @@ class CashRegisterController extends Controller
         $totalDifference = '0.00';
         $totalSangria = '0.00';
         $totalVoid = '0.00';
+        $totalRepasse = '0.00';
         $gaps = [];
         foreach ($registers as $register) {
             $summary = $this->summary($register);
             $totalExpected = bcadd($totalExpected, $summary['expected_cash'], 2);
             $totalSangria = bcadd($totalSangria, $summary['sangria_total'], 2);
             $totalVoid = bcadd($totalVoid, $summary['void_total'], 2);
+            $totalRepasse = bcadd($totalRepasse, $summary['repasse_total'], 2);
             if ($register->status === 'FECHADO') {
                 $totalCounted = bcadd($totalCounted, (string) ($register->counted_cash ?? '0.00'), 2);
                 $totalDifference = bcadd($totalDifference, (string) ($register->cash_difference ?? '0.00'), 2);
@@ -142,6 +144,7 @@ class CashRegisterController extends Controller
                 'cash_difference' => $totalDifference,
                 'sangria_total' => $totalSangria,
                 'void_total' => $totalVoid,
+                'repasse_total' => $totalRepasse,
             ],
             'receipt_gaps' => $gaps,
         ]]);
@@ -274,9 +277,15 @@ class CashRegisterController extends Controller
         $especieIn = '0.00';
         $sangriaTotal = '0.00';
         $voidTotal = '0.00';
+        $repasseTotal = '0.00';
         foreach ($rows as $movement) {
-            if ($movement->type === 'SANGRIA') {
-                $sangriaTotal = bcadd($sangriaTotal, (string) $movement->net_amount, 2);
+            if ($movement->type === 'SANGRIA' || $movement->type === 'REPASSE') {
+                $sangriaTotal = $movement->type === 'SANGRIA'
+                    ? bcadd($sangriaTotal, (string) $movement->net_amount, 2)
+                    : $sangriaTotal;
+                $repasseTotal = $movement->type === 'REPASSE'
+                    ? bcadd($repasseTotal, (string) $movement->net_amount, 2)
+                    : $repasseTotal;
 
                 continue;
             }
@@ -298,7 +307,7 @@ class CashRegisterController extends Controller
                 $especieIn = bcadd($especieIn, (string) $movement->net_amount, 2);
             }
         }
-        $expected = bcsub(bcadd((string) $register->float_amount, $especieIn, 2), $sangriaTotal, 2);
+        $expected = bcsub(bcsub(bcadd((string) $register->float_amount, $especieIn, 2), $sangriaTotal, 2), $repasseTotal, 2);
 
         return [
             'receipt_count' => $rows->count(),
@@ -307,6 +316,7 @@ class CashRegisterController extends Controller
             'especie_in' => $especieIn,
             'sangria_total' => $sangriaTotal,
             'void_total' => $voidTotal,
+            'repasse_total' => $repasseTotal,
             'expected_cash' => $expected,
         ];
     }

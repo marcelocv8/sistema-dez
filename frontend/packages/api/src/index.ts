@@ -159,6 +159,39 @@ export type CashMovement = {
   proof_reference: string | null;
   payment_method: { id: UUID; code: string; name: string };
 };
+export type CommissionType = 'PERCENT' | 'FIXED';
+export type PayoutStatus = 'OPEN' | 'CONFIRMED' | 'CONTESTED' | 'PAID';
+export type ProfessionalCommission = {
+  id: UUID;
+  professional_id: UUID;
+  procedure_id: UUID;
+  procedure?: { id: UUID; name: string };
+  commission_type: CommissionType;
+  commission_value: string;
+};
+export type PayoutItem = {
+  id: UUID;
+  appointment_id: UUID;
+  gross_amount: string;
+  commission_amount: string;
+  rule: string;
+  appointment?: { id: UUID; scheduled_at: string; price_snapshot: string; payment_status: string; status: string; serviceOffering?: { procedure?: { id: UUID; name: string } } };
+};
+export type Payout = {
+  id: UUID;
+  professional_id: UUID;
+  professional?: { id: UUID; name: string };
+  period_from: string;
+  period_to: string;
+  status: PayoutStatus;
+  subtotal_gross: string;
+  total_commission: string;
+  contest_note: string | null;
+  proof_reference: string | null;
+  items?: PayoutItem[];
+  items_count?: number;
+  payment_method?: { id: UUID; code: string; name: string } | null;
+};
 export type DailyReport = {
   date: string;
   unit_id: UUID;
@@ -351,6 +384,25 @@ export const api = {
   closeCashBatch: async (items: CloseBatchItem[]) => (await request<ApiData<CloseBatchResult>>('/api/v1/team/cash-registers/close-batch', { method: 'POST', body: JSON.stringify({ items }) })).data,
   createSangria: async (id: string, input: SangriaInput) => (await request<ApiData<CashMovement>>(`/api/v1/team/cash-registers/${id}/sangrias`, { method: 'POST', body: JSON.stringify(input) })).data,
   voidAppointmentPayment: async (id: string, reason: string) => (await request<ApiData<CashMovement>>(`/api/v1/team/appointments/${id}/void-payment`, { method: 'POST', body: JSON.stringify({ reason }) })).data,
+  payouts: async (filters: { professional_id?: string; status?: PayoutStatus; from?: string; to?: string } = {}) =>
+    (await request<ApiData<Payout[]>>(`/api/v1/team/payouts?${queryString(filters)}`)).data,
+  payout: async (id: string) => (await request<ApiData<Payout>>(`/api/v1/team/payouts/${id}`)).data,
+  generatePayout: async (input: { professional_id: string; from: string; to: string }) =>
+    (await request<ApiData<Payout>>('/api/v1/team/payouts/generate', { method: 'POST', body: JSON.stringify(input) })).data,
+  confirmPayout: async (id: string) => (await request<ApiData<Payout>>(`/api/v1/team/payouts/${id}/confirm`, { method: 'POST' })).data,
+  contestPayout: async (id: string, note: string) => (await request<ApiData<Payout>>(`/api/v1/team/payouts/${id}/contest`, { method: 'POST', body: JSON.stringify({ note }) })).data,
+  adjustPayoutItem: async (itemId: string, commission_amount: string) =>
+    (await request<ApiData<PayoutItem>>(`/api/v1/team/payout-items/${itemId}/commission`, { method: 'PATCH', body: JSON.stringify({ commission_amount }) })).data,
+  payPayout: async (id: string, input: { payment_method_code: 'ESPECIE' | 'PIX'; cash_register_id?: string; proof_reference?: string }) =>
+    (await request<ApiData<Payout>>(`/api/v1/team/payouts/${id}/pay`, { method: 'POST', body: JSON.stringify(input) })).data,
+  myProfessional: async () =>
+    (await request<ApiData<{ id: UUID; name: string; commission_type: CommissionType; commission_value: string }>>('/api/v1/team/professionals/mine')).data,
+  professionalCommissions: async (professionalId: string) =>
+    (await request<ApiData<ProfessionalCommission[]>>(`/api/v1/team/professionals/${professionalId}/commissions`)).data,
+  saveProfessionalCommission: async (professionalId: string, input: { procedure_id: string; commission_type: CommissionType; commission_value: string }) =>
+    (await request<ApiData<ProfessionalCommission>>(`/api/v1/team/professionals/${professionalId}/commissions`, { method: 'POST', body: JSON.stringify(input) })).data,
+  deleteProfessionalCommission: async (professionalId: string, commissionId: string) =>
+    (await request(`/api/v1/team/professionals/${professionalId}/commissions/${commissionId}`, { method: 'DELETE' })),
   callPatient: (id: UUID) => request<{ ok: true }>(`/api/v1/queue/${id}/call`, { method: 'POST' }),
   publishReport: (id: UUID) => request<{ publishedAt: string }>(`/api/v1/reports/${id}/publish`, { method: 'POST' }),
 };

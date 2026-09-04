@@ -4,6 +4,7 @@ namespace App\Http\Requests\Api\V1;
 
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\Validator;
 
 class SaveCatalogRequest extends FormRequest
 {
@@ -48,9 +49,24 @@ class SaveCatalogRequest extends FormRequest
             'professionals' => $common + [
                 'council_acronym' => ['nullable', 'string', 'max:20'],
                 'council_number' => ['nullable', 'string', 'max:40'],
+                'commission_type' => ['required', Rule::in(['PERCENT', 'FIXED'])],
+                'commission_value' => ['required', 'numeric', 'min:0', 'max:1000000'],
+                'user_id' => ['nullable', 'integer', 'exists:users,id', Rule::unique('professionals', 'user_id')->ignore($id)],
                 'online_enabled' => ['required', 'boolean'],
             ],
             default => [],
         };
+    }
+
+    public function withValidator(Validator $validator): void
+    {
+        $validator->after(function (Validator $validator): void {
+            if ((string) $this->route('resource') !== 'professionals') {
+                return;
+            }
+            if (($this->input('commission_type') === 'PERCENT') && (float) $this->input('commission_value', 0) > 100) {
+                $validator->errors()->add('commission_value', 'Percentual de comissão não pode passar de 100.');
+            }
+        });
     }
 }

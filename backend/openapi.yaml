@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Sistema DEZ API
-  version: 0.8.0
+  version: 0.9.0
 servers:
   - url: http://localhost:8000/api/v1
 paths:
@@ -563,6 +563,118 @@ paths:
         '201': { description: Sangria registrada e auditada }
         '403': { description: Requer cash.operate }
         '422': { $ref: '#/components/responses/ValidationError' }
+  /team/payouts:
+    get:
+      summary: Lista repasses por profissional/período/status (médico vê só os próprios)
+      security: [{ cookieAuth: [] }]
+      parameters:
+        - { name: professional_id, in: query, schema: { type: string, format: uuid } }
+        - { name: status, in: query, schema: { type: string, enum: [OPEN, CONFIRMED, CONTESTED, PAID] } }
+        - { name: from, in: query, schema: { type: string, format: date } }
+        - { name: to, in: query, schema: { type: string, format: date } }
+      responses:
+        '200': { description: Repasses com contagem de itens }
+        '403': { description: Requer payouts.view }
+  /team/payouts/generate:
+    post:
+      summary: Gera repasse do médico no período a partir de fichas pagas e autorizadas
+      description: Requer payouts.manage; médicos com payouts.confirm geram apenas os próprios. Agrega fichas não-canceladas com pagamento PAID ou AUTHORIZED ainda sem repasse; comissão = override do procedimento ou padrão do profissional (fotografia por item). Idempotente por atendimento.
+      security: [{ cookieAuth: [] }]
+      requestBody: { required: true, content: { application/json: { schema: { type: object, required: [professional_id, from, to], properties: { professional_id: { type: string, format: uuid }, from: { type: string, format: date }, to: { type: string, format: date } } } } } }
+      responses:
+        '201': { description: Repasse aberto com itens e auditoria }
+        '403': { description: 'Requer payouts.manage (médico: só o próprio)' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+  /team/payouts/{id}:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+    get:
+      summary: Detalha repasse com itens, comissão e situação
+      security: [{ cookieAuth: [] }]
+      responses:
+        '200': { description: Repasse detalhado }
+        '403': { description: 'Requer payouts.view (médico: só os próprios)' }
+        '404': { description: Repasse não encontrado }
+  /team/payouts/{id}/confirm:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      summary: Médico confirma o repasse e libera o pagamento
+      description: Requer payouts.confirm. Médicos confirmam apenas os próprios repasses (vínculo usuário-profissional).
+      security: [{ cookieAuth: [] }]
+      responses:
+        '200': { description: Repasse confirmado e auditado }
+        '403': { description: 'Requer payouts.confirm (médico: só os próprios)' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+  /team/payouts/{id}/contest:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      summary: Médico contesta o repasse com justificativa
+      security: [{ cookieAuth: [] }]
+      requestBody: { required: true, content: { application/json: { schema: { type: object, required: [note], properties: { note: { type: string, minLength: 3, maxLength: 1000 } } } } } }
+      responses:
+        '200': { description: Repasse contestado e auditado }
+        '403': { description: 'Requer payouts.confirm (médico: só os próprios)' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+  /team/payouts/{id}/pay:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      summary: Paga repasse confirmado (espécie abate o caixa; PIX só registra)
+      description: Requer payouts.pay. Somente CONFIRMED. Em espécie exige caixa ABERTO e cria movimento REPASSE abatendo o dinheiro esperado; via PIX exige comprovante e não movimenta o caixa.
+      security: [{ cookieAuth: [] }]
+      requestBody: { required: true, content: { application/json: { schema: { type: object, required: [payment_method_code], properties: { payment_method_code: { type: string, enum: [ESPECIE, PIX] }, cash_register_id: { type: string, format: uuid }, proof_reference: { type: string, maxLength: 120 } } } } } }
+      responses:
+        '200': { description: Repasse pago e auditado }
+        '403': { description: Requer payouts.pay }
+        '422': { $ref: '#/components/responses/ValidationError' }
+  /team/payout-items/{id}/commission:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+    patch:
+      summary: Ajusta comissão de um item do repasse aberto ou contestado
+      security: [{ cookieAuth: [] }]
+      requestBody: { required: true, content: { application/json: { schema: { type: object, required: [commission_amount], properties: { commission_amount: { type: number, minimum: 0 } } } } } }
+      responses:
+        '200': { description: Item ajustado e auditado }
+        '403': { description: Requer payouts.manage }
+        '422': { $ref: '#/components/responses/ValidationError' }
+  /team/professionals/mine:
+    get:
+      summary: Profissional vinculado ao login do médico
+      security: [{ cookieAuth: [] }]
+      responses:
+        '200': { description: Profissional vinculado com comissão padrão }
+        '403': { description: Requer payouts.view }
+        '404': { description: Médico sem vínculo com profissional }
+  /team/professionals/{id}/commissions:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+    get:
+      summary: Lista overrides de comissão do profissional por procedimento
+      security: [{ cookieAuth: [] }]
+      responses:
+        '200': { description: Overrides de comissão }
+        '403': { description: Requer catalog.view }
+    post:
+      summary: Cria ou atualiza override de comissão por procedimento
+      security: [{ cookieAuth: [] }]
+      requestBody: { required: true, content: { application/json: { schema: { type: object, required: [procedure_id, commission_type, commission_value], properties: { procedure_id: { type: string, format: uuid }, commission_type: { type: string, enum: [PERCENT, FIXED] }, commission_value: { type: number, minimum: 0 } } } } } }
+      responses:
+        '201': { description: Override salvo e auditado }
+        '403': { description: Requer catalog.manage }
+        '422': { $ref: '#/components/responses/ValidationError' }
+  /team/professionals/{id}/commissions/{commissionId}:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      - { name: commissionId, in: path, required: true, schema: { type: string, format: uuid } }
+    delete:
+      summary: Remove override de comissão por procedimento
+      security: [{ cookieAuth: [] }]
+      responses:
+        '200': { description: Override removido e auditado }
+        '403': { description: Requer catalog.manage }
   /team/appointments/{id}/void-payment:
     parameters:
       - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
@@ -738,12 +850,35 @@ components:
         opened_at: { type: string, format: date-time }
         closed_at: { type: [string, 'null'], format: date-time }
         last_receipt_number: { type: integer }
+    Payout:
+      type: object
+      required: [id, professional_id, period_from, period_to, status, subtotal_gross, total_commission]
+      properties:
+        id: { type: string, format: uuid }
+        professional_id: { type: string, format: uuid }
+        professional: { $ref: '#/components/schemas/NamedEntity' }
+        period_from: { type: string, format: date }
+        period_to: { type: string, format: date }
+        status: { type: string, enum: [OPEN, CONFIRMED, CONTESTED, PAID] }
+        subtotal_gross: { type: string }
+        total_commission: { type: string }
+        contest_note: { type: [string, 'null'] }
+        proof_reference: { type: [string, 'null'] }
+    PayoutItem:
+      type: object
+      required: [id, appointment_id, gross_amount, commission_amount, rule]
+      properties:
+        id: { type: string, format: uuid }
+        appointment_id: { type: string, format: uuid }
+        gross_amount: { type: string }
+        commission_amount: { type: string }
+        rule: { type: string, enum: [DEFAULT_PERCENT, DEFAULT_FIXED, OVERRIDE_PERCENT, OVERRIDE_FIXED, MANUAL_ADJUST] }
     CashMovement:
       type: object
       required: [id, type, receipt_number, gross_amount, fee_amount, net_amount]
       properties:
         id: { type: string, format: uuid }
-        type: { type: string, enum: [RECEBIMENTO, SANGRIA, ESTORNO] }
+        type: { type: string, enum: [RECEBIMENTO, SANGRIA, ESTORNO, REPASSE] }
         receipt_number: { type: integer, description: Sequencial por caixa, sem lacuna (recebimentos, sangrias e estornos consomem a sequência). }
         gross_amount: { type: string }
         fee_amount: { type: string }

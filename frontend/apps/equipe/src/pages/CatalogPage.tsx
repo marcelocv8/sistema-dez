@@ -51,6 +51,8 @@ const resourceFields: Record<CatalogResource, Field[]> = {
   professionals: [
     { key: 'legacy_id', label: 'Código legado' }, { key: 'name', label: 'Nome' },
     { key: 'council_acronym', label: 'Conselho' }, { key: 'council_number', label: 'Número do conselho' },
+    { key: 'commission_type', label: 'Comissão', type: 'select', options: [['PERCENT', 'Percentual (%)'], ['FIXED', 'Valor fixo (R$)']] },
+    { key: 'commission_value', label: 'Valor da comissão (% ou R$)', type: 'number' },
     { key: 'online_enabled', label: 'Habilitado online', type: 'boolean' },
     { key: 'active', label: 'Ativo', type: 'boolean' },
   ],
@@ -60,7 +62,7 @@ const defaults: Record<CatalogResource, Record<string, unknown>> = {
   units: { legacy_id: null, name: '', timezone: 'America/Fortaleza', cnpj: null, active: true, operational_enabled: false },
   agreements: { legacy_id: null, name: '', type: 'AGREEMENT', is_default: false, online_enabled: false, requires_authorization: false, active: true },
   procedures: { legacy_id: null, name: '', type: 'EXAM', group_name: null, tuss_code: null, duration_minutes: 30, legacy: false, online_enabled: false, active: true },
-  professionals: { legacy_id: null, name: '', council_acronym: null, council_number: null, online_enabled: false, active: true },
+  professionals: { legacy_id: null, name: '', council_acronym: null, council_number: null, commission_type: 'PERCENT', commission_value: 0, user_id: null, online_enabled: false, active: true },
 };
 
 export default function CatalogPage({ user }: { user: CurrentUser }) {
@@ -129,7 +131,57 @@ function CatalogSection({ canManage }: { canManage: boolean }) {
       {save.isError ? <Alert tone="danger" title="Não foi possível salvar">Revise os campos obrigatórios e duplicidades.</Alert> : null}
       <div className="catalog-form-actions"><Button variant="outline" onClick={() => { setEditing(null); setForm(defaults[resource]); }}>Limpar</Button><Button icon={<Check size={16} />} disabled={save.isPending} onClick={() => save.mutate()}>{save.isPending ? 'Salvando...' : 'Salvar cadastro'}</Button></div>
     </Panel> : null}
+    {canManage && resource === 'professionals' && editing ? <ProfessionalExtras professionalId={editing.id} /> : null}
   </div>;
+}
+
+function ProfessionalExtras({ professionalId }: { professionalId: string }) {
+  const queryClient = useQueryClient();
+  const users = useQuery({ queryKey: ['team-users'], queryFn: api.teamUsers });
+  const commissions = useQuery({ queryKey: ['professional-commissions', professionalId], queryFn: () => api.professionalCommissions(professionalId) });
+  const options = useQuery({ queryKey: ['catalog-link-options'], queryFn: api.catalogLinkOptions });
+  const [userId, setUserId] = useState('');
+  const [procedureId, setProcedureId] = useState('');
+  const [ctype, setCtype] = useState<'PERCENT' | 'FIXED'>('PERCENT');
+  const [cvalue, setCvalue] = useState('10');
+  const refresh = () => queryClient.invalidateQueries({ queryKey: ['professional-commissions', professionalId] });
+  const saveUser = useMutation({
+    mutationFn: () => api.saveCatalog('professionals', { user_id: userId || null } as never, professionalId),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['catalog'] }),
+  });
+  const saveCommission = useMutation({
+    mutationFn: () => api.saveProfessionalCommission(professionalId, { procedure_id: procedureId, commission_type: ctype, commission_value: cvalue }),
+    onSuccess: async () => { setProcedureId(''); await refresh(); },
+  });
+  const removeCommission = useMutation({ mutationFn: (id: string) => api.deleteProfessionalCommission(professionalId, id), onSuccess: () => refresh() });
+
+  return <Panel className="catalog-form-panel">
+    <h2>Repasse do profissional</h2>
+    <p>Vincule o login do médico (confirmação) e os overrides por procedimento.</p>
+    <SelectField label="Login do médico (perfil DOCTOR)" value={userId} onChange={(event) => setUserId(event.target.value)}>
+      <option value="">Sem vínculo</option>
+      {(users.data ?? []).filter((item) => item.role === 'DOCTOR').map((item) => <option key={item.id} value={item.id}>{item.name} · {item.email}</option>)}
+    </SelectField>
+    {saveUser.isError ? <Alert tone="danger" title="Vínculo não salvo">Verifique se o usuário já está vinculado a outro profissional.</Alert> : null}
+    <div className="catalog-form-actions"><Button disabled={saveUser.isPending} onClick={() => saveUser.mutate()}>Vincular login</Button></div>
+    <h3>Overrides por procedimento</h3>
+    {commissions.isLoading ? <LoadingState label="Carregando overrides" /> : null}
+    {(commissions.data ?? []).map((item) => <div className="catalog-row" key={item.id}>
+      <span><strong>{item.procedure?.name ?? item.procedure_id}</strong><small>{item.commission_type === 'PERCENT' ? `${item.commission_value}%` : `R$ ${item.commission_value}`}</small></span>
+      <div className="catalog-actions"><Button variant="danger" disabled={removeCommission.isPending} onClick={() => removeCommission.mutate(item.id)}>Remover</Button></div>
+    </div>)}
+    {(commissions.data ?? []).length === 0 && !commissions.isLoading ? <EmptyState title="Sem overrides" description="Vale a comissão padrão do cadastro." /> : null}
+    <div className="catalog-form-grid">
+      <SelectField label="Procedimento" value={procedureId} onChange={(event) => setProcedureId(event.target.value)}>
+        <option value="">Selecione</option>
+        {options.data?.procedures.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
+      </SelectField>
+      <SelectField label="Tipo" value={ctype} onChange={(event) => setCtype(event.target.value as 'PERCENT' | 'FIXED')}><option value="PERCENT">Percentual (%)</option><option value="FIXED">Valor fixo (R$)</option></SelectField>
+      <TextField label="Valor" value={cvalue} inputMode="decimal" onChange={(event) => setCvalue(event.target.value)} />
+    </div>
+    {saveCommission.isError ? <Alert tone="danger" title="Override inválido">Revise procedimento, tipo e valor.</Alert> : null}
+    <div className="catalog-form-actions"><Button disabled={!procedureId || !cvalue || saveCommission.isPending} onClick={() => saveCommission.mutate()}>Salvar override</Button></div>
+  </Panel>;
 }
 
 function CatalogField({ field, value, onChange }: { field: Field; value: unknown; onChange: (value: unknown) => void }) {
@@ -184,7 +236,7 @@ function UsersSection() {
   const edit = (user: TeamUser) => { setEditing(user); setForm({ name: user.name, email: user.email, role: user.role, active: user.active, password: '' }); };
 
   return <div className="catalog-layout"><Panel className="catalog-list-panel">{users.isLoading ? <LoadingState label="Carregando usuários" /> : null}{users.data?.map((user) => <div className="catalog-row" key={user.id}><span><strong>{user.name}</strong><small>{user.email} · {user.role_label}</small></span><StatusPill tone={user.active ? 'success' : 'neutral'}>{user.active ? 'Ativo' : 'Inativo'}</StatusPill><Button variant="outline" icon={<Pencil size={15} />} onClick={() => edit(user)}>Editar</Button></div>)}</Panel>
-    <Panel className="catalog-form-panel"><h2>{editing ? 'Editar usuário' : 'Novo usuário'}</h2><div className="catalog-form-grid"><TextField label="Nome" value={String(form.name)} onChange={(event) => setForm((value) => ({ ...value, name: event.target.value }))} /><TextField label="E-mail" type="email" value={String(form.email)} onChange={(event) => setForm((value) => ({ ...value, email: event.target.value }))} /><SelectField label="Perfil" value={String(form.role)} onChange={(event) => setForm((value) => ({ ...value, role: event.target.value }))}><option value="RECEPTION">Recepção</option><option value="SUPERVISOR">Supervisor</option><option value="ADMIN">Administrador</option></SelectField><TextField label={editing ? 'Nova senha (opcional)' : 'Senha inicial (mín. 12 caracteres)'} type="password" value={String(form.password)} onChange={(event) => setForm((value) => ({ ...value, password: event.target.value }))} /><label className="catalog-check"><input type="checkbox" checked={Boolean(form.active)} onChange={(event) => setForm((value) => ({ ...value, active: event.target.checked }))} /><span>Usuário ativo</span></label></div>{save.isError ? <Alert tone="danger" title="Não foi possível salvar">Verifique senha, e-mail e a continuidade do acesso administrativo.</Alert> : null}<Button icon={<UserCog size={16} />} disabled={save.isPending} onClick={() => save.mutate()}>Salvar usuário</Button></Panel></div>;
+    <Panel className="catalog-form-panel"><h2>{editing ? 'Editar usuário' : 'Novo usuário'}</h2><div className="catalog-form-grid"><TextField label="Nome" value={String(form.name)} onChange={(event) => setForm((value) => ({ ...value, name: event.target.value }))} /><TextField label="E-mail" type="email" value={String(form.email)} onChange={(event) => setForm((value) => ({ ...value, email: event.target.value }))} /><SelectField label="Perfil" value={String(form.role)} onChange={(event) => setForm((value) => ({ ...value, role: event.target.value }))}><option value="RECEPTION">Recepção</option><option value="CASHIER">Caixa</option><option value="DOCTOR">Médico</option><option value="SUPERVISOR">Supervisor</option><option value="MANAGER">Gerente</option><option value="ADMIN">Administrador</option></SelectField><TextField label={editing ? 'Nova senha (opcional)' : 'Senha inicial (mín. 12 caracteres)'} type="password" value={String(form.password)} onChange={(event) => setForm((value) => ({ ...value, password: event.target.value }))} /><label className="catalog-check"><input type="checkbox" checked={Boolean(form.active)} onChange={(event) => setForm((value) => ({ ...value, active: event.target.checked }))} /><span>Usuário ativo</span></label></div>{save.isError ? <Alert tone="danger" title="Não foi possível salvar">Verifique senha, e-mail e a continuidade do acesso administrativo.</Alert> : null}<Button icon={<UserCog size={16} />} disabled={save.isPending} onClick={() => save.mutate()}>Salvar usuário</Button></Panel></div>;
 }
 
 function AuditSection() {

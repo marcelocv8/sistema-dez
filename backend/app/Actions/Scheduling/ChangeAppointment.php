@@ -4,6 +4,8 @@ namespace App\Actions\Scheduling;
 
 use App\Models\Appointment;
 use App\Models\AuditLog;
+use App\Models\Payout;
+use App\Models\PayoutItem;
 use App\Models\Professional;
 use App\Models\ScheduleOccurrence;
 use App\Models\ServiceOffering;
@@ -86,6 +88,18 @@ class ChangeAppointment
             }
             if ($appointment->payment_status === 'PAID') {
                 throw ValidationException::withMessages(['payment' => 'Ficha paga exige estorno no caixa (supervisor) antes do cancelamento.']);
+            }
+            $payoutItem = PayoutItem::query()->where('appointment_id', $appointment->id)->lockForUpdate()->first();
+            if ($payoutItem) {
+                $payout = Payout::query()->lockForUpdate()->findOrFail($payoutItem->payout_id);
+                if (in_array($payout->status, ['CONFIRMED', 'PAID'], true)) {
+                    throw ValidationException::withMessages(['payment' => 'Ficha em repasse confirmado ou pago: desfaça o repasse antes de cancelar.']);
+                }
+                $payoutItem->delete();
+                $payout->forceFill([
+                    'subtotal_gross' => (string) $payout->items()->sum('gross_amount'),
+                    'total_commission' => (string) $payout->items()->sum('commission_amount'),
+                ])->save();
             }
             $before = $appointment->attributesToArray();
             $appointment->update(['status' => 'CANCELLED', 'cancellation_reason' => $data['reason']]);

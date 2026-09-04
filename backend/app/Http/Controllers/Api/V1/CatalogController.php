@@ -171,7 +171,7 @@ class CatalogController extends Controller
             'units' => ['id', 'legacy_id', 'name', 'timezone', 'cnpj', 'active', 'operational_enabled', 'created_at', 'updated_at'],
             'agreements' => ['id', 'legacy_id', 'name', 'type', 'is_default', 'online_enabled', 'requires_authorization', 'active', 'classification_status', 'created_at', 'updated_at'],
             'procedures' => ['id', 'legacy_id', 'name', 'type', 'group_name', 'tuss_code', 'duration_minutes', 'active', 'legacy', 'online_enabled', 'classification_status', 'created_at', 'updated_at'],
-            'professionals' => ['id', 'legacy_id', 'name', 'council_acronym', 'council_number', 'active', 'online_enabled', 'classification_status', 'created_at', 'updated_at'],
+            'professionals' => ['id', 'legacy_id', 'name', 'council_acronym', 'council_number', 'commission_type', 'commission_value', 'user_id', 'active', 'online_enabled', 'classification_status', 'created_at', 'updated_at'],
         };
 
         return collect($item->only($fields))->map(fn (mixed $value) => $value instanceof \BackedEnum ? $value->value : $value)->all();
