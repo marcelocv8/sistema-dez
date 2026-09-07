@@ -9,6 +9,7 @@ export function AppointmentEditor({ appointment, initialDate, offerings, onClose
   const [date, setDate] = useState(initialDate);
   const [startsAt, setStartsAt] = useState('');
   const [reason, setReason] = useState('');
+  const [authCode, setAuthCode] = useState('');
   const [consent, setConsent] = useState(false);
   const [idempotencyKey] = useState(() => crypto.randomUUID());
   const [patient, setPatient] = useState({ name: '', cpf: '', phone: '', birth_date: '', email: '' });
@@ -23,6 +24,9 @@ export function AppointmentEditor({ appointment, initialDate, offerings, onClose
   const cancel = useMutation({ mutationFn: () => api.cancelAppointment(appointment!.id, reason), onSuccess: async () => { await onSaved(); onClose(); } });
   const checkIn = useMutation({ mutationFn: () => api.checkInAppointment(appointment!.id), onSuccess: () => onSaved() });
   const startCare = useMutation({ mutationFn: () => api.startCareAppointment(appointment!.id), onSuccess: () => onSaved() });
+  const authorizeB2B = useMutation({ mutationFn: () => api.authorizeB2BAppointment(appointment!.id, authCode.trim()), onSuccess: () => onSaved() });
+  const isB2B = Boolean(appointment?.agreement && appointment.agreement.is_default === false);
+  const canAuthorizeB2B = Boolean(appointment && isB2B && appointment.payment_status === 'PENDING' && (appointment.status === 'CONFIRMED' || appointment.status === 'CHECKED_IN'));
   const editable = !appointment || appointment.status === 'CONFIRMED';
   const canStartCare = appointment?.status === 'CHECKED_IN' && (appointment.payment_status === 'PAID' || appointment.payment_status === 'AUTHORIZED');
 
@@ -32,7 +36,12 @@ export function AppointmentEditor({ appointment, initialDate, offerings, onClose
       {appointment.status === 'CONFIRMED' ? <div className="catalog-form-actions"><Button disabled={checkIn.isPending} onClick={() => checkIn.mutate()}>{checkIn.isPending ? 'Registrando...' : 'Fazer check-in (chegada)'}</Button></div> : null}
       {appointment.status === 'CHECKED_IN' && !appointment.care_started_at ? <div className="catalog-form-actions"><Button disabled={!canStartCare || startCare.isPending} onClick={() => startCare.mutate()}>{startCare.isPending ? 'Iniciando...' : 'Iniciar atendimento'}</Button></div> : null}
       {appointment.status === 'CHECKED_IN' && !canStartCare && !appointment.care_started_at ? <p>O atendimento só inicia com pagamento confirmado no caixa ou autorização B2B.</p> : null}
-      {checkIn.isError || startCare.isError ? <Alert tone="danger" title="Ação não concluída">{apiErrorMessage(checkIn.error ?? startCare.error)}</Alert> : null}
+      {canAuthorizeB2B ? <div className="catalog-form-actions">
+        <TextField label="Código de autorização da empresa" value={authCode} minLength={3} required onChange={(event) => setAuthCode(event.target.value)} />
+        <Button disabled={authCode.trim().length < 3 || authorizeB2B.isPending} onClick={() => authorizeB2B.mutate()}>{authorizeB2B.isPending ? 'Autorizando...' : 'Autorizar B2B (fatura no fim do mês)'}</Button>
+      </div> : null}
+      {isB2B && appointment?.payment_status === 'PENDING' && !canAuthorizeB2B ? <p>Autorização B2B disponível após a confirmação da ficha.</p> : null}
+      {checkIn.isError || startCare.isError || authorizeB2B.isError ? <Alert tone="danger" title="Ação não concluída">{apiErrorMessage(checkIn.error ?? startCare.error ?? authorizeB2B.error)}</Alert> : null}
     </div> : null}
     {!editable ? <p>Este agendamento está {appointment?.status === 'CANCELLED' ? 'cancelado' : 'em andamento ou concluído'} e não pode ser alterado pela agenda. {appointment?.cancellation_reason}</p> : <form className="schedule-form" onSubmit={(event) => { event.preventDefault(); save.mutate(); }}>
       <div className="catalog-form-grid">

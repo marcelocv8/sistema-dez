@@ -17,6 +17,7 @@ export type Permission =
   | 'schedule.view'
   | 'schedule.manage'
   | 'appointments.manage'
+  | 'queue.call'
   | 'cash.view'
   | 'cash.operate'
   | 'cash.close'
@@ -24,7 +25,10 @@ export type Permission =
   | 'payouts.view'
   | 'payouts.manage'
   | 'payouts.confirm'
-  | 'payouts.pay';
+  | 'payouts.pay'
+  | 'b2b.view'
+  | 'b2b.manage'
+  | 'b2b.settle';
 
 export const clinicTimeZone = 'America/Fortaleza';
 

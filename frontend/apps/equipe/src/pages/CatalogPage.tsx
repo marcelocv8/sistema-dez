@@ -83,7 +83,7 @@ export default function CatalogPage({ user }: { user: CurrentUser }) {
     </div>
     {section === 'catalog' ? <CatalogSection canManage={user.permissions.includes('catalog.manage')} /> : null}
     {section === 'links' ? <LinksSection canManage={user.permissions.includes('catalog-links.manage')} /> : null}
-    {section === 'scheduling' ? <SchedulingSection /> : null}
+    {section === 'scheduling' ? <SchedulingSection user={user} /> : null}
     {section === 'issues' ? <IssuesSection canResolve={user.permissions.includes('imports.resolve')} /> : null}
     {section === 'users' ? <UsersSection /> : null}
     {section === 'audit' ? <AuditSection /> : null}

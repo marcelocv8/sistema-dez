@@ -25,6 +25,30 @@ function shiftDate(iso: string, days: number): string {
   return date.toISOString().slice(0, 10);
 }
 
+function shiftMonth(iso: string, months: number): string {
+  const base = new Date(`${iso}T12:00:00`);
+  return new Date(base.getFullYear(), base.getMonth() + months, 1, 12).toISOString().slice(0, 10);
+}
+
+function weekRange(iso: string): { from: string; to: string; days: string[] } {
+  const base = new Date(`${iso}T12:00:00`);
+  const monday = new Date(base);
+  monday.setDate(base.getDate() - ((base.getDay() + 6) % 7));
+  const days = Array.from({ length: 7 }, (_, index) => {
+    const day = new Date(monday);
+    day.setDate(monday.getDate() + index);
+    return day.toISOString().slice(0, 10);
+  });
+  return { from: days[0], to: days[6], days };
+}
+
+function monthRange(iso: string): { from: string; to: string } {
+  const base = new Date(`${iso}T12:00:00`);
+  const from = `${base.getFullYear()}-${String(base.getMonth() + 1).padStart(2, '0')}-01`;
+  const last = new Date(base.getFullYear(), base.getMonth() + 1, 0).getDate();
+  return { from, to: `${base.getFullYear()}-${String(base.getMonth() + 1).padStart(2, '0')}-${String(last).padStart(2, '0')}` };
+}
+
 function monthCells(iso: string): Array<{ day: number; iso: string; outside: boolean }> {
   const base = new Date(`${iso}T12:00:00`);
   const year = base.getFullYear();
@@ -47,7 +71,8 @@ export default function AgendaPage({ user }: { user: CurrentUser }) {
   const [professionalId, setProfessionalId] = useState('');
   const [editor, setEditor] = useState<Appointment | 'new' | null>(null);
   const offerings = useQuery({ queryKey: ['service-offerings'], queryFn: api.serviceOfferings });
-  const { data, isLoading, isError } = useQuery({ queryKey: ['appointments', date, professionalId], queryFn: () => api.appointments(date, { professional_id: professionalId || undefined }) });
+  const range = view === 'Dia' ? { from: date, to: date } : view === 'Semana' ? weekRange(date) : monthRange(date);
+  const { data, isLoading, isError } = useQuery({ queryKey: ['appointments', view, range.from, range.to, professionalId], queryFn: () => api.appointments(date, { professional_id: professionalId || undefined, from: range.from, to: range.to }) });
   const professionals = [...new Map((offerings.data ?? []).flatMap((item) => item.professional ? [[item.professional.id, item.professional] as const] : [])).values()];
   const canManage = user.permissions.includes('appointments.manage');
   // O modal edita sempre a cópia mais recente da lista: após check-in,
@@ -58,6 +83,14 @@ export default function AgendaPage({ user }: { user: CurrentUser }) {
     : `${editorAppointment.id}-${editorAppointment.status}-${editorAppointment.payment_status}-${editorAppointment.care_started_at ?? ''}`;
 
   const appointments = useMemo(() => (data?.data.appointments ?? []).filter((item) => !hidden.has(item.status)), [data, hidden]);
+  const byDay = useMemo(() => {
+    const map = new Map<string, Appointment[]>();
+    appointments.forEach((item) => {
+      const day = item.scheduled_at.slice(0, 10);
+      map.set(day, [...(map.get(day) ?? []), item]);
+    });
+    return map;
+  }, [appointments]);
   const slots = useMemo(() => [...new Set(appointments.map((item) => item.scheduled_at.slice(11, 16)))].sort(), [appointments]);
   const byDoctor = useMemo(() => {
     const map = new Map<string, Appointment[]>();
@@ -102,16 +135,17 @@ export default function AgendaPage({ user }: { user: CurrentUser }) {
       </aside>
       <Panel className="agenda-board">
         <header className="agenda-toolbar">
-          <div className="segmented">{(['Dia', 'Semana', 'Mês'] as const).map((item) => <button key={item} className={view === item ? 'active' : ''} disabled={item !== 'Dia'} title={item === 'Dia' ? undefined : 'Em breve'} onClick={() => setView(item)}>{item}</button>)}</div>
+          <div className="segmented">{(['Dia', 'Semana', 'Mês'] as const).map((item) => <button key={item} className={view === item ? 'active' : ''} onClick={() => setView(item)}>{item}</button>)}</div>
           <div className="date-controls">
             <Button variant="outline" onClick={() => setDate(todayIso())}>Hoje</Button>
-            <IconButton label="Dia anterior" onClick={() => setDate((current) => shiftDate(current, -1))}><ChevronLeft size={18} /></IconButton>
-            <IconButton label="Próximo dia" onClick={() => setDate((current) => shiftDate(current, 1))}><ChevronRight size={18} /></IconButton>
+            <IconButton label={view === 'Dia' ? 'Dia anterior' : view === 'Semana' ? 'Semana anterior' : 'Mês anterior'} onClick={() => setDate((current) => view === 'Dia' ? shiftDate(current, -1) : view === 'Semana' ? shiftDate(current, -7) : shiftMonth(current, -1))}><ChevronLeft size={18} /></IconButton>
+            <IconButton label={view === 'Dia' ? 'Próximo dia' : view === 'Semana' ? 'Próxima semana' : 'Próximo mês'} onClick={() => setDate((current) => view === 'Dia' ? shiftDate(current, 1) : view === 'Semana' ? shiftDate(current, 7) : shiftMonth(current, 1))}><ChevronRight size={18} /></IconButton>
           </div>
         </header>
         {isError ? <EmptyState title="Não foi possível carregar a agenda" description="Tente novamente em instantes." /> : null}
-        {!isError && appointments.length === 0 ? <EmptyState title="Nenhum agendamento para este dia" description="Os agendamentos aparecem aqui conforme são confirmados." /> : null}
-        {byDoctor.length > 0 ? <div className="agenda-grid" style={{ gridTemplateColumns: `56px repeat(${byDoctor.length},minmax(180px,1fr))`, minWidth: 56 + byDoctor.length * 180 }}>
+        {view !== 'Dia' ? <AgendaRangeView view={view} date={date} byDay={byDay} onPickDay={(day) => { setDate(day); setView('Dia'); }} /> : null}
+        {view === 'Dia' && !isError && appointments.length === 0 ? <EmptyState title="Nenhum agendamento para este dia" description="Os agendamentos aparecem aqui conforme são confirmados." /> : null}
+        {view === 'Dia' && byDoctor.length > 0 ? <div className="agenda-grid" style={{ gridTemplateColumns: `56px repeat(${byDoctor.length},minmax(180px,1fr))`, minWidth: 56 + byDoctor.length * 180 }}>
           <div className="time-column"><span className="doctor-spacer" />{slots.map((slot) => <time key={slot} style={{ height: slotHeights.get(slot) }}>{slot}</time>)}</div>
           {byDoctor.map(([doctor, items]) => <div className="doctor-column" key={doctor}>
             <div className="doctor-head"><span className={`doctor-avatar avatar-${doctor.length % 4}`}>{doctor.split(' ').slice(-1)[0][0]}</span><b>{doctor}</b></div>
@@ -122,6 +156,28 @@ export default function AgendaPage({ user }: { user: CurrentUser }) {
         </div> : null}
       </Panel>
     </div>
+  </div>;
+}
+
+function AgendaRangeView({ view, date, byDay, onPickDay }: { view: 'Semana' | 'Mês'; date: string; byDay: Map<string, Appointment[]>; onPickDay: (day: string) => void }) {
+  if (view === 'Semana') {
+    const { days } = weekRange(date);
+    return <div className="agenda-week">{days.map((day) => {
+      const items = byDay.get(day) ?? [];
+      return <button key={day} className="agenda-day" onClick={() => onPickDay(day)}>
+        <b>{new Intl.DateTimeFormat('pt-BR', { weekday: 'short', day: '2-digit', month: '2-digit' }).format(new Date(`${day}T12:00:00`))}</b>
+        <span>{items.length === 0 ? 'Sem fichas' : `${items.length} ficha(s)`}</span>
+        {items.slice(0, 4).map((item) => <small key={item.id}>{item.scheduled_at.slice(11, 16)} · {item.patient_name ?? item.procedure.name}</small>)}
+      </button>;
+    })}</div>;
+  }
+  return <div className="agenda-month">
+    <div className="calendar-week"><b>SEG</b><b>TER</b><b>QUA</b><b>QUI</b><b>SEX</b><b>SÁB</b><b>DOM</b></div>
+    <div className="calendar-week">{monthCells(date).map((cell, index) => {
+      if (cell.outside) return <span key={index} />;
+      const count = (byDay.get(cell.iso) ?? []).length;
+      return <button key={cell.iso} className={cell.iso === date ? 'selected' : ''} onClick={() => onPickDay(cell.iso)}>{cell.day}{count > 0 ? <i>{count}</i> : null}</button>;
+    })}</div>
   </div>;
 }
 

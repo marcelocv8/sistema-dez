@@ -3,6 +3,7 @@
 namespace Database\Seeders;
 
 use App\Enums\UserRole;
+use App\Models\Agreement;
 use App\Models\CatalogLink;
 use App\Models\ProcedurePrice;
 use App\Models\Professional;
@@ -29,6 +30,7 @@ class SchedulingE2ESeeder extends Seeder
             if ($pilotProfessional && $pilotProfessional->user_id === null) {
                 $pilotProfessional->update(['user_id' => $doctor->id]);
             }
+            $this->seedB2bCompany();
 
             return;
         }
@@ -38,5 +40,23 @@ class SchedulingE2ESeeder extends Seeder
         $price->agreement->update(['name' => 'PARTICULAR PILOTO', 'is_default' => true, 'requires_authorization' => false]);
         $professional = Professional::factory()->create(['name' => 'PROFISSIONAL PILOTO E2E', 'user_id' => $doctor->id]);
         CatalogLink::create(['unit_id' => $price->unit_id, 'procedure_id' => $price->procedure_id, 'professional_id' => $professional->id, 'agreement_id' => $price->agreement_id, 'active' => true]);
+        $this->seedB2bCompany();
+    }
+
+    private function seedB2bCompany(): void
+    {
+        $base = CatalogLink::query()->whereHas('professional', fn ($query) => $query->where('name', 'PROFISSIONAL PILOTO E2E'))
+            ->whereHas('agreement', fn ($query) => $query->where('name', 'PARTICULAR PILOTO'))->firstOrFail();
+        foreach (['EMPRESA PILOTO E2E', 'EMPRESA PILOTO E2E M'] as $name) {
+            if (Agreement::query()->where('name', $name)->exists()) {
+                continue;
+            }
+            $company = Agreement::factory()->create(['name' => $name, 'type' => 'B2B', 'is_default' => false, 'requires_authorization' => false, 'active' => true]);
+            ProcedurePrice::factory()->create([
+                'procedure_id' => $base->procedure_id, 'agreement_id' => $company->id, 'unit_id' => $base->unit_id, 'amount' => '150.00',
+            ]);
+            CatalogLink::create(['unit_id' => $base->unit_id, 'procedure_id' => $base->procedure_id,
+                'professional_id' => $base->professional_id, 'agreement_id' => $company->id, 'active' => true]);
+        }
     }
 }

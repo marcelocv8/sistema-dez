@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import { api, type QueueItem } from '@dez/api';
+import { api, type DashboardQueueItem } from '@dez/api';
 import { formatClinicDate } from '@dez/domain';
 import { EmptyState, LoadingState, Panel, SectionTitle, StatusPill } from '@dez/ui';
 
@@ -32,7 +32,7 @@ export default function DashboardPage() {
   </div>;
 }
 
-function QueueRow({ item }: { item: QueueItem }) {
+function QueueRow({ item }: { item: DashboardQueueItem }) {
   const meta = queueStatus[item.status] ?? { label: item.status, tone: 'info' as const };
   return <div><span>{item.patient_name ?? 'Paciente'}</span><time>{item.checked_in_at?.slice(11, 16) ?? '--:--'}</time><StatusPill tone={meta.tone}>{meta.label}</StatusPill></div>;
 }

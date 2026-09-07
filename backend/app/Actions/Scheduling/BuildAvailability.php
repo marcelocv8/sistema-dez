@@ -86,7 +86,7 @@ class BuildAvailability
             $operatingWindow = ['starts_at' => $start->toIso8601String(), 'ends_at' => $end->toIso8601String()];
 
             if ($offering->booking_mode === BookingMode::WalkInInfo) {
-                $rows[] = $this->row($offering, $date, $operatingWindow, []);
+                $rows[] = $this->row($offering, $date, $operatingWindow, [], $this->blockedPeriods($start, $end, $exceptions, $timezone));
 
                 continue;
             }
@@ -156,7 +156,7 @@ class BuildAvailability
         return $slots;
     }
 
-    private function row(ServiceOffering $offering, CarbonImmutable $date, array $operatingWindow, array $slots): array
+    private function row(ServiceOffering $offering, CarbonImmutable $date, array $operatingWindow, array $slots, array $blockedPeriods = []): array
     {
         return [
             'date' => $date->toDateString(),
@@ -165,6 +165,29 @@ class BuildAvailability
             'professional' => $offering->professional ? ['id' => $offering->professional->id, 'name' => $offering->professional->name] : null,
             'operating_window' => $operatingWindow,
             'slots' => $slots,
+            'blocked_periods' => $blockedPeriods,
         ];
+    }
+
+    /** @return list<array{starts_at: string, ends_at: string, reason: string}> */
+    private function blockedPeriods(CarbonImmutable $start, CarbonImmutable $end, Collection $exceptions, string $timezone): array
+    {
+
+        return $exceptions
+            ->filter(fn (ScheduleException $exception): bool => $exception->starts_at !== null && $exception->ends_at !== null)
+            ->map(function (ScheduleException $exception) use ($start, $end, $timezone): array {
+                $blockedStart = $start->startOfDay()->setTimeFromTimeString($exception->starts_at);
+                $blockedEnd = $start->startOfDay()->setTimeFromTimeString($exception->ends_at);
+                $from = $blockedStart->greaterThan($start) ? $blockedStart : $start;
+                $to = $blockedEnd->lessThan($end) ? $blockedEnd : $end;
+
+                return [
+                    'starts_at' => $from->setTimezone($timezone)->toIso8601String(),
+                    'ends_at' => $to->setTimezone($timezone)->toIso8601String(),
+                    'reason' => (string) $exception->reason,
+                ];
+            })
+            ->filter(fn (array $period): bool => $period['starts_at'] < $period['ends_at'])
+            ->values()->all();
     }
 }

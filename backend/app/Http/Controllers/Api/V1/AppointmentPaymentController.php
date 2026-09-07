@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api\V1;
 
 use App\Http\Controllers\Controller;
 use App\Models\Appointment;
+use App\Models\B2bInvoice;
 use App\Models\CashMovement;
 use App\Models\CashRegister;
 use App\Models\PaymentMethod;
@@ -100,7 +101,7 @@ class AppointmentPaymentController extends Controller
             }
             $before = $appointment->attributesToArray();
             $appointment->forceFill(['status' => 'CHECKED_IN'])->save();
-            $this->moveQueue($appointment, 'WAITING', true);
+            $this->moveQueue($appointment, 'WAITING');
             $this->audit->record($request, $appointment, 'visit.checked_in', $before, $appointment->attributesToArray());
 
             return $appointment;
@@ -202,6 +203,16 @@ class AppointmentPaymentController extends Controller
             if (! $agreement->active || $agreement->is_default) {
                 throw ValidationException::withMessages(['appointment' => 'Autorização B2B exige convênio empresarial ativo (não o Particular padrão).']);
             }
+            $today = CarbonImmutable::today(config('sistema_dez.timezone'))->toDateString();
+            $overdue = B2bInvoice::query()->where('agreement_id', $agreement->id)
+                ->whereIn('status', ['EMITIDA', 'ENVIADA'])
+                ->where('due_at', '<', $today)
+                ->whereColumn('settled_amount', '<', 'subtotal_gross')
+                ->orderBy('competence')->limit(5)->get();
+            if ($overdue->isNotEmpty()) {
+                $competences = $overdue->map(fn (B2bInvoice $invoice): string => $invoice->competence->format('m/Y'))->implode(', ');
+                throw ValidationException::withMessages(['appointment' => "Empresa {$agreement->name} possui fatura(s) vencida(s) em aberto (competência {$competences}). Regularize no módulo B2B antes de autorizar."]);
+            }
             $before = $appointment->attributesToArray();
             $appointment->forceFill(['payment_status' => 'AUTHORIZED', 'b2b_authorization_code' => $data['authorization_code']])->save();
             $this->audit->record($request, $appointment, 'payment.authorized_b2b', $before, $appointment->attributesToArray());
@@ -212,15 +223,13 @@ class AppointmentPaymentController extends Controller
         return response()->json(['data' => ['id' => $appointment->id, 'payment_status' => $appointment->payment_status]]);
     }
 
-    private function moveQueue(Appointment $appointment, string $status, bool $createOnly = false): void
+    private function moveQueue(Appointment $appointment, string $status): void
     {
         $offering = $appointment->serviceOffering()->with('unit')->firstOrFail();
         $serviceDate = CarbonImmutable::parse($appointment->scheduled_at)->setTimezone($offering->unit->timezone)->toDateString();
         $entry = QueueEntry::query()->where('appointment_id', $appointment->id)->first();
         if ($entry) {
-            if (! $createOnly) {
-                $entry->forceFill(['status' => $status])->save();
-            }
+            $entry->forceFill(['status' => $status])->save();
 
             return;
         }

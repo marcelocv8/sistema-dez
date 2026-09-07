@@ -4,10 +4,10 @@ namespace Tests\Feature;
 
 use App\Enums\UserRole;
 use App\Models\Appointment;
-use App\Models\Patient;
 use App\Models\QueueEntry;
 use App\Models\Unit;
 use App\Models\User;
+use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
@@ -19,18 +19,19 @@ class DashboardControllerTest extends TestCase
     {
         $user = User::factory()->create(['role' => UserRole::Reception]);
         $unit = Unit::factory()->create();
-        $appointment = Appointment::factory()->create(['scheduled_at' => today()->setTime(9, 0)]);
+        $today = CarbonImmutable::today((string) config('sistema_dez.timezone'));
+        $appointment = Appointment::factory()->create(['scheduled_at' => $today->utc()->setTime(9, 0)]);
         $patient = $appointment->patient;
         $offering = $appointment->serviceOffering;
 
         QueueEntry::factory()->createMany([
-            ['unit_id' => $unit->id, 'service_offering_id' => $offering->id, 'service_date' => today(), 'checked_in_at' => today()->setTime(8, 0), 'original_sequence' => 1, 'status' => 'WAITING', 'appointment_id' => $appointment->id],
-            ['unit_id' => $unit->id, 'service_offering_id' => $offering->id, 'service_date' => today(), 'checked_in_at' => today()->setTime(8, 5), 'original_sequence' => 2, 'status' => 'IN_SERVICE'],
-            ['unit_id' => $unit->id, 'service_offering_id' => $offering->id, 'service_date' => today(), 'checked_in_at' => today()->setTime(8, 10), 'original_sequence' => 3, 'status' => 'FINISHED'],
+            ['unit_id' => $unit->id, 'service_offering_id' => $offering->id, 'service_date' => $today->toDateString(), 'checked_in_at' => $today->utc()->setTime(8, 0), 'original_sequence' => 1, 'status' => 'WAITING', 'appointment_id' => $appointment->id],
+            ['unit_id' => $unit->id, 'service_offering_id' => $offering->id, 'service_date' => $today->toDateString(), 'checked_in_at' => $today->utc()->setTime(8, 5), 'original_sequence' => 2, 'status' => 'IN_SERVICE'],
+            ['unit_id' => $unit->id, 'service_offering_id' => $offering->id, 'service_date' => $today->toDateString(), 'checked_in_at' => $today->utc()->setTime(8, 10), 'original_sequence' => 3, 'status' => 'FINISHED'],
         ]);
         QueueEntry::factory()->create([
-            'unit_id' => $unit->id, 'service_offering_id' => $offering->id, 'service_date' => today()->subDay(),
-            'checked_in_at' => today()->subDay()->setTime(8, 0), 'original_sequence' => 4, 'status' => 'WAITING',
+            'unit_id' => $unit->id, 'service_offering_id' => $offering->id, 'service_date' => $today->subDay()->toDateString(),
+            'checked_in_at' => $today->subDay()->utc()->setTime(8, 0), 'original_sequence' => 4, 'status' => 'WAITING',
         ]);
 
         $this->actingAs($user)

@@ -13,6 +13,7 @@ const ReportPage = lazy(() => import('./pages/ReportPage'));
 const PricesPage = lazy(() => import('./pages/PricesPage'));
 const CatalogPage = lazy(() => import('./pages/CatalogPage'));
 const CashPage = lazy(() => import('./pages/CashPage'));
+const B2bPage = lazy(() => import('./pages/B2bPage'));
 const RepassesPage = lazy(() => import('./pages/RepassesPage'));
 
 export function App() {
@@ -25,11 +26,12 @@ export function App() {
   return <BrowserRouter><AppShell user={currentUser.data} onLogout={async () => { await api.logout(); queryClient.setQueryData(['current-user'], null); }}><Suspense fallback={<LoadingState label="Carregando módulo" />}><Routes>
     <Route path="/visao-geral" element={<DashboardPage />} />
     <Route path="/agenda" element={<AgendaPage user={currentUser.data} />} />
-    <Route path="/recepcao" element={<ReceptionPage />} />
+    <Route path="/recepcao" element={<ReceptionPage user={currentUser.data} />} />
     <Route path="/laudos/:id?" element={<ReportPage />} />
     <Route path="/precos" element={<PricesPage />} />
     <Route path="/cadastros" element={<CatalogPage user={currentUser.data} />} />
     <Route path="/caixa" element={<CashPage user={currentUser.data} />} />
+    <Route path="/faturamento-b2b" element={<B2bPage user={currentUser.data} />} />
     <Route path="/repasses" element={<RepassesPage user={currentUser.data} />} />
     <Route path="*" element={<Navigate to="/visao-geral" replace />} />
   </Routes></Suspense></AppShell></BrowserRouter>;

@@ -1,22 +1,151 @@
-import { useMemo, useState } from 'react';
-import { BellRing, Check, Clock3, MessageCircle, Search, UserRoundPlus } from 'lucide-react';
-import { Alert, Button, Panel, SectionTitle, StatusPill } from '@dez/ui';
+import { useState } from 'react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useSearchParams } from 'react-router-dom';
+import { BellRing, Check, UserRoundPlus } from 'lucide-react';
+import { api, apiErrorMessage, type Appointment, type CurrentUser, type QueueItem } from '@dez/api';
+import { Alert, Button, EmptyState, LoadingState, Panel, SectionTitle, SelectField, StatusPill, TextField } from '@dez/ui';
 
-const initialQueue = [
-  ['1','Maria Aparecida Silva','09:00','Sala 01','Dra. Camila Soares','22 min'], ['2','João Pedro Lima','09:15','Sala 01','Dra. Camila Soares','7 min'], ['3','Ana Beatriz Martins','09:30','Sala 02','Dr. Carlos Mendes','12 min'], ['4','Lucas Ferreira Costa','09:30','Sala 03','Dra. Juliana Rocha','12 min'], ['5','Fernanda Oliveira','09:45','Sala 01','Dra. Camila Soares','27 min'], ['6','Rafael Souza Andrade','10:00','Sala 02','Dr. Carlos Mendes','42 min'],
-];
+const paymentMeta = (status: Appointment['payment_status'] | null) => status === 'PAID'
+  ? { label: 'Pago', tone: 'success' as const }
+  : status === 'AUTHORIZED'
+    ? { label: 'Autorizado B2B', tone: 'info' as const }
+    : { label: 'Aguardando pagamento', tone: 'warning' as const };
+const queueStatus: Record<string, { label: string; tone: 'success' | 'warning' | 'purple' | 'info' }> = {
+  WAITING: { label: 'Na fila', tone: 'warning' },
+  CALLED: { label: 'Chamado', tone: 'info' },
+  IN_SERVICE: { label: 'Em atendimento', tone: 'purple' },
+  CHECKOUT: { label: 'Em caixa', tone: 'info' },
+  FINISHED: { label: 'Concluído', tone: 'success' },
+};
+const today = () => new Date().toLocaleDateString('en-CA', { timeZone: 'America/Fortaleza' });
 
-export default function ReceptionPage() {
-  const [queue, setQueue] = useState(initialQueue);
-  const [selected, setSelected] = useState<string | null>(null);
+export default function ReceptionPage({ user }: { user?: CurrentUser } = {}) {
+  const client = useQueryClient();
+  const [params, setParams] = useSearchParams();
+  const tab = params.get('fila') === '1' ? 'fila' : 'checkin';
+  const [date, setDate] = useState(today);
+  const [unitId, setUnitId] = useState('');
+  const [priorityFor, setPriorityFor] = useState('');
+  const [priorityCode, setPriorityCode] = useState('');
+  const [priorityReason, setPriorityReason] = useState('');
   const [notice, setNotice] = useState('');
-  const selectedPatient = useMemo(() => queue.find(item => item[0]===selected), [queue, selected]);
-  function checkIn() { if (!selectedPatient) return; setNotice(`${selectedPatient[1]} entrou na fila.`); setSelected(null); }
-  function callNext() { const next = queue[0]; if (!next) return; setNotice(`Chamando ${next[1]} para ${next[3]}.`); setQueue(items => items.slice(1)); }
-  return <div className="page reception-page"><div className="page-heading"><div><h1>Recepção</h1><p>Fila, salas e check-in em uma única visão</p></div><span className="live-indicator"><i />Atualizado agora</span></div>{notice ? <div className="toast" role="status"><Check size={16}/>{notice}</div> : null}
-    <div className="reception-grid"><Panel className="queue-panel"><SectionTitle title="Fila de hoje" action={<b className="teal">{queue.length} aguardando</b>} /><div className="queue-tabs"><button className="active">Todas as salas</button><button>Meu consultório</button><button>Fisioterapia</button></div><div className="queue-list">{queue.map(([id,name,time,room,doctor,wait]) => <button key={id} className={selected===id?'selected':''} onClick={() => setSelected(id)}><span className="queue-number">{id}</span><span><strong>{name}</strong><small>{time} · Consulta · Particular</small></span><span><small>{room}</small><small>{doctor}</small></span><time>{wait}</time></button>)}</div><div className="reception-actions"><Button variant="success" icon={<UserRoundPlus size={16}/>} disabled={!selected} onClick={checkIn}>Fazer check-in</Button><Button variant="danger" icon={<BellRing size={16}/>} onClick={callNext}>Chamar próxima</Button><Button variant="purple" icon={<MessageCircle size={16}/>}>Enviar mensagem</Button></div></Panel>
-      <div className="rooms-stack"><Panel><SectionTitle title="Salas em atendimento" />{[['Sala 01','Dra. Camila Soares','Marcos Vinícius Ribeiro','João Pedro Lima'],['Sala 02','Dr. Carlos Mendes','Cláudia Regina Martins','Ana Beatriz Martins'],['Sala 03','Dra. Juliana Rocha','—','Lucas Ferreira Costa']].map(([room,doctor,current,next]) => <div className="room-row" key={room}><div><strong>{room}</strong><span>{doctor}</span></div><StatusPill tone={current==='—'?'warning':'success'}>{current==='—'?'Aguardando':'Em atendimento'}</StatusPill><div className="room-patients"><span><small>Paciente atual</small><b>{current}</b></span><span><small>Próximo</small><b>{next}</b></span></div></div>)}</Panel><Panel><SectionTitle title="Próximas consultas" /><div className="upcoming-list">{[['10:45','Patrícia Gomes Beltrão','Dra. Camila Soares'],['11:00','Thiago Nascimento Silva','Dr. Carlos Mendes'],['11:15','Carolina Mendes Paiva','Dra. Juliana Rocha']].map(([time,name,doctor]) => <div key={time}><time>{time}</time><b>{name}</b><span>{doctor}</span></div>)}</div></Panel></div>
-      <div className="checkin-stack"><Panel className="checkin-panel"><SectionTitle title="Fazer check-in" /><div className="checkin-form"><label className="inline-search"><Search size={16}/><input placeholder="Buscar paciente" /></label><div className="selected-patient"><small>Paciente selecionado</small><strong>{selectedPatient?.[1] ?? 'Selecione um paciente na fila'}</strong></div>{['Horário','Profissional','Especialidade','Convênio / Plano','Situação do pagamento'].map(label => <div className="checkin-detail" key={label}><span>{label}</span><b>{selectedPatient ? 'Confirmado' : '—'}</b></div>)}<Button variant="success" icon={<Check size={17}/>} disabled={!selected} onClick={checkIn}>Fazer check-in</Button></div></Panel><Panel className="reception-alerts"><SectionTitle title="Alertas" /><Alert tone="danger" title="Consultas sem pagamento">7 consultas de hoje sem pagamento registrado.</Alert><Alert title="Fila com atraso">Sala 01 com 22 min de atraso.</Alert><Alert tone="info" title="Confirmações pendentes">4 pacientes precisam de ligação.</Alert></Panel></div>
+  const canManage = user?.permissions.includes('appointments.manage') ?? true;
+  const canCall = user?.permissions.includes('queue.call') ?? true;
+
+  const options = useQuery({ queryKey: ['scheduling-options'], queryFn: () => api.schedulingOptions() });
+  const units = options.data?.units ?? [];
+  const queue = useQuery({ queryKey: ['queue', date, unitId], queryFn: () => api.queue({ date, unit_id: unitId || undefined }) });
+  const day = useQuery({ queryKey: ['appointments', date], queryFn: () => api.appointments(date) });
+  const history = useQuery({ queryKey: ['queue-history', date], queryFn: () => api.queueHistory({ date }) });
+  const conflicts = useQuery({ queryKey: ['schedule-conflicts'], queryFn: () => api.scheduleConflicts(), enabled: canManage });
+
+  const rows = queue.data?.queue ?? [];
+  const priorities = queue.data?.priorities ?? [];
+  const fichas = day.data?.data.appointments ?? [];
+  const toCheckIn = fichas.filter((item) => item.status === 'CONFIRMED');
+  const unpaid = fichas.filter((item) => item.status !== 'CANCELLED' && item.payment_status === 'PENDING').length;
+  const waiting = rows.filter((item) => item.status === 'WAITING' || item.status === 'CALLED').length;
+
+  const refresh = () => Promise.all([
+    client.invalidateQueries({ queryKey: ['queue'] }),
+    client.invalidateQueries({ queryKey: ['appointments'] }),
+    client.invalidateQueries({ queryKey: ['queue-history'] }),
+  ]);
+  const checkIn = useMutation({
+    mutationFn: (id: string) => api.checkInAppointment(id),
+    onSuccess: async (_data, id) => {
+      setNotice(`Check-in registrado para ${fichas.find((item) => item.id === id)?.patient_name ?? 'o paciente'}.`);
+      await refresh();
+    },
+  });
+  const call = useMutation({
+    mutationFn: (item: QueueItem) => api.callQueue(item.id),
+    onSuccess: async (_data, item) => {
+      setNotice(`Chamando ${item.ticket} · ${item.patient_name ?? 'paciente'}${item.professional_name ? ` — ${item.professional_name}` : ''}.`);
+      await refresh();
+    },
+  });
+  const reorder = useMutation({
+    mutationFn: () => api.reorderQueue(priorityFor, { priority_code: priorityCode || null, priority_reason: priorityReason }),
+    onSuccess: async () => {
+      setPriorityFor('');
+      setPriorityCode('');
+      setPriorityReason('');
+      await refresh();
+    },
+  });
+
+  return <div className="page reception-page">
+    <div className="page-heading"><div><h1>Recepção</h1><p>Check-in, fila de hoje e chamadas — {waiting} aguardando</p></div></div>
+    {notice ? <div className="toast" role="status"><Check size={16} />{notice}</div> : null}
+    <div className="queue-tabs">
+      <button className={tab === 'checkin' ? 'active' : ''} onClick={() => setParams({})}>Check-in</button>
+      <button className={tab === 'fila' ? 'active' : ''} onClick={() => setParams({ fila: '1' })}>Fila de hoje</button>
+    </div>
+    <Panel>
+      <div className="catalog-form-grid">
+        <TextField label="Data" type="date" value={date} onChange={(event) => setDate(event.target.value)} />
+        <SelectField label="Unidade" value={unitId} onChange={(event) => setUnitId(event.target.value)}>
+          <option value="">Todas</option>
+          {units.map((unit) => <option key={unit.id} value={unit.id}>{unit.name}</option>)}
+        </SelectField>
+      </div>
+    </Panel>
+    {(conflicts.data?.length ?? 0) > 0 ? <Alert tone="warning" title={`${conflicts.data?.length} pendência(s) de escala com agendamentos`}>Mudanças de escala afetaram fichas marcadas. Resolva com o médico ou o paciente na aba Ofertas e horários (pendências de escala).</Alert> : null}
+    {tab === 'fila' ? <Panel className="queue-panel">
+      <SectionTitle title="Fila de hoje" action={<b className="teal">{waiting} aguardando</b>} />
+      {queue.isLoading ? <LoadingState label="Carregando fila" /> : null}
+      {queue.isError ? <Alert tone="danger" title="Fila indisponível">{apiErrorMessage(queue.error)}</Alert> : null}
+      {!queue.isLoading && rows.length === 0 ? <EmptyState title="Fila vazia" description="Fichas com check-in aparecem aqui na ordem de chegada, com a prioridade legal sugerida." /> : null}
+      <div className="queue-list">{rows.map((item) => {
+        const payment = paymentMeta(item.payment_status);
+        const status = queueStatus[item.status] ?? { label: item.status, tone: 'info' as const };
+        return <div className="queue-row" key={item.id}>
+          <span className="queue-number">{item.ticket}</span>
+          <span><strong>{item.patient_name ?? 'Paciente'}</strong><small>{item.procedure_name} · {item.professional_name ?? 'Sem profissional'} · {item.checked_in_at?.slice(11, 16) ?? '--:--'}</small></span>
+          <span><StatusPill tone={payment.tone}>{payment.label}</StatusPill><StatusPill tone={status.tone}>{status.label}</StatusPill>{item.priority_label ? <StatusPill tone="purple">{item.priority_label}</StatusPill> : null}</span>
+          <span className="queue-position">#{item.suggested_position}</span>
+          <div className="catalog-actions">
+            <Button variant="danger" icon={<BellRing size={16} />} disabled={!canCall || call.isPending || (item.status !== 'WAITING' && item.status !== 'CALLED')} onClick={() => call.mutate(item)}>Chamar</Button>
+            {canManage ? <Button variant="outline" onClick={() => { setPriorityFor(item.id); setPriorityCode(item.priority_code ?? ''); setPriorityReason(''); }}>Prioridade</Button> : null}
+          </div>
+          {priorityFor === item.id ? <form className="schedule-form" onSubmit={(event) => { event.preventDefault(); reorder.mutate(); }}>
+            <div className="catalog-form-grid">
+              <SelectField label="Prioridade legal" value={priorityCode} onChange={(event) => setPriorityCode(event.target.value)}>
+                <option value="">Sem prioridade (ordem de chegada)</option>
+                {priorities.map((priority) => <option key={priority.code} value={priority.code}>{priority.label}</option>)}
+              </SelectField>
+              <TextField label="Motivo (auditoria)" value={priorityReason} minLength={3} required onChange={(event) => setPriorityReason(event.target.value)} />
+            </div>
+            {reorder.isError ? <Alert tone="danger" title="Prioridade não aplicada">{apiErrorMessage(reorder.error)}</Alert> : null}
+            <div className="catalog-form-actions"><Button type="button" variant="outline" onClick={() => setPriorityFor('')}>Cancelar</Button><Button type="submit" disabled={reorder.isPending || priorityReason.trim().length < 3}>Confirmar ordem</Button></div>
+          </form> : null}
+        </div>;
+      })}</div>
+      {call.isError ? <Alert tone="danger" title="Chamada não registrada">{apiErrorMessage(call.error)}</Alert> : null}
+    </Panel> : <Panel className="checkin-panel">
+      <SectionTitle title="Fazer check-in" action={<b className="teal">{toCheckIn.length} fichas confirmadas</b>} />
+      {day.isLoading ? <LoadingState label="Buscando fichas do dia" /> : null}
+      {day.isError ? <Alert tone="danger" title="Fichas indisponíveis">{apiErrorMessage(day.error)}</Alert> : null}
+      {!day.isLoading && toCheckIn.length === 0 ? <EmptyState title="Nenhuma ficha para check-in" description="Agendamentos confirmados do dia aparecem aqui para dar entrada na fila." /> : null}
+      <div className="queue-list">{toCheckIn.map((item) => {
+        const payment = paymentMeta(item.payment_status);
+        return <div className="queue-row" key={item.id}>
+          <span><strong>{item.patient_name ?? 'Paciente'}</strong><small>{item.scheduled_at.slice(11, 16)} · {item.procedure.name} · {item.professional?.name} · {item.agreement?.name}</small></span>
+          <StatusPill tone={payment.tone}>{payment.label}</StatusPill>
+          <div className="catalog-actions"><Button variant="success" icon={<UserRoundPlus size={16} />} disabled={!canManage || checkIn.isPending} onClick={() => checkIn.mutate(item.id)}>Fazer check-in</Button></div>
+        </div>;
+      })}</div>
+      {checkIn.isError ? <Alert tone="danger" title="Check-in não registrado">{apiErrorMessage(checkIn.error)}</Alert> : null}
+    </Panel>}
+    <div className="rooms-stack">
+      <Panel><SectionTitle title="Últimas chamadas" />
+        {(history.data ?? []).length === 0 ? <p>Nenhuma chamada registrada hoje.</p> : null}
+        {(history.data ?? []).slice(0, 5).map((item) => <div className="room-row" key={item.id}><div><strong>{item.ticket}</strong><span>{item.patient_name ?? 'Paciente'} · {item.procedure_name}</span></div><small>{item.called_at?.slice(11, 16)}</small></div>)}
+      </Panel>
+      <Panel className="reception-alerts"><SectionTitle title="Alertas" />
+        {unpaid > 0 ? <Alert tone="danger" title="Fichas sem pagamento">{unpaid} ficha(s) do dia sem pagamento registrado — o atendimento só inicia com caixa ou B2B.</Alert> : <Alert title="Pagamentos em dia">Nenhuma ficha do dia sem pagamento ou autorização.</Alert>}
+      </Panel>
     </div>
   </div>;
 }

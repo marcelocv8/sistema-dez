@@ -117,7 +117,7 @@ class TeamAppointmentController extends Controller
             'origin' => $appointment->origin,
             'patient_name' => $appointment->patient?->name,
             'unit' => ['id' => $offering->unit->id, 'name' => $offering->unit->name],
-            'agreement' => ['id' => $offering->agreement->id, 'name' => $offering->agreement->name],
+            'agreement' => ['id' => $offering->agreement->id, 'name' => $offering->agreement->name, 'is_default' => $offering->agreement->is_default],
             'cancellation_reason' => $appointment->cancellation_reason,
             'professional' => $professional === null ? null : [
                 'id' => $professional->id,

@@ -4,9 +4,11 @@ namespace App\Actions\Scheduling;
 
 use App\Models\Appointment;
 use App\Models\AuditLog;
+use App\Models\B2bInvoiceItem;
 use App\Models\Payout;
 use App\Models\PayoutItem;
 use App\Models\Professional;
+use App\Models\QueueEntry;
 use App\Models\ScheduleOccurrence;
 use App\Models\ServiceOffering;
 use App\Services\AuditRecorder;
@@ -89,6 +91,12 @@ class ChangeAppointment
             if ($appointment->payment_status === 'PAID') {
                 throw ValidationException::withMessages(['payment' => 'Ficha paga exige estorno no caixa (supervisor) antes do cancelamento.']);
             }
+            $invoiced = B2bInvoiceItem::query()->where('appointment_id', $appointment->id)
+                ->whereHas('invoice', fn ($query) => $query->where('status', '!=', 'PAGA'))
+                ->first();
+            if ($invoiced) {
+                throw ValidationException::withMessages(['payment' => 'Ficha já incluída em fatura B2B em aberto: regularize no módulo Faturamento B2B antes de cancelar.']);
+            }
             $payoutItem = PayoutItem::query()->where('appointment_id', $appointment->id)->lockForUpdate()->first();
             if ($payoutItem) {
                 $payout = Payout::query()->lockForUpdate()->findOrFail($payoutItem->payout_id);
@@ -103,6 +111,7 @@ class ChangeAppointment
             }
             $before = $appointment->attributesToArray();
             $appointment->update(['status' => 'CANCELLED', 'cancellation_reason' => $data['reason']]);
+            QueueEntry::query()->where('appointment_id', $appointment->id)->delete();
             $this->record($request, $appointment, 'appointment.cancelled', $before, $appointment->attributesToArray(), $public);
 
             return $appointment;

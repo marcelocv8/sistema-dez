@@ -4,14 +4,14 @@ namespace App\Http\Controllers\Api\V1;
 
 use App\Http\Controllers\Controller;
 use App\Models\QueueEntry;
+use Carbon\CarbonImmutable;
 use Illuminate\Http\JsonResponse;
-use Illuminate\Support\Carbon;
 
 class DashboardController extends Controller
 {
     public function __invoke(): JsonResponse
     {
-        $date = today();
+        $date = CarbonImmutable::today((string) config('sistema_dez.timezone'));
 
         $counts = QueueEntry::query()
             ->whereDate('service_date', $date)

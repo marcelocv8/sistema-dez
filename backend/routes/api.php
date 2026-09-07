@@ -3,10 +3,12 @@
 use App\Http\Controllers\Api\V1\AppointmentPaymentController;
 use App\Http\Controllers\Api\V1\AuditLogController;
 use App\Http\Controllers\Api\V1\AuthController;
+use App\Http\Controllers\Api\V1\B2bInvoiceController;
 use App\Http\Controllers\Api\V1\CashRegisterController;
 use App\Http\Controllers\Api\V1\CatalogController;
 use App\Http\Controllers\Api\V1\CatalogLinkController;
 use App\Http\Controllers\Api\V1\DashboardController;
+use App\Http\Controllers\Api\V1\DisplayController;
 use App\Http\Controllers\Api\V1\ImportIssueController;
 use App\Http\Controllers\Api\V1\OfferingVisibilityController;
 use App\Http\Controllers\Api\V1\PatientAppointmentController;
@@ -15,6 +17,7 @@ use App\Http\Controllers\Api\V1\ProfessionalCommissionController;
 use App\Http\Controllers\Api\V1\PublicAppointmentController;
 use App\Http\Controllers\Api\V1\PublicAvailabilityController;
 use App\Http\Controllers\Api\V1\PublicServiceController;
+use App\Http\Controllers\Api\V1\QueueController;
 use App\Http\Controllers\Api\V1\ScheduleExceptionController;
 use App\Http\Controllers\Api\V1\ScheduleWindowController;
 use App\Http\Controllers\Api\V1\ServiceOfferingController;
@@ -35,6 +38,8 @@ Route::prefix('v1/public')->middleware('throttle:public-api')->group(function ()
     Route::get('services', PublicServiceController::class)->name('api.v1.public.services.index');
     Route::get('availability', PublicAvailabilityController::class)->name('api.v1.public.availability.index');
     Route::post('appointments', PublicAppointmentController::class)->name('api.v1.public.appointments.store');
+    Route::get('units', [DisplayController::class, 'units'])->name('api.v1.public.units.index');
+    Route::get('display', [DisplayController::class, 'show'])->name('api.v1.public.display.show');
 });
 
 Route::prefix('v1/auth')->group(function (): void {
@@ -70,6 +75,17 @@ Route::prefix('v1')->middleware(['auth:sanctum', 'throttle:team-api'])->group(fu
         Route::post('cash-registers/{cashRegister}/close', [CashRegisterController::class, 'close'])->middleware('permission:cash.close')->name('api.v1.team.cash-registers.close');
         Route::post('cash-registers/{cashRegister}/sangrias', [CashRegisterController::class, 'sangria'])->middleware('permission:cash.operate')->name('api.v1.team.cash-registers.sangria');
         Route::post('appointments/{appointment}/void-payment', [AppointmentPaymentController::class, 'voidPayment'])->middleware('permission:discounts.validate')->name('api.v1.team.appointments.void');
+        Route::get('b2b-invoices', [B2bInvoiceController::class, 'index'])->middleware('permission:b2b.view')->name('api.v1.team.b2b-invoices.index');
+        Route::get('b2b-invoices/{b2bInvoice}', [B2bInvoiceController::class, 'show'])->middleware('permission:b2b.view')->name('api.v1.team.b2b-invoices.show');
+        Route::post('b2b-invoices/generate', [B2bInvoiceController::class, 'generate'])->middleware('permission:b2b.manage')->name('api.v1.team.b2b-invoices.generate');
+        Route::post('b2b-invoices/{b2bInvoice}/send', [B2bInvoiceController::class, 'send'])->middleware('permission:b2b.manage')->name('api.v1.team.b2b-invoices.send');
+        Route::post('b2b-invoices/{b2bInvoice}/settle', [B2bInvoiceController::class, 'settle'])->middleware('permission:b2b.settle')->name('api.v1.team.b2b-invoices.settle');
+        Route::get('queue', [QueueController::class, 'index'])->middleware('permission:schedule.view')->name('api.v1.team.queue.index');
+        Route::get('queue/history', [QueueController::class, 'history'])->middleware('permission:schedule.view')->name('api.v1.team.queue.history');
+        Route::post('queue/{queueEntry}/reorder', [QueueController::class, 'reorder'])->middleware('permission:appointments.manage')->name('api.v1.team.queue.reorder');
+        Route::post('queue/{queueEntry}/call', [QueueController::class, 'call'])->middleware('permission:queue.call')->name('api.v1.team.queue.call');
+        Route::post('schedule-conflicts/{scheduleConflict}/resolve', [QueueController::class, 'resolveConflict'])->middleware('permission:schedule.manage')->name('api.v1.team.schedule-conflicts.resolve');
+        Route::get('schedule-conflicts', [QueueController::class, 'conflicts'])->middleware('permission:schedule.view')->name('api.v1.team.schedule-conflicts.index');
         Route::middleware('permission:payouts.view')->group(function (): void {
             Route::get('payouts', [PayoutController::class, 'index'])->name('api.v1.team.payouts.index');
             Route::get('payouts/{payout}', [PayoutController::class, 'show'])->name('api.v1.team.payouts.show');
@@ -93,6 +109,7 @@ Route::prefix('v1')->middleware(['auth:sanctum', 'throttle:team-api'])->group(fu
             Route::prefix('service-offerings/{serviceOffering}')->group(function (): void {
                 Route::get('schedule-windows', [ScheduleWindowController::class, 'index'])->name('api.v1.team.schedule-windows.index');
                 Route::post('schedule-windows', [ScheduleWindowController::class, 'store'])->name('api.v1.team.schedule-windows.store');
+                Route::post('schedule-windows/import', [ScheduleWindowController::class, 'import'])->name('api.v1.team.schedule-windows.import');
                 Route::put('schedule-windows/{scheduleWindow}', [ScheduleWindowController::class, 'update'])->name('api.v1.team.schedule-windows.update');
                 Route::delete('schedule-windows/{scheduleWindow}', [ScheduleWindowController::class, 'destroy'])->name('api.v1.team.schedule-windows.destroy');
                 Route::get('schedule-exceptions', [ScheduleExceptionController::class, 'index'])->name('api.v1.team.schedule-exceptions.index');

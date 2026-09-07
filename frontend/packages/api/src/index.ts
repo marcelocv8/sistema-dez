@@ -99,7 +99,7 @@ export type Appointment = {
   id: UUID;
   offering_id?: UUID;
   unit?: { id: UUID; name: string };
-  agreement?: { id: UUID; name: string };
+  agreement?: { id: UUID; name: string; is_default?: boolean };
   cancellation_reason?: string | null;
   scheduled_at: string;
   ends_at: string;
@@ -117,12 +117,60 @@ export type Appointment = {
   care_started_at: string | null;
 };
 
-export type QueueItem = {
+export type QueuePriority = { code: string; label: string };
+export type DashboardQueueItem = {
   id: UUID;
   patient_name: string | null;
   procedure_name: string | null;
   checked_in_at: string | null;
   status: string;
+};
+export type QueueItem = {
+  id: UUID;
+  appointment_id: UUID;
+  ticket: string;
+  suggested_position: number;
+  original_sequence: number;
+  priority_code: string | null;
+  priority_label: string | null;
+  priority_rank: number | null;
+  priority_reason: string | null;
+  status: string;
+  checked_in_at: string | null;
+  called_at: string | null;
+  patient_name: string | null;
+  payment_status: 'PENDING' | 'PAID' | 'AUTHORIZED' | null;
+  payment_method: { code: string; name: string } | null;
+  procedure_name: string | null;
+  professional_name: string | null;
+  unit_name: string | null;
+};
+export type QueueDay = { date: string; queue: QueueItem[]; priorities: QueuePriority[] };
+export type QueueCall = { id: UUID; ticket: string; patient_name: string | null; procedure_name: string | null; professional_name: string | null; called_at: string | null };
+export type ScheduleConflictItem = { appointment_id: string; scheduled_at: string; patient_name: string | null; status: string };
+export type ScheduleSaveResult<T> = { data: T; conflict_id: string | null; conflicts: ScheduleConflictItem[] };
+export type ScheduleConflict = {
+  id: UUID;
+  service_offering_id: UUID;
+  procedure_name: string | null;
+  professional_name: string | null;
+  reason: string;
+  affected: ScheduleConflictItem[];
+  affected_count: number;
+  status: 'OPEN' | 'RESOLVED';
+  created_at: string;
+  resolution_note: string | null;
+  resolved_at: string | null;
+};
+export type WindowImportReport = { created: number; validated: number; dry_run: boolean };
+export type WindowImportRow = {
+  effective_from: string;
+  effective_to: string | null;
+  weekday: number;
+  starts_at: string;
+  ends_at: string;
+  slot_minutes?: number | null;
+  daily_capacity_override?: number | null;
 };
 
 export type PaymentMethodCode = 'ESPECIE' | 'DEBITO' | 'CREDITO' | 'PIX';
@@ -212,10 +260,39 @@ export type CheckoutReceipt = {
   net_amount: string;
 };
 
+export type B2bInvoiceStatus = 'EMITIDA' | 'ENVIADA' | 'PAGA';
+export type B2bComputedStatus = B2bInvoiceStatus | 'VENCIDA';
+export type B2bInvoiceItem = {
+  id: UUID;
+  appointment_id: UUID;
+  scheduled_at: string;
+  patient_name: string;
+  procedure_name: string;
+  gross_amount: string;
+};
+export type B2bInvoice = {
+  id: UUID;
+  agreement: { id: UUID; name: string | null };
+  competence: string;
+  status: B2bInvoiceStatus;
+  computed_status: B2bComputedStatus;
+  overdue: boolean;
+  subtotal_gross: string;
+  settled_amount: string;
+  remaining_amount: string;
+  issued_at: string;
+  due_at: string;
+  sent_at: string | null;
+  settled_at: string | null;
+  proof_reference: string | null;
+  items_count: number;
+  items: B2bInvoiceItem[];
+};
+
 export type DashboardSummary = {
   date: string;
   patient_flow: { waiting: number; in_care: number; checkout: number; finished: number };
-  queue: QueueItem[];
+  queue: DashboardQueueItem[];
   financials_available: boolean;
   revenue: string;
   cash_expected: string;
@@ -258,6 +335,7 @@ export type AvailabilitySlot = {
   recommended_arrival_at: string | null;
   remaining_capacity: number;
 };
+export type BlockedPeriod = { starts_at: string; ends_at: string; reason: string };
 export type AvailabilityRow = {
   date: string;
   offering_id: UUID;
@@ -265,6 +343,7 @@ export type AvailabilityRow = {
   professional: { id: UUID; name: string } | null;
   operating_window: { starts_at: string; ends_at: string };
   slots: AvailabilitySlot[];
+  blocked_periods?: BlockedPeriod[];
 };
 export type BookAppointmentInput = components['schemas']['BookAppointment'];
 export type PublicAppointment = {
@@ -363,10 +442,22 @@ export const api = {
   saveServiceOffering: async (input: ServiceOfferingInput, id?: string) => (await request<ApiData<ServiceOffering>>(`/api/v1/team/service-offerings${id ? `/${id}` : ''}`, { method: id ? 'PUT' : 'POST', body: JSON.stringify(input) })).data,
   deactivateServiceOffering: (id: string) => request(`/api/v1/team/service-offerings/${id}`, { method: 'DELETE' }),
   setOfferingVisibility: (id: string, paused: boolean) => request<ApiData<ServiceOffering>>(`/api/v1/team/service-offerings/${id}/visibility`, { method: 'PATCH', body: JSON.stringify({ paused }) }),
-  saveScheduleWindow: (offeringId: string, input: ScheduleWindowInput, id?: string) => request<ApiData<ScheduleWindow>>(`/api/v1/team/service-offerings/${offeringId}/schedule-windows${id ? `/${id}` : ''}`, { method: id ? 'PUT' : 'POST', body: JSON.stringify(input) }),
-  deactivateScheduleWindow: (offeringId: string, id: string) => request(`/api/v1/team/service-offerings/${offeringId}/schedule-windows/${id}`, { method: 'DELETE' }),
-  saveScheduleException: (offeringId: string, input: ScheduleExceptionInput, id?: string) => request<ApiData<ScheduleException>>(`/api/v1/team/service-offerings/${offeringId}/schedule-exceptions${id ? `/${id}` : ''}`, { method: id ? 'PUT' : 'POST', body: JSON.stringify(input) }),
+  saveScheduleWindow: (offeringId: string, input: ScheduleWindowInput, id?: string) => request<ScheduleSaveResult<ScheduleWindow>>(`/api/v1/team/service-offerings/${offeringId}/schedule-windows${id ? `/${id}` : ''}`, { method: id ? 'PUT' : 'POST', body: JSON.stringify(input) }),
+  deactivateScheduleWindow: (offeringId: string, id: string) => request<ScheduleSaveResult<ScheduleWindow>>(`/api/v1/team/service-offerings/${offeringId}/schedule-windows/${id}`, { method: 'DELETE' }),
+  saveScheduleException: (offeringId: string, input: ScheduleExceptionInput, id?: string) => request<ScheduleSaveResult<ScheduleException>>(`/api/v1/team/service-offerings/${offeringId}/schedule-exceptions${id ? `/${id}` : ''}`, { method: id ? 'PUT' : 'POST', body: JSON.stringify(input) }),
   removeScheduleException: (offeringId: string, id: string) => request(`/api/v1/team/service-offerings/${offeringId}/schedule-exceptions/${id}`, { method: 'DELETE' }),
+  importScheduleWindows: async (offeringId: string, input: { rows: WindowImportRow[]; dry_run?: boolean }) =>
+    (await request<ApiData<WindowImportReport>>(`/api/v1/team/service-offerings/${offeringId}/schedule-windows/import`, { method: 'POST', body: JSON.stringify(input) })).data,
+  scheduleConflicts: async (status = 'OPEN') => (await request<ApiData<ScheduleConflict[]>>(`/api/v1/team/schedule-conflicts?status=${status}`)).data,
+  resolveScheduleConflict: async (id: string, resolution_note: string) =>
+    (await request<ApiData<ScheduleConflict>>(`/api/v1/team/schedule-conflicts/${id}/resolve`, { method: 'POST', body: JSON.stringify({ resolution_note }) })).data,
+  queue: async (filters: { unit_id?: string; date?: string } = {}) =>
+    (await request<ApiData<QueueDay>>(`/api/v1/team/queue?${queryString(filters)}`)).data,
+  reorderQueue: async (id: string, input: { priority_code: string | null; priority_reason: string }) =>
+    (await request<ApiData<QueueItem>>(`/api/v1/team/queue/${id}/reorder`, { method: 'POST', body: JSON.stringify(input) })).data,
+  callQueue: async (id: string) => (await request<ApiData<QueueItem>>(`/api/v1/team/queue/${id}/call`, { method: 'POST' })).data,
+  queueHistory: async (filters: { unit_id?: string; date?: string } = {}) =>
+    (await request<ApiData<QueueCall[]>>(`/api/v1/team/queue/history?${queryString(filters)}`)).data,
   teamAvailability: async (filters: { offering_id: string; from: string; to: string; exclude_appointment_id?: string }) => (await request<ApiData<AvailabilityRow[]>>(`/api/v1/team/availability?${queryString(filters)}`)).data,
   lookupPatient: async (cpf: string) => (await request<ApiData<PatientLookup | null>>('/api/v1/team/patients/lookup', { method: 'POST', body: JSON.stringify({ cpf }) })).data,
   bookInternal: async (input: BookAppointmentInput) => (await request<ApiData<Appointment>>('/api/v1/team/appointments', { method: 'POST', body: JSON.stringify(input) })).data,
@@ -384,6 +475,14 @@ export const api = {
   closeCashBatch: async (items: CloseBatchItem[]) => (await request<ApiData<CloseBatchResult>>('/api/v1/team/cash-registers/close-batch', { method: 'POST', body: JSON.stringify({ items }) })).data,
   createSangria: async (id: string, input: SangriaInput) => (await request<ApiData<CashMovement>>(`/api/v1/team/cash-registers/${id}/sangrias`, { method: 'POST', body: JSON.stringify(input) })).data,
   voidAppointmentPayment: async (id: string, reason: string) => (await request<ApiData<CashMovement>>(`/api/v1/team/appointments/${id}/void-payment`, { method: 'POST', body: JSON.stringify({ reason }) })).data,
+  b2bInvoices: async (filters: { agreement_id?: string; status?: string; competence?: string } = {}) =>
+    (await request<ApiData<B2bInvoice[]>>(`/api/v1/team/b2b-invoices?${queryString(filters)}`)).data,
+  b2bInvoice: async (id: string) => (await request<ApiData<B2bInvoice>>(`/api/v1/team/b2b-invoices/${id}`)).data,
+  generateB2bInvoice: async (input: { agreement_id: string; competence: string }) =>
+    (await request<ApiData<B2bInvoice>>('/api/v1/team/b2b-invoices/generate', { method: 'POST', body: JSON.stringify(input) })).data,
+  sendB2bInvoice: async (id: string) => (await request<ApiData<B2bInvoice>>(`/api/v1/team/b2b-invoices/${id}/send`, { method: 'POST' })).data,
+  settleB2bInvoice: async (id: string, input: { amount: string; proof_reference: string }) =>
+    (await request<ApiData<B2bInvoice>>(`/api/v1/team/b2b-invoices/${id}/settle`, { method: 'POST', body: JSON.stringify(input) })).data,
   payouts: async (filters: { professional_id?: string; status?: PayoutStatus; from?: string; to?: string } = {}) =>
     (await request<ApiData<Payout[]>>(`/api/v1/team/payouts?${queryString(filters)}`)).data,
   payout: async (id: string) => (await request<ApiData<Payout>>(`/api/v1/team/payouts/${id}`)).data,

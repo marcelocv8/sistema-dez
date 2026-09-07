@@ -12,6 +12,7 @@ const sections = [
     { to: '/recepcao', label: 'Recepção', icon: Users },
     { to: '/precos', label: 'Consulta de preços', icon: Tags, permission: 'prices.view' },
     { to: '/caixa', label: 'Caixa', icon: Banknote, permission: 'cash.view' },
+    { to: '/faturamento-b2b', label: 'Faturamento B2B', icon: Banknote, permission: 'b2b.view' },
     { to: '/recepcao?fila=1', label: 'Fila de espera', icon: ClipboardList },
   ] },
   { label: 'Clínico', items: [

@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Sistema DEZ API
-  version: 0.9.0
+  version: 0.11.0
 servers:
   - url: http://localhost:8000/api/v1
 paths:
@@ -482,12 +482,163 @@ paths:
       - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
     post:
       summary: Autoriza ficha B2B sem passar pelo caixa (fatura no fim do mês)
-      description: Requer appointments.manage. Exige convênio empresarial ativo (não o Particular padrão) e código de autorização; provisório até a Fase 3D.
+      description: Requer appointments.manage. Exige convênio empresarial ativo (não o Particular padrão) e código de autorização. Com fatura vencida em aberto da empresa, a autorização é bloqueada (422) até a regularização no módulo B2B.
       security: [{ cookieAuth: [] }]
       requestBody: { required: true, content: { application/json: { schema: { type: object, required: [authorization_code], properties: { authorization_code: { type: string, minLength: 3, maxLength: 60 } } } } } }
       responses:
         '200': { description: Autorização registrada e auditada }
         '403': { description: Requer appointments.manage }
+        '422': { $ref: '#/components/responses/ValidationError' }
+  /team/b2b-invoices:
+    get:
+      summary: Lista faturas B2B por competência, empresa ou situação
+      description: Requer b2b.view. O campo computed_status deriva VENCIDA (emitida/enviada após o vencimento com saldo em aberto); filtro status aceita VENCIDA.
+      security: [{ cookieAuth: [] }]
+      parameters:
+        - { name: agreement_id, in: query, schema: { type: string, format: uuid } }
+        - { name: status, in: query, schema: { type: string, enum: [EMITIDA, ENVIADA, PAGA, VENCIDA] } }
+        - { name: competence, in: query, schema: { type: string, pattern: '^[0-9]{4}-[0-9]{2}$' } }
+      responses:
+        '200': { description: Faturas com totais, vencimento e itens }
+        '403': { description: Requer b2b.view }
+  /team/b2b-invoices/generate:
+    post:
+      summary: Gera fatura B2B do mês por empresa a partir de atendimentos autorizados
+      description: 'Requer b2b.manage. Idempotente por empresa/competência: só inclui atendimentos AUTHORIZED ainda não faturados; vencimento em 10 dias da emissão.'
+      security: [{ cookieAuth: [] }]
+      requestBody: { required: true, content: { application/json: { schema: { type: object, required: [agreement_id, competence], properties: { agreement_id: { type: string, format: uuid }, competence: { type: string, pattern: '^[0-9]{4}-[0-9]{2}$' } } } } } }
+      responses:
+        '201': { description: Fatura gerada (ou existente, com novos itens) e auditada }
+        '403': { description: Requer b2b.manage }
+        '422': { $ref: '#/components/responses/ValidationError' }
+  /team/b2b-invoices/{id}:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+    get:
+      summary: Detalha fatura B2B com itens (fotografia de cada atendimento)
+      security: [{ cookieAuth: [] }]
+      responses:
+        '200': { description: Fatura detalhada }
+        '403': { description: Requer b2b.view }
+        '404': { description: Fatura inexistente }
+  /team/b2b-invoices/{id}/send:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      summary: Encaminha fatura emitida à empresa
+      description: Requer b2b.manage. Transição EMITIDA para ENVIADA, com registro de envio auditado.
+      security: [{ cookieAuth: [] }]
+      responses:
+        '200': { description: Fatura encaminhada e auditada }
+        '403': { description: Requer b2b.manage }
+        '422': { $ref: '#/components/responses/ValidationError' }
+  /team/b2b-invoices/{id}/settle:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      summary: Baixa manual da fatura (parcial ou total) com comprovante
+      description: Requer b2b.settle. Quita (PAGA) quando o acumulado alcança o total; valor acima do restante é rejeitado.
+      security: [{ cookieAuth: [] }]
+      requestBody: { required: true, content: { application/json: { schema: { type: object, required: [amount, proof_reference], properties: { amount: { type: number, minimum: 0.01 }, proof_reference: { type: string, minLength: 3, maxLength: 255 } } } } } }
+      responses:
+        '200': { description: Baixa registrada e auditada }
+        '403': { description: Requer b2b.settle }
+        '422': { $ref: '#/components/responses/ValidationError' }
+  /team/queue:
+    get:
+      summary: Fila do dia em ordem sugerida (chegada + prioridade legal)
+      description: Requer schedule.view. A chegada original (original_sequence) é preservada; suggested_position aplica a prioridade sem apagá-la.
+      security: [{ cookieAuth: [] }]
+      parameters:
+        - { name: unit_id, in: query, schema: { type: string, format: uuid } }
+        - { name: date, in: query, schema: { type: string, format: date } }
+      responses:
+        '200': { description: Fila ordenada com prioridades legais disponíveis }
+        '403': { description: Requer schedule.view }
+  /team/queue/history:
+    get:
+      summary: Últimas chamadas do painel TV no dia
+      description: Requer schedule.view. Registra senha, paciente e horário de cada chamada.
+      security: [{ cookieAuth: [] }]
+      parameters:
+        - { name: unit_id, in: query, schema: { type: string, format: uuid } }
+        - { name: date, in: query, schema: { type: string, format: date } }
+      responses:
+        '200': { description: Chamadas do dia }
+        '403': { description: Requer schedule.view }
+  /team/queue/{id}/reorder:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      summary: Confirma prioridade legal da ficha com motivo auditado
+      description: Requer appointments.manage. Toda reordenação exige motivo e é registrada sem apagar a chegada original.
+      security: [{ cookieAuth: [] }]
+      requestBody: { required: true, content: { application/json: { schema: { type: object, required: [priority_reason], properties: { priority_code: { type: string, enum: [PCD, GESTANTE, LACTANTE, COLO, OBESO, IDOSO60, IDOSO80] }, priority_reason: { type: string, minLength: 3, maxLength: 500 } } } } } }
+      responses:
+        '200': { description: Prioridade aplicada e auditada }
+        '403': { description: Requer appointments.manage }
+        '422': { $ref: '#/components/responses/ValidationError' }
+  /team/queue/{id}/call:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      summary: Chama a ficha no painel TV (recepção ou médico dos próprios pacientes)
+      description: Requer queue.call. O médico só chama pacientes vinculados ao seu login; a chamada é auditada e alimenta o display público.
+      security: [{ cookieAuth: [] }]
+      responses:
+        '200': { description: Chamada registrada e auditada }
+        '403': { description: Requer queue.call }
+        '422': { $ref: '#/components/responses/ValidationError' }
+  /team/schedule-conflicts:
+    get:
+      summary: Pendências de escala com agendamentos afetados
+      description: Requer schedule.view. Lista conflitos OPEN (padrão) ou RESOLVED para resolver com médico/paciente.
+      security: [{ cookieAuth: [] }]
+      parameters:
+        - { name: status, in: query, schema: { type: string, enum: [OPEN, RESOLVED] } }
+        - { name: service_offering_id, in: query, schema: { type: string, format: uuid } }
+      responses:
+        '200': { description: Pendências de escala }
+        '403': { description: Requer schedule.view }
+  /team/schedule-conflicts/{id}/resolve:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      summary: Marca pendência de escala como resolvida, com registro de como foi resolvida
+      description: Requer schedule.manage.
+      security: [{ cookieAuth: [] }]
+      requestBody: { required: true, content: { application/json: { schema: { type: object, required: [resolution_note], properties: { resolution_note: { type: string, minLength: 3, maxLength: 1000 } } } } } }
+      responses:
+        '200': { description: Pendência resolvida e auditada }
+        '403': { description: Requer schedule.manage }
+        '422': { $ref: '#/components/responses/ValidationError' }
+  /team/service-offerings/{id}/schedule-windows/import:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      summary: Importa escalas da planilha da recepção (validação + gravação)
+      description: Requer schedule.manage. Aceita até 200 linhas no formato da tela; com dry_run valida sem gravar. Sobreposição com janelas ativas rejeita tudo.
+      security: [{ cookieAuth: [] }]
+      requestBody: { required: true, content: { application/json: { schema: { type: object, required: [rows], properties: { dry_run: { type: boolean }, rows: { type: array, minItems: 1, maxItems: 200 } } } } } }
+      responses:
+        '201': { description: Relatório de validação ou importação auditada }
+        '403': { description: Requer schedule.manage }
+        '422': { $ref: '#/components/responses/ValidationError' }
+  /public/units:
+    get:
+      summary: Unidades operacionais para o painel TV
+      description: Sem autenticação; retorna apenas id e nome das unidades ativas e operacionais.
+      responses:
+        '200': { description: Unidades operacionais }
+  /public/display:
+    get:
+      summary: Senha atual e próximas do painel TV por unidade
+      description: Sem autenticação. Expõe apenas senha, primeiro nome, procedimento e profissional — sem CPF, telefone ou sobrenome.
+      parameters:
+        - { name: unit_id, in: query, required: true, schema: { type: string, format: uuid } }
+        - { name: date, in: query, schema: { type: string, format: date } }
+      responses:
+        '200': { description: Chamada atual e próximas senhas }
         '422': { $ref: '#/components/responses/ValidationError' }
   /team/cash-registers:
     get:
