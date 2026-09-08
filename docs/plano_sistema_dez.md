@@ -1119,6 +1119,30 @@ acima. Lições de ambiente também viraram §15.
 
 ---
 
+### 14.17 Bloco 4 (Fase 6) — Prontuário eletrônico + Portal de resultados + IA T18 (07/09–08/09/2026)
+
+**Situação: implementada e validada (verde em backend, Vitest, typecheck, build e E2E). Sem commit ainda — aguardando autorização do dono.**
+
+#### Entregue
+
+- **Prontuário (§6.18, novo):** tabelas `clinical_notes` (anamnese/evolução/intercorrência/alta, vínculo ao atendimento, **retenção 20 anos** — CFM 1.821/2007), `patient_alerts` (alergias/condições; inativação com motivo, nada se apaga), `prontuario_events` append-only (**VISUALIZADO, NOTA_CRIADA, NOTA_EDITADA, ALERTA_INCLUIDO, ALERTA_INATIVADO, PUBLICADO_PORTAL, IA_SOLICITADA** — toda leitura/edição registrada). `ProntuarioController`: `GET prontuario` (timeline agregada: alertas + notas + laudos + atendimentos com pagamento/recibo), notas (criar/editar), alertas (incluir/inativar). Página **`/prontuario`** no app equipe: busca por CPF, alertas em chips em destaque (alergia vermelho/condição amarelo), editor de notas com formatação, histórico de inativos com autor/motivo, laudos e atendimentos com situação de pagamento.
+- **Portal de resultados (§6.19):** `portal_accesses` (login/senha temporários, hash, token por sessão, expiração **30 dias** configurável, revogação com motivo, contador de acessos); publicação do laudo **só quando FINALIZADO** (`POST reports/{id}/portal`) reutiliza credencial ativa do paciente ou emite nova (`force_new_credential`); **folha de acesso** imprimível com URL/login/validade (QR Code ficou pendente — ver abaixo); revogação auditada (`POST .../portal/revoke`); endpoints públicos com rate limit próprio (10/min): `POST /api/v1/public/portal/login` (401/422 em credencial inválida/expirada/revogada) e `GET /api/v1/public/portal/results` (só laudos FINALIZADO publicados e não revogados; incrementa contador de acesso). Página **`/resultados`** no app paciente (fetch puro, sem novas dependências): login + lista + visualização do conteúdo.
+- **IA no prontuário (T18, DeepSeek):** `ai_requests` append-only (modelo, pergunta, resposta, erro), serviço `AiAssistance` via HTTP nativo do Laravel (**sem SDK/dependência nova**), endpoint `POST prontuario/ai/suggest` com contexto mínimo (idade, alertas ativos, pergunta), `GET prontuario/ai/status` — **sem `DEEPSEEK_API_KEY` a feature fica oculta** (`enabled: false`; a instalação do irmão do dono funciona sem IA) e a sugestão responde **503**. A resposta entra sempre como **rascunho marcado "SUGESTÃO DE IA — revisar antes de validar"**; inserção no prontuário é decisão do médico. Permissão `ai.use` só Médico (+Admin).
+- **RBAC:** `prontuario.view` (todos os papéis), `prontuario.write` (Médico, Admin, Supervisor, Manager), `ai.use` (Médico, Admin).
+- **Config:** `DEEPSEEK_API_KEY`/`DEEPSEEK_MODEL` (opcionais), `PORTAL_TTL_DAYS`, `PORTAL_BASE_URL` (default `http://localhost:5176`, app paciente) no `config/sistema_dez.php` + `.env.example`.
+- **Contratos:** OpenAPI **v0.15.0** (inclui security scheme `portalToken`) + `schema.generated.ts` regenerados.
+- **Validação:** backend **113 testes / 995 asserções** verde (`ProntuarioTest`: timeline/notas/alertas com trilha exata, RBAC, IA com key via `Http::fake` incluindo contexto de alergia no prompt; `PortalAccessTest`: credencial + login + resultados + expiração/revogação + rascunho não publica); Pint ok; Vitest **28** (`ProntuarioPage.test.tsx` 2/2: alertas/notas/trilha e IA oculta sem key); typecheck/builds ok; **E2E `prontuario-portal.spec.ts` 2/2 (desktop+mobile)** com `playwright.bloco4.config.ts`: alerta → nota → laudo finalizado → publicado com folha de acesso.
+- **Armadilha nova registrada:** `migrate:fresh` falha em silêncio se o `artisan serve :18001` estiver com conexões abertas (Postgres não derruba tabelas em uso) — matar o servidor ANTES do re-seed e `Out-Null` só no que não pode falhar.
+
+#### Pendente
+
+1. Commit dos Blocos 1-4 (aguardando autorização do dono).
+2. Validação manual acumulada (3A-1→3D + Blocos 1-4), por decisão do dono — no final do ciclo.
+3. **QR Code na folha de acesso** — precisa de lib (endroid/qr-code) ou implementação própria; ficou fora por não alterar dependências sem aprovação.
+4. Próximo: **Bloco 5 — Medicina do Trabalho + Relatórios/BI + API Hermes (leitura primeiro)**.
+
+---
+
 ## 15. Ambiente em outro PC (só teste, sem prod)
 
 > **Premissa do dono (04/09/2026):** pode usar **bancos diferentes em cada PC**

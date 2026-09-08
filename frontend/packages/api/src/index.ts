@@ -393,9 +393,84 @@ export type Report = {
   signed_manual_at: string | null;
   print_count: number;
   last_printed_at: string | null;
+  portal_published?: boolean;
+  portal_published_at?: string | null;
   created_at: string | null;
   events: ReportEventItem[];
 };
+
+export type ProntuarioNote = {
+  id: UUID;
+  appointment_id: UUID | null;
+  kind: 'ANAMNESE' | 'EVOLUCAO' | 'INTERCORRENCIA' | 'ALTA';
+  content_html: string;
+  doctor: { id: number; name: string } | null;
+  created_by: { id: number; name: string } | null;
+  updated_by: { id: number; name: string } | null;
+  retention_until: string | null;
+  created_at: string | null;
+  updated_at: string | null;
+};
+export type ProntuarioAlert = {
+  id: UUID;
+  kind: 'ALERGIA' | 'CONDICAO' | 'OUTRO';
+  title: string;
+  detail: string | null;
+  active: boolean;
+  created_by: { id: number; name: string } | null;
+  deactivated_by: { id: number; name: string } | null;
+  deactivated_at: string | null;
+  deactivation_reason: string | null;
+  created_at: string | null;
+};
+export type ProntuarioTimeline = {
+  patient: { id: UUID; name: string; birth_date: string | null };
+  alerts: ProntuarioAlert[];
+  notes: ProntuarioNote[];
+  reports: {
+    id: UUID;
+    procedure: { id: UUID; name: string } | null;
+    doctor: { id: number; name: string } | null;
+    status: 'RASCUNHO' | 'FINALIZADO';
+    signed_manual: boolean;
+    print_count: number;
+    portal_published: boolean;
+    finalized_at: string | null;
+    created_at: string | null;
+  }[];
+  appointments: {
+    id: UUID;
+    scheduled_at: string | null;
+    status: string;
+    kind: string;
+    origin: string;
+    procedure: { id: UUID; name: string } | null;
+    professional: { id: UUID; name: string } | null;
+    unit: { id: UUID; name: string } | null;
+    payment_status: string;
+    payment_method: { id: number; name: string } | null;
+    receipt_number: number | null;
+  }[];
+};
+export type PortalPublication = {
+  report_id: UUID;
+  portal_published: boolean;
+  portal_published_at: string | null;
+  login: string | null;
+  password: string | null;
+  expires_at: string | null;
+  portal_url: string;
+  folha_html: string;
+};
+export type PortalResult = {
+  id: UUID;
+  procedure: { id: UUID; name: string } | null;
+  doctor: { id: number; name: string } | null;
+  finalized_at: string | null;
+  signed_manual: boolean;
+  content_html: string | null;
+};
+
 
 
 export type DashboardSummary = {
@@ -658,6 +733,29 @@ export const api = {
     (await request<ApiData<Report>>(`/api/v1/team/reports/${id}/sign-manual`, { method: 'POST' })).data,
   printReport: async (id: string) =>
     (await request<{ data: { print_html: string; print_count: number } }>(`/api/v1/team/reports/${id}/print`, { method: 'POST' })).data,
+  publishReportPortal: async (id: string, force_new_credential = false) =>
+    (await request<ApiData<PortalPublication>>(`/api/v1/team/reports/${id}/portal`, { method: 'POST', body: JSON.stringify(force_new_credential ? { force_new_credential: true } : {}) })).data,
+  reportPortalFolha: async (id: string) =>
+    (await request<ApiData<PortalPublication>>(`/api/v1/team/reports/${id}/portal/folha`)).data,
+  revokeReportPortal: async (id: string, reason: string) =>
+    (await request<ApiData<{ id: UUID; portal_published: boolean }>>(`/api/v1/team/reports/${id}/portal/revoke`, { method: 'POST', body: JSON.stringify({ reason }) })).data,
+  prontuarioTimeline: async (patient_id: string) =>
+    (await request<ApiData<ProntuarioTimeline>>(`/api/v1/team/prontuario?${queryString({ patient_id })}`)).data,
+  createProntuarioNote: async (input: { appointment_id: string; kind?: string; content_html: string }) =>
+    (await request<ApiData<ProntuarioNote>>('/api/v1/team/prontuario/notes', { method: 'POST', body: JSON.stringify(input) })).data,
+  updateProntuarioNote: async (id: string, content_html: string) =>
+    (await request<ApiData<ProntuarioNote>>(`/api/v1/team/prontuario/notes/${id}`, { method: 'PUT', body: JSON.stringify({ content_html }) })).data,
+  addProntuarioAlert: async (input: { patient_id: string; kind?: string; title: string; detail?: string }) =>
+    (await request<ApiData<ProntuarioAlert>>('/api/v1/team/prontuario/alerts', { method: 'POST', body: JSON.stringify(input) })).data,
+  deactivateProntuarioAlert: async (id: string, reason: string) =>
+    (await request<ApiData<ProntuarioAlert>>(`/api/v1/team/prontuario/alerts/${id}/deactivate`, { method: 'POST', body: JSON.stringify({ reason }) })).data,
+  aiStatus: async () => (await request<ApiData<{ enabled: boolean; model: string }>>('/api/v1/team/prontuario/ai/status')).data,
+  aiSuggest: async (input: { patient_id: string; appointment_id?: string; question: string }) =>
+    (await request<ApiData<{ ai_request_id: UUID; model: string; suggestion_html: string }>>('/api/v1/team/prontuario/ai/suggest', { method: 'POST', body: JSON.stringify(input) })).data,
+  portalLogin: async (input: { login: string; password: string }) =>
+    (await request<ApiData<{ token: string; expires_at: string; patient_name: string | null }>>('/api/v1/public/portal/login', { method: 'POST', body: JSON.stringify(input), credentials: 'omit' })).data,
+  portalResults: async (token: string) =>
+    (await request<ApiData<{ patient_name: string | null; expires_at: string; results: PortalResult[] }>>('/api/v1/public/portal/results', { headers: { Authorization: `Bearer ${token}` }, credentials: 'omit' })).data,
   payouts: async (filters: { professional_id?: string; status?: PayoutStatus; from?: string; to?: string } = {}) =>
     (await request<ApiData<Payout[]>>(`/api/v1/team/payouts?${queryString(filters)}`)).data,
   payout: async (id: string) => (await request<ApiData<Payout>>(`/api/v1/team/payouts/${id}`)).data,

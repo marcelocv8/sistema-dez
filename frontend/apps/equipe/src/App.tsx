@@ -16,6 +16,7 @@ const B2bPage = lazy(() => import('./pages/B2bPage'));
 const AttendancePage = lazy(() => import('./pages/AttendancePage'));
 const ChatPage = lazy(() => import('./pages/ChatPage'));
 const LaudosPage = lazy(() => import('./pages/LaudosPage'));
+const ProntuarioPage = lazy(() => import('./pages/ProntuarioPage'));
 const BudgetsPage = lazy(() => import('./pages/BudgetsPage'));
 const RoutinesPage = lazy(() => import('./pages/RoutinesPage'));
 const RepassesPage = lazy(() => import('./pages/RepassesPage'));
@@ -32,6 +33,7 @@ export function App() {
     <Route path="/agenda" element={<AgendaPage user={currentUser.data} />} />
     <Route path="/recepcao" element={<ReceptionPage user={currentUser.data} />} />
     <Route path="/laudos" element={<LaudosPage user={currentUser.data} />} />
+    <Route path="/prontuario" element={<ProntuarioPage user={currentUser.data} />} />
     <Route path="/precos" element={<PricesPage />} />
     <Route path="/cadastros" element={<CatalogPage user={currentUser.data} />} />
     <Route path="/caixa" element={<CashPage user={currentUser.data} />} />

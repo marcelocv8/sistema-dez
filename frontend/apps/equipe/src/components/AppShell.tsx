@@ -2,7 +2,7 @@ import type { ReactNode } from 'react';
 import { useState } from 'react';
 import { NavLink } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
-import { Activity, Banknote, Bell, CalendarDays, ChevronLeft, ClipboardList, FileText, LayoutDashboard, LogOut, Menu, MessageCircle, Search, Settings, Tags, Users, WalletCards, X } from 'lucide-react';
+import { Activity, Banknote, Bell, CalendarDays, ChevronLeft, ClipboardList, FileHeart, FileText, LayoutDashboard, LogOut, Menu, MessageCircle, Search, Settings, Tags, Users, WalletCards, X } from 'lucide-react';
 import { api, type CurrentUser } from '@dez/api';
 import { BrandLogo, IconButton } from '@dez/ui';
 
@@ -21,6 +21,7 @@ const sections = [
     { to: '/recepcao?fila=1', label: 'Fila de espera', icon: ClipboardList },
   ] },
   { label: 'Clínico', items: [
+    { to: '/prontuario', label: 'Prontuário', icon: FileHeart, permission: 'prontuario.view' },
     { to: '/laudos', label: 'Laudos', icon: FileText, permission: 'reports.view' },
   ] },
   { label: 'Gestão', items: [

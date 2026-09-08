@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Sistema DEZ API
-  version: 0.14.0
+  version: 0.15.0
 servers:
   - url: http://localhost:8000/api/v1
 paths:
@@ -975,6 +975,131 @@ paths:
       responses:
         '200': { description: HTML de impressão + contagem }
         '403': { description: Requer reports.view }
+  /team/reports/{id}/portal:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      summary: Publica o laudo finalizado no portal de resultados (§6.19)
+      description: Requer reports.write. Reutiliza credencial ativa do paciente ou emite nova (login/senha temporários); a senha só volta uma vez, na folha de acesso. Auditado.
+      security: [{ cookieAuth: [] }]
+      requestBody: { required: false, content: { application/json: { schema: { type: object, properties: { force_new_credential: { type: boolean, description: Revoga o uso atual e emite credencial nova } } } } } }
+      responses:
+        '200': { description: Publicado; inclui folha de acesso (HTML) e credencial quando nova }
+        '403': { description: Requer reports.write }
+        '422': { $ref: '#/components/responses/ValidationError' }
+  /team/reports/{id}/portal/folha:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+    get:
+      summary: Regenera a folha de acesso (URL/login; senha só na emissão)
+      description: Requer reports.view.
+      security: [{ cookieAuth: [] }]
+      responses:
+        '200': { description: Folha de acesso (HTML) }
+        '403': { description: Requer reports.view }
+        '404': { description: Laudo não publicado }
+  /team/reports/{id}/portal/revoke:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      summary: Revoga a publicação do laudo no portal
+      description: Requer reports.write. Motivo obrigatório; auditado (nada se apaga, só se anula).
+      security: [{ cookieAuth: [] }]
+      requestBody: { required: true, content: { application/json: { schema: { type: object, required: [reason], properties: { reason: { type: string, minLength: 3, maxLength: 500 } } } } } }
+      responses:
+        '200': { description: Publicação revogada }
+        '403': { description: Requer reports.write }
+        '422': { $ref: '#/components/responses/ValidationError' }
+  /team/prontuario:
+    get:
+      summary: Timeline do prontuário do paciente (§6.18)
+      description: Requer prontuario.view. Agrega alertas, notas, laudos e atendimentos; cada abertura é auditada (VISUALIZADO) na trilha append-only.
+      security: [{ cookieAuth: [] }]
+      parameters:
+        - { name: patient_id, in: query, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200': { description: Timeline completa }
+        '403': { description: Requer prontuario.view }
+        '422': { $ref: '#/components/responses/ValidationError' }
+  /team/prontuario/notes:
+    post:
+      summary: Registra nota (anamnese/evolução/intercorrência/alta)
+      description: Requer prontuario.write (médico no papel; Admin/Supervisor/Gerente podem). Retenção 20 anos (CFM 1.821/2007).
+      security: [{ cookieAuth: [] }]
+      requestBody: { required: true, content: { application/json: { schema: { type: object, required: [appointment_id, content_html], properties: { appointment_id: { type: string, format: uuid }, kind: { type: string, enum: [ANAMNESE, EVOLUCAO, INTERCORRENCIA, ALTA] }, content_html: { type: string, minLength: 3, maxLength: 2000000 } } } } } }
+      responses:
+        '201': { description: Nota criada e auditada }
+        '403': { description: Requer prontuario.write }
+        '422': { $ref: '#/components/responses/ValidationError' }
+  /team/prontuario/notes/{id}:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+    put:
+      summary: Edita nota (auditoria preserva versões)
+      description: Requer prontuario.write.
+      security: [{ cookieAuth: [] }]
+      requestBody: { required: true, content: { application/json: { schema: { type: object, required: [content_html], properties: { content_html: { type: string, minLength: 3, maxLength: 2000000 } } } } } }
+      responses:
+        '200': { description: Nota editada (NOTA_EDITADA) }
+        '403': { description: Requer prontuario.write }
+        '422': { $ref: '#/components/responses/ValidationError' }
+  /team/prontuario/alerts:
+    post:
+      summary: Inclui alerta/alergia do paciente
+      description: Requer prontuario.write. Aparece em destaque no prontuário e vai no contexto da IA.
+      security: [{ cookieAuth: [] }]
+      requestBody: { required: true, content: { application/json: { schema: { type: object, required: [patient_id, title], properties: { patient_id: { type: string, format: uuid }, kind: { type: string, enum: [ALERGIA, CONDICAO, OUTRO] }, title: { type: string, minLength: 2, maxLength: 200 }, detail: { type: string, maxLength: 500 } } } } } }
+      responses:
+        '201': { description: Alerta incluído }
+        '403': { description: Requer prontuario.write }
+        '422': { $ref: '#/components/responses/ValidationError' }
+  /team/prontuario/alerts/{id}/deactivate:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      summary: Inativa alerta com motivo (nada se apaga, só se anula)
+      description: Requer prontuario.write.
+      security: [{ cookieAuth: [] }]
+      requestBody: { required: true, content: { application/json: { schema: { type: object, required: [reason], properties: { reason: { type: string, minLength: 3, maxLength: 500 } } } } } }
+      responses:
+        '200': { description: Alerta inativado }
+        '403': { description: Requer prontuario.write }
+        '422': { $ref: '#/components/responses/ValidationError' }
+  /team/prontuario/ai/status:
+    get:
+      summary: Indica se a IA está configurada nesta instalação
+      description: Requer prontuario.view. Sem DEEPSEEK_API_KEY a feature fica oculta (instalação do irmão do dono funciona sem IA).
+      security: [{ cookieAuth: [] }]
+      responses:
+        '200': { description: '{ enabled, model }' }
+        '403': { description: Requer prontuario.view }
+  /team/prontuario/ai/suggest:
+    post:
+      summary: Sugestão de conduta com IA (T18 — opcional, nunca bloqueia)
+      description: Requer ai.use (médico). Envia contexto mínimo (idade, alertas, pergunta) ao DeepSeek; resposta é sempre rascunho marcado "SUGESTÃO DE IA"; toda chamada é auditada (ai_requests + trilha). Sem chave configurada responde 503.
+      security: [{ cookieAuth: [] }]
+      requestBody: { required: true, content: { application/json: { schema: { type: object, required: [patient_id, question], properties: { patient_id: { type: string, format: uuid }, appointment_id: { type: string, format: uuid }, question: { type: string, minLength: 5, maxLength: 2000 } } } } } }
+      responses:
+        '200': { description: Sugestão (HTML rascunho) }
+        '403': { description: Requer ai.use }
+        '422': { $ref: '#/components/responses/ValidationError' }
+        '503': { description: IA não configurada }
+  /public/portal/login:
+    post:
+      summary: Login do portal de resultados (credencial temporária)
+      description: Público, com rate limit (10/min). Login/senha emitidos na folha de acesso; token temporário para consultar resultados. Acesso expirado/revogado rejeita.
+      requestBody: { required: true, content: { application/json: { schema: { type: object, required: [login, password], properties: { login: { type: string, maxLength: 20 }, password: { type: string, maxLength: 30 } } } } } }
+      responses:
+        '200': { description: '{ token, expires_at, patient_name }' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+  /public/portal/results:
+    get:
+      summary: Resultados publicados do paciente (portal, autenticado por token)
+      description: Token do login; cada consulta incrementa o contador de acesso (auditável). Lista apenas laudos FINALIZADO publicados e não revogados.
+      security: [{ portalToken: [] }]
+      responses:
+        '200': { description: '{ patient_name, expires_at, results[] }' }
+        '401': { description: Credencial inválida/expirada/revogada }
   /team/cash-registers:
     get:
       summary: Lista caixas recentes (abertos e fechados)
@@ -1193,6 +1318,10 @@ components:
       type: apiKey
       in: cookie
       name: sistema_dez_session
+    portalToken:
+      type: http
+      scheme: bearer
+      description: Token temporário do portal de resultados (§6.19), emitido no login da credencial impressa.
   schemas:
     ServiceOfferingInput:
       type: object

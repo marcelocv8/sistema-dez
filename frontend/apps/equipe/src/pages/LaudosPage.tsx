@@ -14,6 +14,8 @@ export default function LaudosPage({ user }: { user: CurrentUser }) {
   const [statusMessage, setStatusMessage] = useState('');
   const [adendoFor, setAdendoFor] = useState('');
   const [adendoText, setAdendoText] = useState('');
+  const [revokeFor, setRevokeFor] = useState('');
+  const [revokeReason, setRevokeReason] = useState('');
   const editorRef = useRef<HTMLDivElement>(null);
   const canWrite = user.permissions.includes('reports.write');
   const canSign = user.permissions.includes('reports.sign');
@@ -85,24 +87,45 @@ export default function LaudosPage({ user }: { user: CurrentUser }) {
     mutationFn: () => api.signReportManual(selected!.id),
     onSuccess: async (report) => { await refresh(); setSelected(report); setStatusMessage('Assinatura manual registrada.'); },
   });
+  const printHtml = (html: string) => {
+    const frame = document.createElement('iframe');
+    frame.style.position = 'fixed';
+    frame.style.right = '0';
+    frame.style.bottom = '0';
+    frame.style.width = '0';
+    frame.style.height = '0';
+    frame.style.border = '0';
+    document.body.appendChild(frame);
+    frame.srcdoc = html;
+    frame.onload = () => {
+      frame.contentWindow?.focus();
+      frame.contentWindow?.print();
+      window.setTimeout(() => frame.remove(), 60_000);
+    };
+  };
+  const publishPortal = useMutation({
+    mutationFn: () => api.publishReportPortal(selected!.id),
+    onSuccess: async ({ folha_html, login, password }) => {
+      await refresh();
+      setStatusMessage(password !== null
+        ? `Publicado no portal. Credencial: ${login} / ${password} — imprima a folha de acesso.`
+        : `Publicado no portal com a credencial ativa (${login}).`);
+      printHtml(folha_html);
+    },
+  });
+  const printFolha = useMutation({
+    mutationFn: () => api.reportPortalFolha(selected!.id),
+    onSuccess: ({ folha_html }) => printHtml(folha_html),
+  });
+  const revokePortal = useMutation({
+    mutationFn: () => api.revokeReportPortal(selected!.id, revokeReason),
+    onSuccess: async () => { setRevokeFor(''); setRevokeReason(''); await refresh(); setStatusMessage('Publicação revogada.'); },
+  });
   const print = useMutation({
     mutationFn: () => api.printReport(selected!.id),
     onSuccess: async ({ print_html }) => {
       await refresh();
-      const frame = document.createElement('iframe');
-      frame.style.position = 'fixed';
-      frame.style.right = '0';
-      frame.style.bottom = '0';
-      frame.style.width = '0';
-      frame.style.height = '0';
-      frame.style.border = '0';
-      document.body.appendChild(frame);
-      frame.srcdoc = print_html;
-      frame.onload = () => {
-        frame.contentWindow?.focus();
-        frame.contentWindow?.print();
-        window.setTimeout(() => frame.remove(), 60_000);
-      };
+      printHtml(print_html);
     },
   });
 
@@ -179,6 +202,7 @@ export default function LaudosPage({ user }: { user: CurrentUser }) {
         {selected.patient?.name} · {selected.procedure?.name ?? '—'} · {dateLabel(selected.created_at)}
         {selected.finalized_at ? ` · finalizado ${dateLabel(selected.finalized_at)}` : ''}
         {selected.signed_manual ? ' · assinatura manual registrada' : ''}
+        {selected.portal_published ? ' · publicado no portal' : ''}
         {selected.retention_until ? ` · expurgo ${dateLabel(selected.retention_until)}` : ''}
       </p>
       <div className="report-toolbar">
@@ -213,7 +237,18 @@ export default function LaudosPage({ user }: { user: CurrentUser }) {
         <Button variant="outline" disabled={print.isPending} onClick={() => print.mutate()}>Imprimir{selected.print_count > 0 ? ` (reimpressão #${selected.print_count + 1})` : ''}</Button>
         {selected.status === 'FINALIZADO' && !selected.signed_manual && canSign
           ? <Button variant="success" disabled={sign.isPending} onClick={() => sign.mutate()}>Marcar assinatura manual</Button> : null}
+        {selected.status === 'FINALIZADO' && canWrite && !selected.portal_published
+          ? <Button variant="success" disabled={publishPortal.isPending} onClick={() => publishPortal.mutate()}>Publicar resultado no portal</Button> : null}
+        {selected.status === 'FINALIZADO' && selected.portal_published
+          ? <Button variant="outline" disabled={printFolha.isPending} onClick={() => printFolha.mutate()}>Folha de acesso</Button> : null}
+        {selected.status === 'FINALIZADO' && canWrite && selected.portal_published && revokeFor !== selected.id
+          ? <Button variant="outline" onClick={() => { setRevokeFor(selected.id); setRevokeReason(''); }}>Revogar publicação</Button> : null}
       </div>
+      {revokeFor === selected.id ? <div className="catalog-form-actions">
+        <TextField label="Motivo da revogação" value={revokeReason} minLength={3} onChange={(event) => setRevokeReason(event.target.value)} />
+        <Button disabled={revokeReason.trim().length < 3 || revokePortal.isPending} onClick={() => revokePortal.mutate()}>Revogar</Button>
+        <Button variant="outline" onClick={() => setRevokeFor('')}>Cancelar</Button>
+      </div> : null}
       {selected.events.length > 0 ? <details><summary>Trilha do laudo ({selected.events.length})</summary>
         <ul className="event-trail">
           {selected.events.map((event) => <li key={event.id}>{event.event} — {event.by?.name ?? '—'} — {dateLabel(event.created_at)}</li>)}
@@ -222,8 +257,8 @@ export default function LaudosPage({ user }: { user: CurrentUser }) {
     </Panel> : null}
 
     {statusMessage ? <p role="status" className="muted">{statusMessage}</p> : null}
-    {(save.isError || finalize.isError || append.isError || sign.isError || print.isError) ? <Alert tone="danger" title="Operação falhou">
-      {apiErrorMessage(save.error ?? finalize.error ?? append.error ?? sign.error ?? print.error)}
+    {(save.isError || finalize.isError || append.isError || sign.isError || print.isError || publishPortal.isError || printFolha.isError || revokePortal.isError) ? <Alert tone="danger" title="Operação falhou">
+      {apiErrorMessage(save.error ?? finalize.error ?? append.error ?? sign.error ?? print.error ?? publishPortal.error ?? printFolha.error ?? revokePortal.error)}
     </Alert> : null}
   </div>;
 }

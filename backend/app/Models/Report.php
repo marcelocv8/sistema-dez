@@ -8,7 +8,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
-#[Fillable(['appointment_id', 'patient_id', 'procedure_id', 'doctor_id', 'template_id', 'content_html', 'content_backup', 'status', 'typed_by', 'finalized_at', 'retention_until', 'adendo', 'signed_manual_by', 'signed_manual_at', 'print_count', 'last_print_by', 'last_printed_at'])]
+#[Fillable(['appointment_id', 'patient_id', 'procedure_id', 'doctor_id', 'template_id', 'content_html', 'content_backup', 'status', 'typed_by', 'finalized_at', 'retention_until', 'adendo', 'signed_manual_by', 'signed_manual_at', 'print_count', 'last_print_by', 'last_printed_at', 'portal_access_id', 'portal_published_at', 'portal_published_by', 'portal_unpublished_at'])]
 class Report extends Model
 {
     use HasUuids;
@@ -26,6 +26,8 @@ class Report extends Model
             'signed_manual_at' => 'immutable_datetime',
             'print_count' => 'integer',
             'last_printed_at' => 'immutable_datetime',
+            'portal_published_at' => 'immutable_datetime',
+            'portal_unpublished_at' => 'immutable_datetime',
         ];
     }
 
@@ -62,5 +64,10 @@ class Report extends Model
     public function events(): HasMany
     {
         return $this->hasMany(ReportEvent::class);
+    }
+
+    public function portalAccess(): BelongsTo
+    {
+        return $this->belongsTo(PortalAccess::class);
     }
 }

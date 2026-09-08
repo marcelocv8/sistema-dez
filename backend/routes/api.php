@@ -16,7 +16,9 @@ use App\Http\Controllers\Api\V1\ImportIssueController;
 use App\Http\Controllers\Api\V1\OfferingVisibilityController;
 use App\Http\Controllers\Api\V1\PatientAppointmentController;
 use App\Http\Controllers\Api\V1\PayoutController;
+use App\Http\Controllers\Api\V1\PortalController;
 use App\Http\Controllers\Api\V1\ProfessionalCommissionController;
+use App\Http\Controllers\Api\V1\ProntuarioController;
 use App\Http\Controllers\Api\V1\PublicAppointmentController;
 use App\Http\Controllers\Api\V1\PublicAvailabilityController;
 use App\Http\Controllers\Api\V1\PublicServiceController;
@@ -43,6 +45,10 @@ Route::prefix('v1/public')->middleware('throttle:public-api')->group(function ()
     Route::get('services', PublicServiceController::class)->name('api.v1.public.services.index');
     Route::get('availability', PublicAvailabilityController::class)->name('api.v1.public.availability.index');
     Route::post('appointments', PublicAppointmentController::class)->name('api.v1.public.appointments.store');
+    Route::prefix('portal')->middleware('throttle:portal-auth')->group(function (): void {
+        Route::post('login', [PortalController::class, 'login'])->name('api.v1.portal.login');
+        Route::get('results', [PortalController::class, 'results'])->name('api.v1.portal.results');
+    });
     Route::get('units', [DisplayController::class, 'units'])->name('api.v1.public.units.index');
     Route::get('display', [DisplayController::class, 'show'])->name('api.v1.public.display.show');
 });
@@ -125,6 +131,16 @@ Route::prefix('v1')->middleware(['auth:sanctum', 'throttle:team-api'])->group(fu
         Route::post('reports/{report}/append', [ReportController::class, 'append'])->middleware('permission:reports.write')->name('api.v1.team.reports.append');
         Route::post('reports/{report}/sign-manual', [ReportController::class, 'signManual'])->middleware('permission:reports.sign')->name('api.v1.team.reports.sign-manual');
         Route::post('reports/{report}/print', [ReportController::class, 'print'])->middleware('permission:reports.view')->name('api.v1.team.reports.print');
+        Route::post('reports/{report}/portal', [PortalController::class, 'publish'])->middleware('permission:reports.write')->name('api.v1.team.reports.portal.publish');
+        Route::get('reports/{report}/portal/folha', [PortalController::class, 'folha'])->middleware('permission:reports.view')->name('api.v1.team.reports.portal.folha');
+        Route::post('reports/{report}/portal/revoke', [PortalController::class, 'revokePublication'])->middleware('permission:reports.write')->name('api.v1.team.reports.portal.revoke');
+        Route::get('prontuario', [ProntuarioController::class, 'timeline'])->middleware('permission:prontuario.view')->name('api.v1.team.prontuario.timeline');
+        Route::post('prontuario/notes', [ProntuarioController::class, 'storeNote'])->middleware('permission:prontuario.write')->name('api.v1.team.prontuario.notes.store');
+        Route::put('prontuario/notes/{clinicalNote}', [ProntuarioController::class, 'updateNote'])->middleware('permission:prontuario.write')->name('api.v1.team.prontuario.notes.update');
+        Route::post('prontuario/alerts', [ProntuarioController::class, 'addAlert'])->middleware('permission:prontuario.write')->name('api.v1.team.prontuario.alerts.store');
+        Route::post('prontuario/alerts/{patientAlert}/deactivate', [ProntuarioController::class, 'deactivateAlert'])->middleware('permission:prontuario.write')->name('api.v1.team.prontuario.alerts.deactivate');
+        Route::get('prontuario/ai/status', [ProntuarioController::class, 'aiStatus'])->middleware('permission:prontuario.view')->name('api.v1.team.prontuario.ai.status');
+        Route::post('prontuario/ai/suggest', [ProntuarioController::class, 'aiSuggest'])->middleware('permission:ai.use')->name('api.v1.team.prontuario.ai.suggest');
         Route::middleware('permission:payouts.view')->group(function (): void {
             Route::get('payouts', [PayoutController::class, 'index'])->name('api.v1.team.payouts.index');
             Route::get('payouts/{payout}', [PayoutController::class, 'show'])->name('api.v1.team.payouts.show');

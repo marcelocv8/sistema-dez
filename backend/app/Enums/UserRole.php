@@ -51,6 +51,9 @@ enum UserRole: string
                 'reports.view',
                 'reports.write',
                 'reports.sign',
+                'prontuario.view',
+                'prontuario.write',
+                'ai.use',
             ],
             self::Supervisor => [
                 'prices.view',
@@ -82,9 +85,11 @@ enum UserRole: string
                 'reports.view',
                 'reports.write',
                 'reports.sign',
+                'prontuario.view',
+                'prontuario.write',
             ],
-            self::Reception => ['prices.view', 'catalog.view', 'catalog-links.view', 'schedule.view', 'appointments.manage', 'queue.call', 'b2b.view', 'chat.use', 'budgets.view', 'budgets.manage', 'routine.view', 'routine.tick', 'reports.view', 'reports.write'],
-            self::Cashier => ['prices.view', 'schedule.view', 'catalog-links.view', 'cash.view', 'cash.operate', 'cash.close', 'payouts.view', 'payouts.pay', 'b2b.view', 'b2b.settle', 'chat.use', 'routine.view', 'routine.tick', 'reports.view'],
+            self::Reception => ['prices.view', 'catalog.view', 'catalog-links.view', 'schedule.view', 'appointments.manage', 'queue.call', 'b2b.view', 'chat.use', 'budgets.view', 'budgets.manage', 'routine.view', 'routine.tick', 'reports.view', 'reports.write', 'prontuario.view'],
+            self::Cashier => ['prices.view', 'schedule.view', 'catalog-links.view', 'cash.view', 'cash.operate', 'cash.close', 'payouts.view', 'payouts.pay', 'b2b.view', 'b2b.settle', 'chat.use', 'routine.view', 'routine.tick', 'reports.view', 'prontuario.view'],
             self::Manager => [
                 'prices.view',
                 'catalog.view',
@@ -118,8 +123,10 @@ enum UserRole: string
                 'reports.view',
                 'reports.write',
                 'reports.sign',
+                'prontuario.view',
+                'prontuario.write',
             ],
-            self::Doctor => ['schedule.view', 'catalog-links.view', 'queue.call', 'payouts.view', 'payouts.confirm', 'chat.use', 'reports.view', 'reports.write', 'reports.sign'],
+            self::Doctor => ['schedule.view', 'catalog-links.view', 'queue.call', 'payouts.view', 'payouts.confirm', 'chat.use', 'reports.view', 'reports.write', 'reports.sign', 'prontuario.view', 'prontuario.write', 'ai.use'],
         };
     }
 

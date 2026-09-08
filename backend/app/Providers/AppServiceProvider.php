@@ -26,6 +26,7 @@ class AppServiceProvider extends ServiceProvider
         Model::preventLazyLoading(! app()->isProduction());
 
         RateLimiter::for('public-api', fn (Request $request) => Limit::perMinute(60)->by($request->ip()));
+        RateLimiter::for('portal-auth', fn (Request $request) => Limit::perMinute(10)->by($request->ip()));
         RateLimiter::for('patient-management', fn (Request $request) => Limit::perMinute(30)->by($request->ip()));
         RateLimiter::for('team-login', fn (Request $request) => Limit::perMinute(5)->by($request->ip().'|'.$request->string('email')));
         RateLimiter::for('team-api', fn (Request $request) => Limit::perMinute(120)->by((string) ($request->user()?->id ?? $request->ip())));

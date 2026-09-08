@@ -183,3 +183,14 @@ a { color: var(--dez-teal); text-decoration: none; font-size: 11px; font-weight:
 .event-trail { margin: 8px 0 0 18px; padding: 0; color: var(--dez-muted, #6b7a86); font-size: 11px; }
 .event-trail li { list-style: disc; margin-bottom: 3px; }
 .laudos-page details summary { cursor: pointer; color: var(--dez-teal, #0d7c85); font-size: 12px; }
+
+.alert-chips { display: flex; flex-wrap: wrap; gap: 8px; margin: 10px 0; }
+.alert-chip { display: inline-flex; align-items: center; gap: 6px; padding: 7px 12px; border-radius: 999px; font-size: 11px; }
+.alert-chip--alergia { background: var(--dez-danger-soft, #fdeceb); color: var(--dez-danger, #c0392b); border: 1px solid #f5c6c2; }
+.alert-chip--condicao { background: var(--dez-warning-soft, #fff7e0); color: var(--dez-warning, #b7791f); border: 1px solid #f3e0ae; }
+.alert-chip--outro { background: var(--dez-sky, #eef4f6); color: var(--dez-navy, #17233b); border: 1px solid var(--dez-line, #dfe7ea); }
+.alert-chip button { border: 0; background: transparent; font-size: 14px; cursor: pointer; color: inherit; padding: 0 2px; }
+.ai-panel { margin: 16px 0; padding: 14px; border: 1px dashed var(--dez-teal, #0d7c85); border-radius: 10px; background: #f4fbfb; }
+.ai-panel h3 { margin: 0 0 4px; color: var(--dez-teal, #0d7c85); font-size: 13px; }
+.ai-output { background: white; margin-top: 10px; }
+.prontuario-page .report-editor { min-height: 200px; }

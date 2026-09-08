@@ -10,4 +10,11 @@ return [
     'routine_return_months' => (int) env('ROUTINE_RETURN_MONTHS', 6),
     'identity_pepper' => env('IDENTITY_PEPPER', env('APP_KEY')),
     'management_token_secret' => env('MANAGEMENT_TOKEN_SECRET', env('APP_KEY')),
+    'deepseek_api_key' => env('DEEPSEEK_API_KEY'),
+    'deepseek_model' => env('DEEPSEEK_MODEL', 'deepseek-chat'),
+    'portal' => [
+        'ttl_days' => (int) env('PORTAL_TTL_DAYS', 30),
+        'base_url' => env('PORTAL_BASE_URL', 'http://localhost:5176'),
+        'path' => '/resultados',
+    ],
 ];

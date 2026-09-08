@@ -8,6 +8,7 @@ use Database\Factories\UserFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\Hidden;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 
@@ -36,5 +37,10 @@ class User extends Authenticatable
     public function hasPermission(string $permission): bool
     {
         return $this->active && in_array($permission, $this->role->permissions(), true);
+    }
+
+    public function professional(): HasOne
+    {
+        return $this->hasOne(Professional::class);
     }
 }

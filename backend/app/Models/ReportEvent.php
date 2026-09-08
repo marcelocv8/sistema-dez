@@ -26,6 +26,10 @@ class ReportEvent extends Model
 
     public const APPENDED = 'ADENDO';
 
+    public const PUBLISHED = 'PUBLICADO';
+
+    public const UNPUBLISHED = 'REVOGADO_PORTAL';
+
     public const PURGED = 'RETENCAO_LIMPA';
 
     public const UPDATED_AT = null;

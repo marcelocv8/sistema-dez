@@ -38,7 +38,10 @@ export type Permission =
   | 'routine.manage'
   | 'reports.view'
   | 'reports.write'
-  | 'reports.sign';
+  | 'reports.sign'
+  | 'prontuario.view'
+  | 'prontuario.write'
+  | 'ai.use';
 
 export const clinicTimeZone = 'America/Fortaleza';
 

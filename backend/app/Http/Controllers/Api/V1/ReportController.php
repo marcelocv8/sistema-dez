@@ -243,6 +243,8 @@ class ReportController extends Controller
             'signed_manual_at' => $report->signed_manual_at?->toIso8601String(),
             'print_count' => $report->print_count,
             'last_printed_at' => $report->last_printed_at?->toIso8601String(),
+            'portal_published' => $report->portal_published_at !== null && $report->portal_unpublished_at === null,
+            'portal_published_at' => $report->portal_published_at?->toIso8601String(),
             'created_at' => $report->created_at?->toIso8601String(),
             'events' => $report->relationLoaded('events') ? $report->events->map(fn (ReportEvent $event): array => [
                 'id' => $event->id,
