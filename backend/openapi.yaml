@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Sistema DEZ API
-  version: 0.11.0
+  version: 0.14.0
 servers:
   - url: http://localhost:8000/api/v1
 paths:
@@ -640,6 +640,341 @@ paths:
       responses:
         '200': { description: Chamada atual e próximas senhas }
         '422': { $ref: '#/components/responses/ValidationError' }
+  /team/attendance:
+    get:
+      summary: Relatório de ponto por dia/usuário no período
+      description: 'Requer attendance.view (exclusivo Admin e Supervisor). Cada login registra uma entrada; relogins e relogins após o horário de saída configurado aparecem sinalizados. Dados append-only.'
+      security: [{ cookieAuth: [] }]
+      parameters:
+        - { name: from, in: query, required: true, schema: { type: string, format: date } }
+        - { name: to, in: query, required: true, schema: { type: string, format: date } }
+        - { name: user_id, in: query, schema: { type: integer } }
+      responses:
+        '200': { description: Dias com entradas, saída configurada e sinalizações }
+        '403': { description: Requer attendance.view }
+  /team/attendance/export:
+    get:
+      summary: Exportação CSV do relatório de ponto
+      description: Requer attendance.view. Mesmos filtros do relatório.
+      security: [{ cookieAuth: [] }]
+      parameters:
+        - { name: from, in: query, required: true, schema: { type: string, format: date } }
+        - { name: to, in: query, required: true, schema: { type: string, format: date } }
+      responses:
+        '200': { description: CSV ponto-e-vírgula (pt-BR) }
+        '403': { description: Requer attendance.view }
+  /team/attendance/exit-hour:
+    get:
+      summary: Horário de saída configurado
+      security: [{ cookieAuth: [] }]
+      responses:
+        '200': { description: Horário atual (padrão 18:00) }
+    put:
+      summary: Configura o horário de saída que fecha o dia do usuário
+      description: Requer team.manage (só Admin). Alteração auditada.
+      security: [{ cookieAuth: [] }]
+      requestBody: { required: true, content: { application/json: { schema: { type: object, required: [exit_hour], properties: { exit_hour: { type: string, pattern: '^[0-9]{2}:[0-9]{2}$' } } } } } }
+      responses:
+        '200': { description: Horário atualizado e auditado }
+        '403': { description: Requer team.manage }
+        '422': { $ref: '#/components/responses/ValidationError' }
+  /team/chat/conversations:
+    get:
+      summary: Conversas do usuário com contador de não lidas
+      description: Requer chat.use (todos os papéis).
+      security: [{ cookieAuth: [] }]
+      responses:
+        '200': { description: Conversas ordenadas por atividade recente }
+    post:
+      summary: Cria conversa 1:1 (reusa thread existente) ou grupo por setor
+      description: Requer chat.use. 1:1 exige exatamente um participante além do autor; grupo exige título.
+      security: [{ cookieAuth: [] }]
+      requestBody: { required: true, content: { application/json: { schema: { type: object, required: [type, participant_ids], properties: { type: { type: string, enum: [DIRECT, GROUP] }, title: { type: string, maxLength: 120 }, participant_ids: { type: array, items: { type: integer }, minItems: 1, maxItems: 30 } } } } } }
+      responses:
+        '201': { description: Conversa criada ou existente reutilizada }
+        '403': { description: Requer chat.use }
+        '422': { $ref: '#/components/responses/ValidationError' }
+  /team/chat/conversations/{id}/messages:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+    get:
+      summary: Mensagens da conversa (só participantes)
+      description: Requer chat.use. Parâmetro after para polling incremental.
+      security: [{ cookieAuth: [] }]
+      parameters:
+        - { name: after, in: query, schema: { type: string, format: date-time } }
+      responses:
+        '200': { description: Mensagens em ordem cronológica }
+        '403': { description: Não participante }
+    post:
+      summary: Envia mensagem, opcionalmente vinculada a paciente/agendamento
+      description: Requer chat.use. Atualiza last_read do autor.
+      security: [{ cookieAuth: [] }]
+      requestBody: { required: true, content: { application/json: { schema: { type: object, required: [body], properties: { body: { type: string, maxLength: 2000 }, patient_id: { type: string, format: uuid }, appointment_id: { type: string, format: uuid } } } } } }
+      responses:
+        '201': { description: Mensagem enviada }
+        '403': { description: Não participante }
+        '422': { $ref: '#/components/responses/ValidationError' }
+  /team/chat/conversations/{id}/read:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      summary: Marca a conversa como lida pelo usuário
+      security: [{ cookieAuth: [] }]
+      responses:
+        '200': { description: Confirmado }
+        '403': { description: Não participante }
+  /team/chat/unread:
+    get:
+      summary: Total de mensagens não lidas do usuário (badge)
+      security: [{ cookieAuth: [] }]
+      responses:
+        '200': { description: Contador agregado }
+  /team/chat/participants:
+    get:
+      summary: Usuários ativos para iniciar conversas
+      security: [{ cookieAuth: [] }]
+      responses:
+        '200': { description: Diretório mínimo (id, nome, perfil) }
+  /team/chat/patients/lookup:
+    get:
+      summary: Localiza paciente por CPF para vincular mensagem
+      description: Requer chat.use. Retorna apenas id e nome.
+      security: [{ cookieAuth: [] }]
+      parameters:
+        - { name: cpf, in: query, required: true, schema: { type: string, pattern: '^[0-9]{11}$' } }
+      responses:
+        '200': { description: Paciente encontrado ou null }
+        '422': { $ref: '#/components/responses/ValidationError' }
+  /team/budgets:
+    get:
+      summary: Lista orçamentos por situação/paciente
+      description: Requer budgets.view (Recepção incluída).
+      security: [{ cookieAuth: [] }]
+      parameters:
+        - { name: status, in: query, schema: { type: string, enum: [RASCUNHO, ENVIADO, ACEITO, RECUSADO, PERDIDO] } }
+        - { name: patient_id, in: query, schema: { type: string, format: uuid } }
+      responses:
+        '200': { description: Orçamentos com itens e prescrição }
+        '403': { description: Requer budgets.view }
+    post:
+      summary: Cria orçamento (rascunho) com itens e prescrição anexada
+      description: Requer budgets.manage. Preço por convênio com fotografia por item; prescrição (foto/PDF) fica fora do webroot e só é acessível com budgets.view.
+      security: [{ cookieAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [patient_id, items]
+              properties:
+                patient_id: { type: string, format: uuid }
+                agreement_id: { type: string, format: uuid }
+                items: { type: array, minItems: 1, maxItems: 50, items: { type: object, required: [procedure_id, amount], properties: { procedure_id: { type: string, format: uuid }, amount: { type: number }, quantity: { type: integer, minimum: 1, maximum: 99 } } } }
+                prescription: { type: string, format: binary, description: Foto/PDF da prescrição (≤ 10 MB) }
+      responses:
+        '201': { description: Orçamento criado (RASCUNHO) e auditado }
+        '403': { description: Requer budgets.manage }
+        '422': { $ref: '#/components/responses/ValidationError' }
+  /team/budgets/price-options:
+    get:
+      summary: Preços vigentes do convênio para montar itens
+      description: Requer budgets.view. Busca por nome (3+ caracteres) ou código TUSS.
+      security: [{ cookieAuth: [] }]
+      parameters:
+        - { name: agreement_id, in: query, required: true, schema: { type: string, format: uuid } }
+        - { name: q, in: query, schema: { type: string, minLength: 3, maxLength: 100 } }
+      responses:
+        '200': { description: Opções com fotografia de preço }
+        '403': { description: Requer budgets.view }
+  /team/budgets/{id}/send:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      summary: Envia o orçamento ao paciente (envio manual; WhatsApp fora)
+      description: Requer budgets.manage. RASCUNHO → ENVIADO, com sent_at para a rotina de retorno D+1.
+      security: [{ cookieAuth: [] }]
+      responses:
+        '200': { description: Enviado e auditado }
+        '403': { description: Requer budgets.manage }
+        '422': { $ref: '#/components/responses/ValidationError' }
+  /team/budgets/{id}/resolve:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      summary: Resolve o orçamento obrigatoriamente (aceito/recusado/perdido)
+      description: Requer budgets.manage. Só ENVIADO pode ser resolvido; quem resolve fica registrado; auditado.
+      security: [{ cookieAuth: [] }]
+      requestBody: { required: true, content: { application/json: { schema: { type: object, required: [outcome, note], properties: { outcome: { type: string, enum: [ACEITO, RECUSADO, PERDIDO] }, note: { type: string, minLength: 3, maxLength: 500 } } } } } }
+      responses:
+        '200': { description: Resolvido e auditado }
+        '403': { description: Requer budgets.manage }
+        '422': { $ref: '#/components/responses/ValidationError' }
+  /team/budgets/{id}/prescription:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+    get:
+      summary: Baixa a prescrição anexada (fora do webroot)
+      description: Requer budgets.view. Servida via API com controle de acesso (LGPD §7.6).
+      security: [{ cookieAuth: [] }]
+      responses:
+        '200': { description: Arquivo da prescrição }
+        '403': { description: Requer budgets.view }
+        '404': { description: Sem prescrição anexada }
+  /team/routines:
+    get:
+      summary: Rotinas do dia (mine = atribuídas ao usuário; all = Admin/Supervisor)
+      description: Requer routine.view. Pendentes e concluídas com crítica e autor.
+      security: [{ cookieAuth: [] }]
+      parameters:
+        - { name: date, in: query, schema: { type: string, format: date } }
+        - { name: scope, in: query, schema: { type: string, enum: [mine, all] } }
+      responses:
+        '200': { description: Tarefas do dia }
+        '403': { description: Requer routine.view }
+  /team/routines/generate:
+    post:
+      summary: Gera as rotinas do dia (idempotente)
+      description: Requer routine.manage (Admin/Supervisor/Gerente). Roda às 00:20 pelo scheduler; cria confirmações de amanhã, retorno de orçamentos D+1, aniversariantes de consulta e faturas B2B vencidas.
+      security: [{ cookieAuth: [] }]
+      requestBody: { required: false, content: { application/json: { schema: { type: object, properties: { date: { type: string, format: date } } } } } }
+      responses:
+        '201': { description: Quantidade criada }
+        '403': { description: Requer routine.manage }
+  /team/routines/{id}/tick:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      summary: Conclui a rotina com crítica opcional
+      description: Requer routine.tick. Fica registrado quem fez, quando e a observação; auditado.
+      security: [{ cookieAuth: [] }]
+      requestBody: { required: false, content: { application/json: { schema: { type: object, properties: { note: { type: string, maxLength: 1000 } } } } } }
+      responses:
+        '200': { description: Tick registrado }
+        '403': { description: Requer routine.tick }
+        '422': { $ref: '#/components/responses/ValidationError' }
+  /team/routines/{id}/reopen:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      summary: Reabre rotina concluída com motivo
+      description: Requer routine.manage (Admin/Supervisor/Gerente).
+      security: [{ cookieAuth: [] }]
+      requestBody: { required: true, content: { application/json: { schema: { type: object, required: [note], properties: { note: { type: string, minLength: 3, maxLength: 1000 } } } } } }
+      responses:
+        '200': { description: Reaberta e auditada }
+        '403': { description: Requer routine.manage }
+        '422': { $ref: '#/components/responses/ValidationError' }
+  /team/reports/templates:
+    get:
+      summary: Biblioteca de modelos de laudo e linhas (importados do STG)
+      description: Requer reports.view. 72 modelos + 9 linhas importados; filtra por procedimento/médico; para LINHA inclui content_html completo para inserção no editor.
+      security: [{ cookieAuth: [] }]
+      parameters:
+        - { name: q, in: query, schema: { type: string, minLength: 2, maxLength: 100 } }
+        - { name: procedure_id, in: query, schema: { type: string, format: uuid } }
+        - { name: doctor_id, in: query, schema: { type: string, format: uuid } }
+        - { name: legacy_type, in: query, schema: { type: string, enum: [LAUDO, LINHA] } }
+      responses:
+        '200': { description: Modelos ativos }
+        '403': { description: Requer reports.view }
+  /team/reports:
+    get:
+      summary: Lista laudos por consulta ou paciente
+      description: Requer reports.view. patient_id = histórico completo do paciente (equivale a todoslaudo do STG).
+      security: [{ cookieAuth: [] }]
+      parameters:
+        - { name: appointment_id, in: query, schema: { type: string, format: uuid } }
+        - { name: patient_id, in: query, schema: { type: string, format: uuid } }
+        - { name: status, in: query, schema: { type: string, enum: [RASCUNHO, FINALIZADO] } }
+      responses:
+        '200': { description: Laudos }
+        '403': { description: Requer reports.view }
+        '422': { $ref: '#/components/responses/ValidationError' }
+    post:
+      summary: Cria laudo (rascunho) a partir de modelo, para uma consulta
+      description: Requer reports.write (Recepção/digitadora). Substitui variáveis {{PACIENTE_NOME}}, {{PACIENTE_IDADE}} e {{DATA_HOJE}}; preserva a rotina do STG (médico dita → recepção digita → imprime → assina no papel).
+      security: [{ cookieAuth: [] }]
+      requestBody: { required: true, content: { application/json: { schema: { type: object, required: [appointment_id, template_id], properties: { appointment_id: { type: string, format: uuid }, template_id: { type: string, format: uuid } } } } } }
+      responses:
+        '201': { description: Laudo criado (RASCUNHO) e auditado }
+        '403': { description: Requer reports.write }
+        '422': { $ref: '#/components/responses/ValidationError' }
+  /team/reports/history:
+    get:
+      summary: Histórico de laudos do paciente
+      description: Requer reports.view.
+      security: [{ cookieAuth: [] }]
+      parameters:
+        - { name: patient_id, in: query, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200': { description: Laudos do paciente }
+        '403': { description: Requer reports.view }
+  /team/reports/{id}:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+    get:
+      summary: Detalhe do laudo com trilha de eventos
+      description: Requer reports.view. Mostra quem digitou, imprimiu, re-imprimiu, marcou assinatura manual e adicionou adendo.
+      security: [{ cookieAuth: [] }]
+      responses:
+        '200': { description: Laudo }
+        '403': { description: Requer reports.view }
+        '404': { description: Não encontrado }
+    put:
+      summary: Salva o conteúdo do laudo (rascunho/autosave)
+      description: Requer reports.write. Só RASCUNHO pode ser editado; laudo finalizado usa adendo.
+      security: [{ cookieAuth: [] }]
+      requestBody: { required: true, content: { application/json: { schema: { type: object, required: [content_html], properties: { content_html: { type: string, maxLength: 2000000 } } } } } }
+      responses:
+        '200': { description: Salvo (evento SALVO) }
+        '403': { description: Requer reports.write }
+        '422': { $ref: '#/components/responses/ValidationError' }
+  /team/reports/{id}/finalize:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      summary: Finaliza o laudo
+      description: Requer reports.write. RASCUNHO → FINALIZADO; guarda cópia do conteúdo (texto_laudo) e calcula retention_until = +5 anos (decisão do dono, revisão jurídica pendente).
+      security: [{ cookieAuth: [] }]
+      responses:
+        '200': { description: Finalizado e auditado }
+        '403': { description: Requer reports.write }
+        '422': { $ref: '#/components/responses/ValidationError' }
+  /team/reports/{id}/append:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      summary: Adiciona adendo ao laudo
+      description: Requer reports.write. Texto exigido (3+ chars); seção ADENDO anexada ao conteúdo; auditado.
+      security: [{ cookieAuth: [] }]
+      requestBody: { required: true, content: { application/json: { schema: { type: object, required: [adendo], properties: { adendo: { type: string, minLength: 3, maxLength: 20000 } } } } } }
+      responses:
+        '200': { description: Adendo registrado }
+        '403': { description: Requer reports.write }
+        '422': { $ref: '#/components/responses/ValidationError' }
+  /team/reports/{id}/sign-manual:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      summary: Registra assinatura manual (papel) do laudo finalizado
+      description: Requer reports.sign (Médico/Admin/Supervisor/Gerente). Não bloqueia impressão; registra quem confirmou e quando.
+      security: [{ cookieAuth: [] }]
+      responses:
+        '200': { description: Assinatura registrada e auditada }
+        '403': { description: Requer reports.sign }
+        '422': { $ref: '#/components/responses/ValidationError' }
+  /team/reports/{id}/print:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      summary: Registra impressão/reimpressão e devolve HTML de impressão
+      description: Requer reports.view. A revisão visual no papel NÃO é etapa digital; primeira impressão = IMPRESSO, seguintes = REIMPRESSO. Contagem e autor ficam na trilha.
+      security: [{ cookieAuth: [] }]
+      responses:
+        '200': { description: HTML de impressão + contagem }
+        '403': { description: Requer reports.view }
   /team/cash-registers:
     get:
       summary: Lista caixas recentes (abertos e fechados)

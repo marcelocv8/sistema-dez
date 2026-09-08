@@ -38,6 +38,15 @@ return [
             'report' => false,
         ],
 
+        // Prescrições de orçamentos: fora do webroot, acesso só via API autenticada (§7.6).
+        'budgets' => [
+            'driver' => 'local',
+            'root' => storage_path('app/budgets'),
+            'serve' => false,
+            'throw' => false,
+            'report' => false,
+        ],
+
         'public' => [
             'driver' => 'local',
             'root' => storage_path('app/public'),

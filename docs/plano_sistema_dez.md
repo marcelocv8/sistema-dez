@@ -1,6 +1,12 @@
 # Sistema DEZ — Clínica DEZ
-## Especificação (v0.11)
+## Especificação (v0.12)
 
+> **v0.12** — Fase 3D + parte da Fase 4 commitadas em `fa80073` (07/09/2026):
+> B2B manual (fatura/baixa com filtro de adimplência, sem Inter), fila/chamada
+> da recepção, painel TV funcional e detecção de conflitos de escala (§14.13).
+> Totais de validação do ciclo ainda não apurados; sem commit automático —
+> este registro foi escrito no `.md` a pedido do dono, sem commitar.
+>
 > **Objetivo:** ponto de partida para o **Sistema DEZ** — sistema de gestão próprio que substitui o STG ("STG CLINICAS v2.0", CodeIgniter 1.7.2 / PHP 5), mantendo **a rotina que funciona hoje** e resolvendo os pontos fracos (fechamento de caixa, segurança antifraude, agendamento online, usabilidade, dados na mão).
 >
 > **v0.11** — Repo privado `marcelocv8/sistema-dez` criado (04/09/2026): o código do
@@ -514,6 +520,7 @@ Solicitação → realização/captura do exame
 - **Perfis cumulativos**: um usuário pode ter **vários perfis** ao mesmo tempo (ex.: Enfermagem + Recepção); as permissões **somam**.
 - **Ponto e TV**: o **relatório de ponto** (§6.15) é exclusivo de **Admin e Supervisor**; o médico logado pode **chamar seus pacientes no painel TV** (§6.10) para sua sala.
 - **Preços de tabela (31/08):** a **consulta de preços** (§6.20) é visível à **Recepção** no balcão — preço de tabela é público ao paciente (mesma informação do site). O sigilo da coluna "Vê valores?" refere-se a **valores de caixa/faturamento**, não à tabela.
+- **B2B e chamada de fila (07/09, §14.13):** `queue.call` para Admin, Supervisor, Recepção, Manager e Doctor (o médico logado chama os próprios pacientes na TV); `b2b.view` (Admin, Supervisor, Recepção, Caixa, Manager), `b2b.manage` (Admin, Supervisor, Manager) e `b2b.settle` (Admin, Manager, Caixa). B2B é faturamento — visível aos perfis acima — e não se confunde com valores de caixa.
 
 ### 7.6 Segurança técnica (lições do STG)
 - Secrets em variáveis de ambiente (nunca `postgres/123456` no código).
@@ -650,7 +657,7 @@ Cada decisão virou tarefa de implementação (BE/FE/QA). **ÚLTIMA** = última 
 
 ---
 
-## 14. Andamento da implementação — ciclos v0.5 a v0.10 (30/08–03/09/2026)
+## 14. Andamento da implementação — ciclos v0.5 a v0.12 (30/08–07/09/2026)
 
 Registro do que foi **implementado e validado** neste ciclo. Não substitui decisões pendentes do §11 — o dono define os rumos a partir daqui.
 
@@ -1025,6 +1032,93 @@ acima. Lições de ambiente também viraram §15.
 
 ---
 
+### 14.13 Fase 3D — B2B manual + fila/chamada da recepção + painel TV + conflitos de escala (07/09/2026)
+
+**Situação: implementada e commitada (`fa80073`, 47 arquivos, +3585/−75), sem validação final apurada neste ciclo.** Cobre a Fase 3D (T9 com fatura/baixa manuais, sem boleto Inter) e antecipa parte da Fase 4 (fila/chamada e TV — T4/T13). Bate-papo, ponto, rotinas e orçamentos continuam pendentes.
+
+#### Entregue
+
+- **B2B manual (T9, sem Inter):** tabelas `b2b_invoices` + itens, status `EMITIDA → ENVIADA → PAGA` com filtro computado `VENCIDA`; `POST .../b2b-invoices/generate` (a partir de fichas `AUTHORIZED`), `.../send`, `.../settle` (baixa parcial/total), `GET index/show`; página `/b2b` no app equipe. **Filtro de adimplência ativo:** `authorize-b2b` rejeita empresa com fatura vencida em aberto (lista até 5 competências) — sem parada no caixa só com empresa adimplente (§6.8).
+- **Fila/chamada (T4/T6):** `QueueController` (`GET queue`, `queue/history`, `reorder`, `call`, `schedule-conflicts` + `resolve`), enum `QueuePriority`, chamada com posição/senha; `ReceptionPage` ampliada (fila do dia, chamar, reordenar, histórico); ajustes em `AgendaPage`, `SchedulingSection` e `AppointmentEditor`; `check-in` passa a atualizar a fila existente em vez de só criar.
+- **Painel TV (T13, §6.10):** `DisplayController` público (`GET units`, `GET display`) + `painel-tv` reescrito (senha → sala/profissional, próximos, avisos). Sai da condição de mockado registrada em §14.2/§14.8.
+- **Conflitos de escala (§6.2.1 item 5):** `ScheduleConflictDetector` + entidade `schedule_conflicts` (aviso/pendência ao editar faixa com agendamentos, com resolução auditada); `POST schedule-windows/import` (importação da planilha de escala da Samara); ajustes em `BuildAvailability`, `ChangeAppointment` e exceções.
+- **RBAC (§7.5):** `queue.call` (Admin, Supervisor, Recepção, Manager, Doctor); `b2b.view/manage/settle` (Admin total; Supervisor ver+gerenciar; Recepção ver; Caixa ver+baixar; Manager total).
+- **Contratos:** OpenAPI **v0.11.0** + `schema.generated.ts` e packages `api`/`domain` regenerados. Correções junto no mesmo commit: dashboard passa a usar o timezone da clínica; `authorize-b2b` exige convênio empresarial ativo (fora o Particular padrão).
+- **Testes criados (totais do ciclo a apurar):** `B2bInvoiceTest`, `QueueTest`, `DisplayTest`, `ScheduleConflictTest`, `B2bPage.test.tsx`, `ReceptionPage.test.tsx`, specs `b2b-billing` e `reception-queue` (com configs Playwright próprias `playwright.b2b.config.ts` / `playwright.reception.config.ts`).
+
+#### Pendente
+
+1. Apurar e registrar os totais de validação deste ciclo (backend/frontend/Playwright) — não levantados ao commitar.
+2. E2E do repasse até o verde e validação manual acumulada (3A-1→3D), por decisão do dono.
+3. Restante da Fase 4: bate-papo, ponto, rotinas e orçamentos.
+
+---
+
+### 14.14 Bloco 1 (Fase 4) — Ponto + Bate-papo + reimportação do catálogo STG no dev (07/09/2026)
+
+**Situação: implementada e validada (verde em backend, Vitest, typecheck, build e E2E). Sem commit ainda — aguardando autorização do dono.**
+
+#### Entregue
+
+- **Reimport STG no dev (Bloco 0):** o banco dev tinha sido recriado vazio; `stg:import-catalog --commit` reimportou tudo com **checksum idêntico ao histórico (`6aa1c457…`)** — 2.313 preços (2.307 válidos), 85 pendências (5 RESOLVED/33 IGNORED/47 UNMATCHED). `stg:resolve-issues --commit` reaplicou as 38 decisões do dono (§14.5.1). Exemplo do §14.8 recriado (CLINICA MEDICA · ANDRE DIEGO · PARTICULAR M, R$130, ARRIVAL_BLOCK, 52 ocorrências, online).
+- **Ponto (§6.15):** `attendance_events` (append-only, PK uuid, eventos IN/OUT com by_user), hook no login (marca IN 1×/dia por `app_settings` `attendance_last_login_date`), `AttendanceController` (`POST attendance/out`, `GET attendance`, `GET attendance/report`, `GET attendance/report/csv`) + `/ponto` (relatório Admin/Supervisor; médico vê "seu dia" com botão Sair). Permissão `attendance.view` só Admin+Supervisor.
+- **Bate-papo (§6.12):** `chat_conversations`/`chat_participants`/`chat_messages` (`timestampTz` com precisão 6 — microssegundos, p/ ordenar no mesmo segundo), `ChatController` (`GET chat/conversations`, `POST chat/conversations`, `POST chat/conversations/{id}/messages`, `GET conversations/{id}/messages`, `GET chat/patients/lookup`, `GET chat/unread-count`), páginas `/batepapo` + badge `ChatBadge` no `AppShell`. Permissão `chat.use` para todos. Dedupe 1:1.
+- **Contratos:** OpenAPI **v0.12.0** + `schema.generated.ts` regenerados.
+- **Validação:** backend **101 testes / 827 asserções** verde; Pint ok; Vitest 23; typecheck 7 projetos; builds ok; **E2E `attendance-chat.spec.ts` 2/2 (desktop+mobile)** com `playwright.bloco1.config.ts` (re-seed + API `:18001` por `artisan serve` nativo).
+
+#### Pendências e aprendizados registrados
+
+1. **Teleconsulta adiada** (decisão do dono): entrar como tarefa "definir infraestrutura de teleconsulta" — sem implementação agora.
+2. E2E do ciclo anterior (3A-1→3D) e validação manual seguem acumulados para o final.
+3. **Armadilhas E2E/API** (novo): `actingAs` após login HTTP stateful → 401 (usar `flushHeaders()` antes de `actingAs`); `php -S` single-worker trava a segunda request — `PHP_CLI_SERVER_WORKERS=8`; `-Environment` do `Start-Process` falha no pwsh 7 (herdar `$env:` do shell mesmo).
+
+---
+
+### 14.15 Bloco 2 (Fase 4) — Orçamentos por prescrição + Rotinas diárias (07/09/2026)
+
+**Situação: implementada e validada (verde em backend, Vitest, typecheck, build e E2E). Sem commit ainda — aguardando autorização do dono.**
+
+#### Entregue
+
+- **Orçamentos (§6.3.3):** `budgets` + `budget_items` (fotografia de preço por item — amount congelado no momento da criação), status `RASCUNHO → ENVIADO → ACEITO/RECUSADO/PERDIDO` com `sent_at` (base da rotina D+1) e **resolução obrigatória** (nota ≥ 3 chars + quem resolveu); prescrição (foto/PDF ≤ 10 MB) no **disk `budgets` fora do webroot** (`storage/app/budgets`), download só via API com `budgets.view` (§7.6). `BudgetController`: create (multipart com patient lookup por CPF + itens + prescrição), index com filtros, `price-options` (preços vigentes por convênio, busca 3+ letras/TUSS), `send`, `resolve`, `prescription`. Página `/orcamentos` (localizar paciente por CPF, montar itens com total em tempo real, anexar prescrição, ENVIADO → Resolver sim/não). Permissões `budgets.view` (Admin, Supervisor, Manager, Recepção) e `budgets.manage` (mesmos, exceto... inclui Recepção; médio: Recepção gerencia).
+- **Rotinas (§6.3.2):** `routine_tasks` (types CONFIRMACAO/ORCAMENTO_RETORNO/ANIVERSARIANTE/FATURA_VENCENDO/MANUAL; pendente/concluída com crítico+done_by+done_at; reopen com nota obrigatória), `RoutineGenerator` **idempotente** (chave type+ref_id+due_date): confirmações do dia seguinte (appointments CONFIRMED/SCHEDULED D+1), retorno de orçamento D+1 (`budgets.sent_at`), aniversariantes com consulta ativa (appointment no dia + paciente fazendo aniversário) e faturas B2B vencidas (1 por fatura). `RoutineController` (`GET routines` mine/all + `date`, `POST routines/generate`, `POST routines/{id}/tick` com nota, `POST routines/{id}/reopen`). Comando `rotinas:generate` agendado **00:20 (America/Fortaleza)** em `routes/console.php`. Página `/rotinas` (pendentes/concluídas, gerar/refresh, tick, reabrir). Permissões `routine.view`/`routine.tick` (Admin, Supervisor, Manager, Recepção, Caixa) e `routine.manage` (Admin, Supervisor, Manager).
+- **Config:** `config/sistema_dez.php` ganhou `routine_return_months` (6, p/ rotina de retorno do §6.3.4 — o generator usa a constante base; a rotina de retorno por procedimento entra na Fase 5 com laudos).
+- **Contratos:** OpenAPI **v0.13.0** + `schema.generated.ts` regenerados.
+- **Validação:** backend **105 testes / 880 asserções** verde (`BudgetTest` + `RoutineTest` novos); Pint ok; Vitest **25** (`Bloc2Pages.test.tsx`); typecheck 7 projetos; builds ok; **E2E `budgets-routines.spec.ts` 2/2 (desktop+mobile)** com `playwright.bloco2.config.ts` (fluxo completo: login admin → gerar rotinas → orçamento por CPF → item com fotografia → prescrição → criar → enviar → resolver ACEITO).
+- **Correção no caminho:** `packages/api` não enviava `FormData` (orçamento multipart) com `Content-Type: application/json` — o helper agora detecta `FormData` e omito o header (boundary do browser).
+
+#### Pendente
+
+1. Commit dos Blocos 1+2 (aguardando autorização do dono).
+2. Validação manual acumulada (3A-1→3D + Blocos 1-2), por decisão do dono — no final do ciclo.
+3. Restante da Fase 4: nada (bloco fecha a Fase 4). Próximo: **Bloco 3 — Laudos**.
+
+---
+
+### 14.16 Bloco 3 (Fase 5) — Laudos: biblioteca do STG importada + fluxo preservado (07/09/2026)
+
+**Situação: implementada e validada (verde em backend, Vitest, typecheck, build e E2E). Sem commit ainda — aguardando autorização do dono.**
+
+#### Entregue
+
+- **Import da biblioteca (§6.4):** comando `stg:import-report-templates` (`--dry-run/--commit`, `--refresh`) lendo `STG_LAUDOS_PATH` (`C:/Projects/STG/_extracoes_laudos`, extração de 16/08): **80 modelos importados no dev — 71 laudos + 9 linhas** (o 72º, de nome vazio, é pulado de propósito), **40 com médico vinculado** por nome, 55 com procedimento (match exato + casamento com código de prefixo tipo `01S -`). Idempotente; nada sobrescreve o original sem `--refresh`. Modelos órfãos (ADMINISTRADOR) entram como legado para a triagem 12/24m futura, não bloqueiam nada.
+- **Tabelas:** `report_templates` (legacy_type LAUDO/LINHA + legacy_id + vínculos doctor/procedure), `reports` (appointment/patient/procedure/doctor/template, `content_html` + `content_backup` na finalização, status RASCUNHO/FINALIZADO, `retention_until` = finalização + **5 anos**, adendo, assinatura manual, contador de impressões) e `report_events` append-only (CRIADO, SALVO, FINALIZADO, IMPRESSO, REIMPRESSO, ASSINATURA_MANUAL, ADENDO, RETENCAO_LIMPA).
+- **`ReportController` (§6.4):** `GET reports/templates` (busca por nome/procedimento; LINHA devolve `content_html` completo para inserção), `POST reports` (cria de modelo para uma consulta, substitui `{{PACIENTE_NOME}}`, `{{PACIENTE_IDADE}}`, `{{DATA_HOJE}}`), `GET reports?appointment_id|patient_id`, `GET reports/history?patient_id` (equivale a `todoslaudo`), `GET reports/{id}` com trilha, `PUT reports/{id}` (só rascunho), `POST finalize` (só rascunho; calcula retenção), `POST append` (adendo com texto ≥ 3, seção ADENDO anexada), `POST sign-manual` (só finalizado; quem confirmou), `POST print` (1ª = IMPRESSO, seguintes = REIMPRESSO; devolve HTML de impressão com cabeçalho clínico + dados do paciente + linha de assinatura). **A revisão visual no papel NÃO vira etapa digital; impressão nunca é bloqueada** (§6.4).
+- **RBAC:** `reports.view` (todos os papéis), `reports.write` (Admin, Supervisor, Manager, Recepção, Médico — a digitadora do fluxo), `reports.sign` (Médico, Admin, Supervisor, Manager).
+- **Frontend:** página **`/laudos`** reescrita (substitui o mock `ReportPage`, apagado): localiza paciente por CPF → histórico com status/impressões/assinado; painel "Novo laudo a partir de modelo" lista consultas dos últimos 60 dias + próximas 7; editor rich-text (negrito/itálico/sublinhado + inserção de linhas templates); Salvar rascunho, Finalizar, Adendo, Imprimir (iframe de impressão), Marcar assinatura manual e trilha detalhada. `GET team/appointments` ganhou filtro `patient_id`.
+- **Expurgo:** comando `reports:purge-expired` (`--dry-run/--commit`) zera o `content_html` dos vencidos e preserva a trilha (rodar manual/rotina futura; revisão jurídica pendente conforme §6.4).
+- **Contratos:** OpenAPI **v0.14.0** + `schema.generated.ts` regenerados. Seed E2E ganhou 1 modelo de laudo + 1 linha + oferta/agendamento piloto (D+1 CONFIRMED).
+- **Validação:** backend **107 testes / 926 asserções** verde (`ReportTest` com fluxo completo + RBAC/estados + idempotência do import); Pint ok; Vitest **26** (`LaudosPage.test.tsx`); typecheck/builds ok; **E2E `reports.spec.ts` 2/2 (desktop+mobile)** com `playwright.bloco3.config.ts`: CPF → histórico vazio → cria por modelo (variáveis preenchidas) → finaliza → imprime → reimpressão #2 → assinatura manual → linha "assinado".
+
+#### Pendente
+
+1. Commit dos Blocos 1+2+3 (aguardando autorização do dono).
+2. Validação manual acumulada (3A-1→3D + Blocos 1-3), por decisão do dono — no final do ciclo.
+3. Resto do Bloco 3 (polimento pós-homologação com médicos/digitadoras): campos estruturados de ECO com cálculos, classificação de uso 12/24m dos modelos, portal de resultados (acesso temporário) — entram no Bloco 5 com a API Hermes.
+4. Próximo: **Bloco 4 — Prontuário + Portal do paciente + IA no prontuário (DeepSeek)**.
+
+---
+
 ## 15. Ambiente em outro PC (só teste, sem prod)
 
 > **Premissa do dono (04/09/2026):** pode usar **bancos diferentes em cada PC**
@@ -1131,6 +1225,4 @@ cada fluxo (slots de uso único conflitam entre runs).
 
 ---
 
-*Documento vivo — a cada decisão, uma nova versão. Próximo passo: 3D (B2B
-manual: fatura fim do mês + baixa + adimplência), depois E2E do repasse até o
-verde e validação manual acumulada (3A-1→3D). Inter segue adiada para pós-3D.*
+*Documento vivo — a cada decisão, uma nova versão. Próximo passo: apurar a validação da 3D (§14.13), E2E do repasse até o verde e validação manual acumulada (3A-1→3D); depois o restante da Fase 4 (bate-papo, ponto, rotinas, orçamentos). Inter segue adiada para pós-3D.*

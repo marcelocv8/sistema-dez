@@ -5,6 +5,7 @@ use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Schedule;
 
 Schedule::command('schedule:materialize')->dailyAt('00:10')->timezone('America/Fortaleza')->withoutOverlapping();
+Schedule::command('rotinas:generate')->dailyAt('00:20')->timezone('America/Fortaleza')->withoutOverlapping();
 
 Artisan::command('inspire', function () {
     $this->comment(Inspiring::quote());

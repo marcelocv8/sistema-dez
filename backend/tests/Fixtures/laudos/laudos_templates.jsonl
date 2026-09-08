@@ -1,0 +1,2 @@
+{"id": 704, "status": 200, "content": "<h4>ECODOPPLERCARDIOGRAMA TRANSTOR\u00c1CICO</h4><p>Paciente: {{PACIENTE_NOME}}, {{PACIENTE_IDADE}} anos.</p><p>Data: {{DATA_HOJE}}</p><p>CONCLUS\u00c3O: exame dentro da normalidade.</p>", "nome": "ECO PADRAO TESTE", "medico": "ADMINISTRADOR", "procedimento": "ECOCARDIOGRAMA"}
+{"id": 703, "status": 200, "content": "<h4>{{PACIENTE_NOME}}</h4><p>Tratamento fisioter\u00e1pico em prosseguimento.</p>", "nome": "TRATAMENTO FISIO", "medico": "Emmanuel Gon\u00e7alves de Castro Andrade", "procedimento": "01S - TRATAMENTO FISIOTERAPIA 1 SEG."}

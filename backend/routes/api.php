@@ -1,12 +1,15 @@
 <?php
 
 use App\Http\Controllers\Api\V1\AppointmentPaymentController;
+use App\Http\Controllers\Api\V1\AttendanceController;
 use App\Http\Controllers\Api\V1\AuditLogController;
 use App\Http\Controllers\Api\V1\AuthController;
 use App\Http\Controllers\Api\V1\B2bInvoiceController;
+use App\Http\Controllers\Api\V1\BudgetController;
 use App\Http\Controllers\Api\V1\CashRegisterController;
 use App\Http\Controllers\Api\V1\CatalogController;
 use App\Http\Controllers\Api\V1\CatalogLinkController;
+use App\Http\Controllers\Api\V1\ChatController;
 use App\Http\Controllers\Api\V1\DashboardController;
 use App\Http\Controllers\Api\V1\DisplayController;
 use App\Http\Controllers\Api\V1\ImportIssueController;
@@ -18,6 +21,8 @@ use App\Http\Controllers\Api\V1\PublicAppointmentController;
 use App\Http\Controllers\Api\V1\PublicAvailabilityController;
 use App\Http\Controllers\Api\V1\PublicServiceController;
 use App\Http\Controllers\Api\V1\QueueController;
+use App\Http\Controllers\Api\V1\ReportController;
+use App\Http\Controllers\Api\V1\RoutineController;
 use App\Http\Controllers\Api\V1\ScheduleExceptionController;
 use App\Http\Controllers\Api\V1\ScheduleWindowController;
 use App\Http\Controllers\Api\V1\ServiceOfferingController;
@@ -86,6 +91,40 @@ Route::prefix('v1')->middleware(['auth:sanctum', 'throttle:team-api'])->group(fu
         Route::post('queue/{queueEntry}/call', [QueueController::class, 'call'])->middleware('permission:queue.call')->name('api.v1.team.queue.call');
         Route::post('schedule-conflicts/{scheduleConflict}/resolve', [QueueController::class, 'resolveConflict'])->middleware('permission:schedule.manage')->name('api.v1.team.schedule-conflicts.resolve');
         Route::get('schedule-conflicts', [QueueController::class, 'conflicts'])->middleware('permission:schedule.view')->name('api.v1.team.schedule-conflicts.index');
+        Route::get('attendance', [AttendanceController::class, 'index'])->middleware('permission:attendance.view')->name('api.v1.team.attendance.index');
+        Route::get('attendance/export', [AttendanceController::class, 'export'])->middleware('permission:attendance.view')->name('api.v1.team.attendance.export');
+        Route::get('attendance/exit-hour', [AttendanceController::class, 'showExitHour'])->middleware('permission:attendance.view')->name('api.v1.team.attendance.exit-hour.show');
+        Route::put('attendance/exit-hour', [AttendanceController::class, 'updateExitHour'])->middleware('permission:team.manage')->name('api.v1.team.attendance.exit-hour.update');
+        Route::prefix('chat')->middleware('permission:chat.use')->group(function (): void {
+            Route::get('conversations', [ChatController::class, 'conversations'])->name('api.v1.team.chat.conversations');
+            Route::post('conversations', [ChatController::class, 'store'])->name('api.v1.team.chat.conversations.store');
+            Route::get('participants', [ChatController::class, 'participants'])->name('api.v1.team.chat.participants');
+            Route::get('unread', [ChatController::class, 'unread'])->name('api.v1.team.chat.unread');
+            Route::get('patients/lookup', [ChatController::class, 'lookupPatient'])->name('api.v1.team.chat.patients.lookup');
+            Route::get('conversations/{chatConversation}/messages', [ChatController::class, 'messages'])->name('api.v1.team.chat.messages');
+            Route::post('conversations/{chatConversation}/messages', [ChatController::class, 'sendMessage'])->name('api.v1.team.chat.messages.store');
+            Route::post('conversations/{chatConversation}/read', [ChatController::class, 'markRead'])->name('api.v1.team.chat.read');
+        });
+        Route::get('budgets', [BudgetController::class, 'index'])->middleware('permission:budgets.view')->name('api.v1.team.budgets.index');
+        Route::get('budgets/price-options', [BudgetController::class, 'priceOptions'])->middleware('permission:budgets.view')->name('api.v1.team.budgets.price-options');
+        Route::get('budgets/{budget}/prescription', [BudgetController::class, 'prescription'])->middleware('permission:budgets.view')->name('api.v1.team.budgets.prescription');
+        Route::post('budgets', [BudgetController::class, 'store'])->middleware('permission:budgets.manage')->name('api.v1.team.budgets.store');
+        Route::post('budgets/{budget}/send', [BudgetController::class, 'send'])->middleware('permission:budgets.manage')->name('api.v1.team.budgets.send');
+        Route::post('budgets/{budget}/resolve', [BudgetController::class, 'resolve'])->middleware('permission:budgets.manage')->name('api.v1.team.budgets.resolve');
+        Route::get('routines', [RoutineController::class, 'index'])->middleware('permission:routine.view')->name('api.v1.team.routines.index');
+        Route::post('routines/generate', [RoutineController::class, 'generate'])->middleware('permission:routine.manage')->name('api.v1.team.routines.generate');
+        Route::post('routines/{routineTask}/tick', [RoutineController::class, 'tick'])->middleware('permission:routine.tick')->name('api.v1.team.routines.tick');
+        Route::post('routines/{routineTask}/reopen', [RoutineController::class, 'reopen'])->middleware('permission:routine.manage')->name('api.v1.team.routines.reopen');
+        Route::get('reports/templates', [ReportController::class, 'templates'])->middleware('permission:reports.view')->name('api.v1.team.reports.templates');
+        Route::get('reports/history', [ReportController::class, 'history'])->middleware('permission:reports.view')->name('api.v1.team.reports.history');
+        Route::get('reports', [ReportController::class, 'index'])->middleware('permission:reports.view')->name('api.v1.team.reports.index');
+        Route::get('reports/{report}', [ReportController::class, 'show'])->middleware('permission:reports.view')->name('api.v1.team.reports.show');
+        Route::post('reports', [ReportController::class, 'store'])->middleware('permission:reports.write')->name('api.v1.team.reports.store');
+        Route::put('reports/{report}', [ReportController::class, 'update'])->middleware('permission:reports.write')->name('api.v1.team.reports.update');
+        Route::post('reports/{report}/finalize', [ReportController::class, 'finalize'])->middleware('permission:reports.write')->name('api.v1.team.reports.finalize');
+        Route::post('reports/{report}/append', [ReportController::class, 'append'])->middleware('permission:reports.write')->name('api.v1.team.reports.append');
+        Route::post('reports/{report}/sign-manual', [ReportController::class, 'signManual'])->middleware('permission:reports.sign')->name('api.v1.team.reports.sign-manual');
+        Route::post('reports/{report}/print', [ReportController::class, 'print'])->middleware('permission:reports.view')->name('api.v1.team.reports.print');
         Route::middleware('permission:payouts.view')->group(function (): void {
             Route::get('payouts', [PayoutController::class, 'index'])->name('api.v1.team.payouts.index');
             Route::get('payouts/{payout}', [PayoutController::class, 'show'])->name('api.v1.team.payouts.show');

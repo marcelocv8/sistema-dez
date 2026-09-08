@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api\V1;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Api\V1\LoginRequest;
 use App\Http\Resources\Api\V1\CurrentUserResource;
+use App\Models\AttendanceEvent;
 use App\Models\User;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -24,7 +25,8 @@ class AuthController extends Controller
             ], Response::HTTP_UNPROCESSABLE_ENTITY);
         }
 
-        Auth::login($user);
+        Auth::guard('web')->login($user);
+        AttendanceEvent::record($user);
         $request->session()->regenerate();
 
         return new CurrentUserResource($user);

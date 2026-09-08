@@ -1,0 +1,18 @@
+[
+  {
+    "id": 704,
+    "nome": "ECO PADRAO TESTE",
+    "medico": "ADMINISTRADOR",
+    "procedimento": "ECOCARDIOGRAMA",
+    "html_chars": 120,
+    "preview": "ECODOPPLERCARDIOGRAMA"
+  },
+  {
+    "id": 703,
+    "nome": "TRATAMENTO FISIO",
+    "medico": "Emmanuel Gon\u00e7alves de Castro Andrade",
+    "procedimento": "01S - TRATAMENTO FISIOTERAPIA 1 SEG.",
+    "html_chars": 90,
+    "preview": "PACIENTE"
+  }
+]

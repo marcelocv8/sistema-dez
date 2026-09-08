@@ -9,11 +9,15 @@ import { LoginPage } from './pages/LoginPage';
 const DashboardPage = lazy(() => import('./pages/DashboardPage'));
 const AgendaPage = lazy(() => import('./pages/AgendaPage'));
 const ReceptionPage = lazy(() => import('./pages/ReceptionPage'));
-const ReportPage = lazy(() => import('./pages/ReportPage'));
 const PricesPage = lazy(() => import('./pages/PricesPage'));
 const CatalogPage = lazy(() => import('./pages/CatalogPage'));
 const CashPage = lazy(() => import('./pages/CashPage'));
 const B2bPage = lazy(() => import('./pages/B2bPage'));
+const AttendancePage = lazy(() => import('./pages/AttendancePage'));
+const ChatPage = lazy(() => import('./pages/ChatPage'));
+const LaudosPage = lazy(() => import('./pages/LaudosPage'));
+const BudgetsPage = lazy(() => import('./pages/BudgetsPage'));
+const RoutinesPage = lazy(() => import('./pages/RoutinesPage'));
 const RepassesPage = lazy(() => import('./pages/RepassesPage'));
 
 export function App() {
@@ -27,12 +31,16 @@ export function App() {
     <Route path="/visao-geral" element={<DashboardPage />} />
     <Route path="/agenda" element={<AgendaPage user={currentUser.data} />} />
     <Route path="/recepcao" element={<ReceptionPage user={currentUser.data} />} />
-    <Route path="/laudos/:id?" element={<ReportPage />} />
+    <Route path="/laudos" element={<LaudosPage user={currentUser.data} />} />
     <Route path="/precos" element={<PricesPage />} />
     <Route path="/cadastros" element={<CatalogPage user={currentUser.data} />} />
     <Route path="/caixa" element={<CashPage user={currentUser.data} />} />
     <Route path="/faturamento-b2b" element={<B2bPage user={currentUser.data} />} />
     <Route path="/repasses" element={<RepassesPage user={currentUser.data} />} />
+    <Route path="/ponto" element={<AttendancePage user={currentUser.data} />} />
+    <Route path="/batepapo" element={<ChatPage />} />
+    <Route path="/orcamentos" element={<BudgetsPage user={currentUser.data} />} />
+    <Route path="/rotinas" element={<RoutinesPage user={currentUser.data} />} />
     <Route path="*" element={<Navigate to="/visao-geral" replace />} />
   </Routes></Suspense></AppShell></BrowserRouter>;
 }

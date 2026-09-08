@@ -28,7 +28,17 @@ export type Permission =
   | 'payouts.pay'
   | 'b2b.view'
   | 'b2b.manage'
-  | 'b2b.settle';
+  | 'b2b.settle'
+  | 'attendance.view'
+  | 'chat.use'
+  | 'budgets.view'
+  | 'budgets.manage'
+  | 'routine.view'
+  | 'routine.tick'
+  | 'routine.manage'
+  | 'reports.view'
+  | 'reports.write'
+  | 'reports.sign';
 
 export const clinicTimeZone = 'America/Fortaleza';
 

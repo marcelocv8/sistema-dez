@@ -24,6 +24,7 @@ class TeamAppointmentController extends Controller
             'date' => ['nullable', 'date', 'date_format:Y-m-d'],
             'professional_id' => ['nullable', 'uuid'],
             'unit_id' => ['nullable', 'uuid'],
+            'patient_id' => ['nullable', 'uuid'],
             'from' => ['nullable', 'date_format:Y-m-d'],
             'to' => ['nullable', 'date_format:Y-m-d', 'after_or_equal:from'],
             'status' => ['nullable', Rule::in(['CONFIRMED', 'CHECKED_IN', 'DONE', 'CANCELLED'])],
@@ -53,6 +54,7 @@ class TeamAppointmentController extends Controller
                 fn ($offering) => $offering->where('professional_id', $professionalId),
             ))
             ->when($validated['unit_id'] ?? null, fn ($query, $id) => $query->whereHas('serviceOffering', fn ($offering) => $offering->where('unit_id', $id)))
+            ->when($validated['patient_id'] ?? null, fn ($query, $id) => $query->where('patient_id', $id))
             ->when($validated['status'] ?? null, fn ($query, $status) => $query->where('status', $status))
             ->when($validated['payment_status'] ?? null, fn ($query, $status) => $query->where('payment_status', $status))
             ->whereBetween('scheduled_at', [$from->utc(), $to->utc()])

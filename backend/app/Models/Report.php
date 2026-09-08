@@ -1,0 +1,66 @@
+<?php
+
+namespace App\Models;
+
+use Illuminate\Database\Eloquent\Attributes\Fillable;
+use Illuminate\Database\Eloquent\Concerns\HasUuids;
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
+
+#[Fillable(['appointment_id', 'patient_id', 'procedure_id', 'doctor_id', 'template_id', 'content_html', 'content_backup', 'status', 'typed_by', 'finalized_at', 'retention_until', 'adendo', 'signed_manual_by', 'signed_manual_at', 'print_count', 'last_print_by', 'last_printed_at'])]
+class Report extends Model
+{
+    use HasUuids;
+
+    public const STATUS_RASCUNHO = 'RASCUNHO';
+
+    public const STATUS_FINALIZADO = 'FINALIZADO';
+
+    protected function casts(): array
+    {
+        return [
+            'status' => 'string',
+            'finalized_at' => 'immutable_datetime',
+            'retention_until' => 'immutable_date:Y-m-d',
+            'signed_manual_at' => 'immutable_datetime',
+            'print_count' => 'integer',
+            'last_printed_at' => 'immutable_datetime',
+        ];
+    }
+
+    public function appointment(): BelongsTo
+    {
+        return $this->belongsTo(Appointment::class);
+    }
+
+    public function patient(): BelongsTo
+    {
+        return $this->belongsTo(Patient::class);
+    }
+
+    public function procedure(): BelongsTo
+    {
+        return $this->belongsTo(Procedure::class);
+    }
+
+    public function doctor(): BelongsTo
+    {
+        return $this->belongsTo(Professional::class, 'doctor_id');
+    }
+
+    public function template(): BelongsTo
+    {
+        return $this->belongsTo(ReportTemplate::class, 'template_id');
+    }
+
+    public function typedBy(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'typed_by');
+    }
+
+    public function events(): HasMany
+    {
+        return $this->hasMany(ReportEvent::class);
+    }
+}

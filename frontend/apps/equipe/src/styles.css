@@ -149,3 +149,37 @@ a { color: var(--dez-teal); text-decoration: none; font-size: 11px; font-weight:
 .agenda-page .appointment time, .agenda-page .appointment span { font-size: 10px; }
 .agenda-page .appointment strong { font-size: 12px; }
 @media (max-width: 540px) { .agenda-toolbar { height: auto; min-height: 60px; flex-wrap: wrap; gap: 10px; padding: 12px; } .date-controls { gap: 8px; } }
+
+/* Ponto + Bate-papo (Bloco 1) */
+.attendance-page .inline-pair { display: flex; gap: 8px; align-items: end; }
+.chat-nav-badge { margin-left: auto; position: static; }
+.chat-layout { display: grid; grid-template-columns: 300px 1fr; gap: 16px; align-items: start; }
+@media (max-width: 900px) { .chat-layout { grid-template-columns: 1fr; } }
+.chat-list { display: flex; flex-direction: column; gap: 4px; }
+.chat-row { display: grid; grid-template-columns: 1fr auto; gap: 2px 8px; text-align: left; border: 0; background: transparent; padding: 10px 12px; border-radius: 12px; cursor: pointer; position: relative; }
+.chat-row.active, .chat-row:hover { background: var(--dez-teal-soft, #e7f4f5); }
+.chat-row strong { font-size: 14px; }
+.chat-row small { grid-column: 1; color: var(--dez-muted, #667); }
+.chat-badge { grid-column: 2; grid-row: 1 / span 2; background: var(--dez-teal, #0d7c85); color: white; border-radius: 999px; min-width: 22px; height: 22px; display: grid; place-items: center; font-size: 12px; padding: 0 6px; }
+.chat-thread { display: flex; flex-direction: column; min-height: 60vh; }
+.chat-messages { flex: 1; display: flex; flex-direction: column; gap: 8px; overflow-y: auto; padding: 8px 0; max-height: 55vh; }
+.chat-bubble { max-width: 75%; background: #f2f6f7; border-radius: 14px 14px 14px 4px; padding: 8px 12px; align-self: flex-start; }
+.chat-bubble.mine { background: var(--dez-teal-soft, #d8eef0); border-radius: 14px 14px 4px 14px; align-self: flex-end; }
+.chat-bubble small { display: block; font-size: 11px; color: var(--dez-muted, #667); margin-bottom: 2px; }
+.chat-bubble p { margin: 0; font-size: 14px; white-space: pre-wrap; }
+.chat-bubble time { display: block; font-size: 10px; color: var(--dez-muted, #889); text-align: right; }
+.chat-composer { display: flex; flex-direction: column; gap: 8px; border-top: 1px solid #e4ecee; padding-top: 12px; margin-top: 8px; }
+.chat-people { display: flex; flex-wrap: wrap; gap: 8px; margin: 10px 0; }
+.chat-people button { border: 1px solid #d8e2e5; background: white; border-radius: 12px; padding: 8px 12px; cursor: pointer; display: grid; }
+.chat-people button.selected { border-color: var(--dez-teal, #0d7c85); background: var(--dez-teal-soft, #e7f4f5); }
+
+.laudos-page .muted { color: var(--dez-muted, #6b7a86); font-size: 11px; margin: 4px 0; }
+.report-toolbar { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0; }
+.report-toolbar .dez-button { min-width: 40px; justify-content: center; padding: 8px 10px; }
+.report-editor { min-height: 380px; padding: 22px 26px; border: 1px solid var(--dez-line, #dfe7ea); border-radius: 10px; background: white; color: #17233b; font-size: 12px; line-height: 1.6; outline: none; overflow: auto; white-space: pre-wrap; }
+.report-editor[contenteditable="true"] { cursor: text; }
+.report-editor h1, .report-editor h2, .report-editor h3, .report-editor h4 { color: var(--dez-navy, #17233b); margin: 14px 0 6px; }
+.report-editor h4 { font-size: 13px; }
+.event-trail { margin: 8px 0 0 18px; padding: 0; color: var(--dez-muted, #6b7a86); font-size: 11px; }
+.event-trail li { list-style: disc; margin-bottom: 3px; }
+.laudos-page details summary { cursor: pointer; color: var(--dez-teal, #0d7c85); font-size: 12px; }

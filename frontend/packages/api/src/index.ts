@@ -289,6 +289,115 @@ export type B2bInvoice = {
   items: B2bInvoiceItem[];
 };
 
+export type AttendanceDay = {
+  user_id: number;
+  user_name: string | null;
+  roles: string[];
+  date: string;
+  logins: string[];
+  first_login: string | null;
+  last_login: string | null;
+  relogins: number;
+  relogin_after_exit: boolean;
+  exit_hour: string;
+};
+export type AttendanceReport = { exit_hour: string; days: AttendanceDay[] };
+export type AttendanceExport = { filename: string; csv: string };
+
+export type ChatParticipant = { id: number; name: string; role: string | null; role_label?: string | null };
+export type ChatConversationSummary = {
+  id: UUID;
+  type: 'DIRECT' | 'GROUP';
+  title: string | null;
+  participants: ChatParticipant[];
+  last_message_at: string | null;
+  unread: number;
+};
+export type ChatMessageItem = {
+  id: UUID;
+  author: { id: number; name: string };
+  body: string;
+  created_at: string;
+  patient: { id: UUID; name: string } | null;
+  mine: boolean;
+};
+
+export type BudgetStatus = 'RASCUNHO' | 'ENVIADO' | 'ACEITO' | 'RECUSADO' | 'PERDIDO';
+export type BudgetItemInput = { procedure_id: UUID; amount: string; quantity?: number };
+export type BudgetItem = { id: UUID; procedure_id: UUID; procedure_name: string; amount: string; quantity: number };
+export type Budget = {
+  id: UUID;
+  patient: { id: UUID; name: string } | null;
+  agreement_id: UUID | null;
+  agreement: { id: UUID; name: string } | null;
+  status: BudgetStatus;
+  subtotal_gross: string;
+  has_prescription: boolean;
+  sent_at: string | null;
+  resolved_at: string | null;
+  resolution_note: string | null;
+  created_at: string | null;
+  items: BudgetItem[];
+};
+export type BudgetPriceOption = { procedure_id: UUID; procedure_name: string | null; type: string | null; amount: string };
+
+export type RoutineType = 'CONFIRMACAO' | 'ORCAMENTO_RETORNO' | 'ANIVERSARIANTE' | 'FATURA_VENCENDO' | 'MANUAL';
+export type RoutineTaskItem = {
+  id: UUID;
+  type: RoutineType;
+  title: string;
+  detail: string | null;
+  ref_type: string | null;
+  ref_id: string | null;
+  assigned_to: number | null;
+  assignee_name: string | null;
+  due_date: string;
+  status: 'PENDENTE' | 'FEITO';
+  note: string | null;
+  done_by: number | null;
+  done_by_name: string | null;
+  done_at: string | null;
+};
+export type RoutineDay = { date: string; scope: 'mine' | 'all'; tasks: RoutineTaskItem[] };
+
+export type ReportTemplateItem = {
+  id: UUID;
+  legacy_type: 'LAUDO' | 'LINHA';
+  nome: string;
+  doctor: { id: UUID; name: string } | null;
+  procedure: { id: UUID; name: string } | null;
+  legacy_procedure: string | null;
+  preview: string;
+  content_html: string | null;
+};
+export type ReportEventItem = {
+  id: UUID;
+  event: 'CRIADO' | 'SALVO' | 'FINALIZADO' | 'IMPRESSO' | 'REIMPRESSO' | 'ASSINATURA_MANUAL' | 'ADENDO' | 'RETENCAO_LIMPA';
+  by: { id: number; name: string } | null;
+  created_at: string | null;
+};
+export type Report = {
+  id: UUID;
+  appointment_id: UUID;
+  patient_id: UUID;
+  patient: { id: UUID; name: string; birth_date: string | null } | null;
+  procedure: { id: UUID; name: string } | null;
+  doctor: { id: number | UUID; name: string } | null;
+  template_id: UUID | null;
+  status: 'RASCUNHO' | 'FINALIZADO';
+  content_html: string | null;
+  adendo: string | null;
+  finalized_at: string | null;
+  retention_until: string | null;
+  signed_manual: boolean;
+  signed_manual_at: string | null;
+  print_count: number;
+  last_printed_at: string | null;
+  created_at: string | null;
+  events: ReportEventItem[];
+};
+
+
 export type DashboardSummary = {
   date: string;
   patient_flow: { waiting: number; in_care: number; checkout: number; finished: number };
@@ -369,13 +478,14 @@ const apiBase = import.meta.env.VITE_API_URL ?? '';
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const method = init?.method?.toUpperCase() ?? 'GET';
+  const isForm = typeof FormData !== 'undefined' && init?.body instanceof FormData;
   const xsrfToken = init?.credentials === 'omit' || method === 'GET' || method === 'HEAD' ? undefined : readCookie('XSRF-TOKEN');
   const response = await fetch(`${apiBase}${path}`, {
     ...init,
     credentials: init?.credentials ?? 'include',
     headers: {
       Accept: 'application/json',
-      'Content-Type': 'application/json',
+      ...(isForm ? {} : { 'Content-Type': 'application/json' }),
       ...(xsrfToken ? { 'X-XSRF-TOKEN': decodeURIComponent(xsrfToken) } : {}),
       ...init?.headers,
     },
@@ -433,7 +543,7 @@ export const api = {
   deactivateTeamUser: async (id: string) => (await request<ApiData<TeamUser>>(`/api/v1/team/users/${id}`, { method: 'DELETE' })).data,
   auditLogs: () => request<{ data: AuditEntry[]; meta: PageMeta }>('/api/v1/team/audit-logs'),
   dashboard: () => request<ApiData<DashboardSummary>>('/api/v1/dashboard'),
-  appointments: (date?: string, filters: { professional_id?: string; unit_id?: string; status?: string; payment_status?: string; from?: string; to?: string } = {}) => {
+  appointments: (date?: string, filters: { professional_id?: string; unit_id?: string; patient_id?: string; status?: string; payment_status?: string; from?: string; to?: string } = {}) => {
     const query = `?${queryString({ date, ...filters })}`;
     return request<ApiData<{ date: string; appointments: Appointment[] }>>(`/api/v1/team/appointments${query}`);
   },
@@ -483,6 +593,71 @@ export const api = {
   sendB2bInvoice: async (id: string) => (await request<ApiData<B2bInvoice>>(`/api/v1/team/b2b-invoices/${id}/send`, { method: 'POST' })).data,
   settleB2bInvoice: async (id: string, input: { amount: string; proof_reference: string }) =>
     (await request<ApiData<B2bInvoice>>(`/api/v1/team/b2b-invoices/${id}/settle`, { method: 'POST', body: JSON.stringify(input) })).data,
+  attendanceReport: async (filters: { from: string; to: string; user_id?: string }) =>
+    (await request<ApiData<AttendanceReport>>(`/api/v1/team/attendance?${queryString(filters)}`)).data,
+  attendanceExport: async (filters: { from: string; to: string }) =>
+    (await request<ApiData<AttendanceExport>>(`/api/v1/team/attendance/export?${queryString(filters)}`)).data,
+  attendanceExitHour: async () => (await request<ApiData<{ exit_hour: string }>>('/api/v1/team/attendance/exit-hour')).data,
+  saveAttendanceExitHour: async (exit_hour: string) =>
+    (await request<ApiData<{ exit_hour: string }>>('/api/v1/team/attendance/exit-hour', { method: 'PUT', body: JSON.stringify({ exit_hour }) })).data,
+  chatConversations: async () => (await request<ApiData<ChatConversationSummary[]>>('/api/v1/team/chat/conversations')).data,
+  createChatConversation: async (input: { type: 'DIRECT' | 'GROUP'; title?: string; participant_ids: number[] }) =>
+    (await request<ApiData<{ id: UUID; type: string; title: string | null }>>('/api/v1/team/chat/conversations', { method: 'POST', body: JSON.stringify(input) })).data,
+  chatMessages: async (id: string, after?: string) =>
+    (await request<ApiData<ChatMessageItem[]>>(`/api/v1/team/chat/conversations/${id}/messages${after ? `?after=${encodeURIComponent(after)}` : ''}`)).data,
+  sendChatMessage: async (id: string, input: { body: string; patient_id?: string; appointment_id?: string }) =>
+    (await request<ApiData<ChatMessageItem>>(`/api/v1/team/chat/conversations/${id}/messages`, { method: 'POST', body: JSON.stringify(input) })).data,
+  markChatRead: async (id: string) => (await request<ApiData<{ ok: boolean }>>(`/api/v1/team/chat/conversations/${id}/read`, { method: 'POST' })).data,
+  chatUnread: async () => (await request<ApiData<{ unread: number }>>('/api/v1/team/chat/unread')).data,
+  chatParticipants: async () => (await request<ApiData<ChatParticipant[]>>('/api/v1/team/chat/participants')).data,
+  chatLookupPatient: async (cpf: string) =>
+    (await request<ApiData<{ id: UUID; name: string } | null>>(`/api/v1/team/chat/patients/lookup?cpf=${cpf}`)).data,
+  budgets: async (filters: { status?: string; patient_id?: string } = {}) =>
+    (await request<ApiData<Budget[]>>(`/api/v1/team/budgets?${queryString(filters)}`)).data,
+  budgetPriceOptions: async (agreement_id: string, q?: string) =>
+    (await request<ApiData<BudgetPriceOption[]>>(`/api/v1/team/budgets/price-options?${queryString({ agreement_id, q })}`)).data,
+  createBudget: async (input: { patient_id: string; agreement_id?: string; items: BudgetItemInput[]; prescription?: File }) => {
+    const form = new FormData();
+    form.set('patient_id', input.patient_id);
+    if (input.agreement_id) form.set('agreement_id', input.agreement_id);
+    input.items.forEach((item, index) => {
+      form.set(`items[${index}][procedure_id]`, item.procedure_id);
+      form.set(`items[${index}][amount]`, item.amount);
+      if (item.quantity) form.set(`items[${index}][quantity]`, String(item.quantity));
+    });
+    if (input.prescription) form.set('prescription', input.prescription);
+    return (await request<ApiData<Budget>>('/api/v1/team/budgets', { method: 'POST', body: form })).data;
+  },
+  sendBudget: async (id: string) => (await request<ApiData<Budget>>(`/api/v1/team/budgets/${id}/send`, { method: 'POST' })).data,
+  resolveBudget: async (id: string, input: { outcome: 'ACEITO' | 'RECUSADO' | 'PERDIDO'; note: string }) =>
+    (await request<ApiData<Budget>>(`/api/v1/team/budgets/${id}/resolve`, { method: 'POST', body: JSON.stringify(input) })).data,
+  budgetPrescriptionUrl: (id: string) => `${apiBase}/api/v1/team/budgets/${id}/prescription`,
+  routines: async (filters: { date?: string; scope?: 'mine' | 'all' } = {}) =>
+    (await request<ApiData<RoutineDay>>(`/api/v1/team/routines?${queryString(filters)}`)).data,
+  generateRoutines: async (date?: string) =>
+    (await request<ApiData<{ created: number; date: string }>>('/api/v1/team/routines/generate', { method: 'POST', body: JSON.stringify(date ? { date } : {}) })).data,
+  tickRoutine: async (id: string, note?: string) =>
+    (await request<ApiData<RoutineTaskItem>>(`/api/v1/team/routines/${id}/tick`, { method: 'POST', body: JSON.stringify({ note }) })).data,
+  reopenRoutine: async (id: string, note: string) =>
+    (await request<ApiData<RoutineTaskItem>>(`/api/v1/team/routines/${id}/reopen`, { method: 'POST', body: JSON.stringify({ note }) })).data,
+  reportTemplates: async (filters: { q?: string; procedure_id?: string; doctor_id?: string; legacy_type?: 'LAUDO' | 'LINHA' } = {}) =>
+    (await request<ApiData<ReportTemplateItem[]>>(`/api/v1/team/reports/templates?${queryString(filters)}`)).data,
+  reports: async (filters: { appointment_id?: string; patient_id?: string; status?: string } = {}) =>
+    (await request<ApiData<Report[]>>(`/api/v1/team/reports?${queryString(filters)}`)).data,
+  reportHistory: async (patient_id: string) =>
+    (await request<ApiData<Report[]>>(`/api/v1/team/reports/history?${queryString({ patient_id })}`)).data,
+  createReport: async (input: { appointment_id: string; template_id: string }) =>
+    (await request<ApiData<Report>>('/api/v1/team/reports', { method: 'POST', body: JSON.stringify(input) })).data,
+  saveReport: async (id: string, content_html: string) =>
+    (await request<ApiData<Report>>(`/api/v1/team/reports/${id}`, { method: 'PUT', body: JSON.stringify({ content_html }) })).data,
+  finalizeReport: async (id: string) =>
+    (await request<ApiData<Report>>(`/api/v1/team/reports/${id}/finalize`, { method: 'POST' })).data,
+  appendReport: async (id: string, adendo: string) =>
+    (await request<ApiData<Report>>(`/api/v1/team/reports/${id}/append`, { method: 'POST', body: JSON.stringify({ adendo }) })).data,
+  signReportManual: async (id: string) =>
+    (await request<ApiData<Report>>(`/api/v1/team/reports/${id}/sign-manual`, { method: 'POST' })).data,
+  printReport: async (id: string) =>
+    (await request<{ data: { print_html: string; print_count: number } }>(`/api/v1/team/reports/${id}/print`, { method: 'POST' })).data,
   payouts: async (filters: { professional_id?: string; status?: PayoutStatus; from?: string; to?: string } = {}) =>
     (await request<ApiData<Payout[]>>(`/api/v1/team/payouts?${queryString(filters)}`)).data,
   payout: async (id: string) => (await request<ApiData<Payout>>(`/api/v1/team/payouts/${id}`)).data,
