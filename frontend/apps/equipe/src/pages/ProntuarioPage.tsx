@@ -22,6 +22,7 @@ export default function ProntuarioPage({ user }: { user: CurrentUser }) {
   const [aiQuestion, setAiQuestion] = useState('');
   const [statusMessage, setStatusMessage] = useState('');
   const noteRef = useRef<HTMLDivElement>(null);
+  const patientEpoch = useRef(0);
   const canWrite = user.permissions.includes('prontuario.write');
   const canAi = user.permissions.includes('ai.use');
 
@@ -65,12 +66,16 @@ export default function ProntuarioPage({ user }: { user: CurrentUser }) {
     onSuccess: async () => { setDeactivateFor(''); setDeactivateReason(''); setStatusMessage('Alerta inativado (histórico preservado).'); await refresh(); },
   });
   const aiSuggest = useMutation({
-    mutationFn: () => api.aiSuggest({ patient_id: patient!.id, appointment_id: noteFor || undefined, question: aiQuestion }),
+    mutationFn: async (input: { patientId: string; appointmentId: string; question: string; epoch: number }) => ({
+      ...await api.aiSuggest({ patient_id: input.patientId, appointment_id: input.appointmentId || undefined, question: input.question }),
+      patientId: input.patientId, epoch: input.epoch,
+    }),
     onSuccess: () => setStatusMessage('Sugestão de IA gerada — revise antes de usar.'),
   });
+  const suggestion = aiSuggest.data?.patientId === patient?.id && aiSuggest.data?.epoch === patientEpoch.current ? aiSuggest.data : null;
   const insertSuggestion = () => {
-    if (!aiSuggest.data || !noteRef.current) return;
-    noteRef.current.innerHTML = aiSuggest.data.suggestion_html + (noteRef.current.innerHTML ?? '');
+    if (!suggestion || !noteRef.current) return;
+    noteRef.current.innerHTML = suggestion!.suggestion_html + (noteRef.current.innerHTML ?? '');
     noteRef.current.focus();
     setStatusMessage('Sugestão inserida como rascunho na nota — revise e salve.');
   };
@@ -88,7 +93,7 @@ export default function ProntuarioPage({ user }: { user: CurrentUser }) {
 
     <Panel>
       <div className="patient-lookup">
-        <TextField label="CPF do paciente" value={cpf} onChange={(event) => { setCpf(event.target.value); setPatient(null); }} />
+        <TextField label="CPF do paciente" value={cpf} onChange={(event) => { patientEpoch.current++; aiSuggest.reset(); setAiQuestion(''); setAlertTitle(''); setAlertDetail(''); setDeactivateFor(''); setStatusMessage(''); setCpf(event.target.value); setPatient(null); }} />
         <Button type="button" variant="outline" disabled={cpf.replace(/\D/g, '').length !== 11 || lookup.isPending} onClick={() => lookup.mutate()}>Localizar</Button>
         {patient ? <p><strong>Paciente:</strong> {patient.name}{data?.patient.birth_date ? ` · ${data.patient.birth_date}` : ''}</p> : null}
       </div>
@@ -151,10 +156,10 @@ export default function ProntuarioPage({ user }: { user: CurrentUser }) {
           <p className="muted">Sugestão automática a partir do contexto do paciente. Nunca substitui o julgamento médico; entra sempre como rascunho marcado.</p>
           <TextField label="Pergunta ao assistente" value={aiQuestion} minLength={5} onChange={(event) => setAiQuestion(event.target.value)} placeholder="Ex.: conduta para cefaleia tensional?" />
           <div className="catalog-form-actions">
-            <Button disabled={aiQuestion.trim().length < 5 || aiSuggest.isPending} onClick={() => aiSuggest.mutate()}>{aiSuggest.isPending ? 'Consultando...' : 'Sugerir conduta (IA)'}</Button>
-            {aiSuggest.data ? <Button variant="outline" onClick={insertSuggestion}>Inserir no prontuário</Button> : null}
+            <Button disabled={aiQuestion.trim().length < 5 || aiSuggest.isPending} onClick={() => aiSuggest.mutate({ patientId: patient!.id, appointmentId: noteFor, question: aiQuestion, epoch: patientEpoch.current })}>{aiSuggest.isPending ? 'Consultando...' : 'Sugerir conduta (IA)'}</Button>
+            {suggestion ? <Button variant="outline" onClick={insertSuggestion}>Inserir no prontuário</Button> : null}
           </div>
-          {aiSuggest.data ? <div className="report-editor ai-output" dangerouslySetInnerHTML={{ __html: aiSuggest.data.suggestion_html }} /> : null}
+          {suggestion ? <div className="report-editor ai-output" dangerouslySetInnerHTML={{ __html: suggestion!.suggestion_html }} /> : null}
           {aiSuggest.isError ? <Alert tone="danger" title="IA indisponível">{apiErrorMessage(aiSuggest.error)}</Alert> : null}
         </div> : null}
         {data.notes.length === 0 ? <EmptyState title="Sem notas" description="As evoluções e anamneses aparecem aqui." /> : null}

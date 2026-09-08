@@ -20,6 +20,7 @@ test('Orçamento por prescrição: cria, envia e resolve; rotina D+1 aparece', a
   await page.getByLabel('CPF do paciente').fill('111.444.777-35');
   await page.getByRole('button', { name: 'Localizar' }).click();
   await expect(page.getByText(/Paciente:/)).toBeVisible();
+  await page.getByLabel('Unidade do orçamento').selectOption({ label: 'CLINICA DEZ MESSEJANA' });
   await page.getByLabel('Convênio da tabela').selectOption({ label: 'PARTICULAR PILOTO' });
   await page.getByLabel('Buscar procedimento (3+ letras/TUSS)').fill('CONSULTA');
   await page.getByRole('button', { name: /Incluir/ }).first().click();

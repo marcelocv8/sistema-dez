@@ -21,6 +21,11 @@ vi.mock('@dez/api', () => ({
     reportTemplates: vi.fn().mockImplementation(async (filters: { legacy_type?: string }) => filters.legacy_type === 'LINHA'
       ? [{ id: 'lt1', legacy_type: 'LINHA', nome: 'BETA- HCG', doctor: null, procedure: null, legacy_procedure: null, preview: 'RESULTADO', content_html: '<p>RESULTADO</p>' }]
       : [{ id: 'tp1', legacy_type: 'LAUDO', nome: 'ECO PADRAO', doctor: null, procedure: null, legacy_procedure: null, preview: 'ECODOPPLER', content_html: null }]),
+    report: vi.fn().mockImplementation(async () => ({
+      id: 'r1', patient_id: 'pt1', status: 'FINALIZADO', content_html: '<p>ECO normal.</p>', print_count: 1,
+      patient: { id: 'pt1', name: 'Maria Laudo' }, procedure: { id: 'p1', name: 'ECOCARDIOGRAMA' },
+      events: [{ id: 'e1', event: 'FINALIZADO', by: { id: 'u1', name: 'Responsável' }, created_at: '2026-09-07T12:00:00Z' }],
+    })),
     createReport: vi.fn(),
     saveReport: vi.fn(),
     finalizeReport: vi.fn(),
@@ -78,5 +83,59 @@ test('laudos: histórico do paciente por CPF com status e trilha', async () => {
   await waitForText('Laudo (finalizado)');
   expect(document.body.textContent).toContain('Imprimir (reimpressão #2)');
   expect(document.body.textContent).toContain('Adicionar adendo');
+  expect(document.body.textContent).toContain('Trilha do laudo (1)');
+  expect(document.body.textContent).toContain('Responsável');
+  await act(async () => root.unmount());
+});
+
+
+async function clickText(label: string) {
+  await act(async () => { [...document.querySelectorAll('button')].find((button) => button.textContent === label)?.click(); });
+  await act(async () => { await new Promise((resolve) => setTimeout(resolve, 50)); });
+}
+
+test('laudos: salva texto antes de finalizar e bloqueia finalização se salvar falhar', async () => {
+  const draft = { id: 'r1', patient_id: 'pt1', status: 'RASCUNHO', content_html: '<p>Original</p>', print_count: 0, events: [] };
+  vi.mocked(api.report).mockResolvedValue(draft as never);
+  vi.mocked(api.saveReport).mockResolvedValue(draft as never);
+  vi.mocked(api.finalizeReport).mockResolvedValue({ ...draft, status: 'FINALIZADO' } as never);
+  const root = await render(<LaudosPage user={user(['reports.view', 'reports.write'])} />);
+  await act(async () => {
+    const input = document.querySelector('input')!;
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, '11144477735');
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+  });
+  await clickText('Localizar'); await clickText('Abrir');
+  const editor = document.querySelector('[aria-label="Conteúdo do laudo"]')!;
+  editor.innerHTML = '<p>Correção clínica</p>';
+  await clickText('Finalizar');
+  expect(api.saveReport).toHaveBeenLastCalledWith('r1', '<p>Correção clínica</p>');
+  expect(vi.mocked(api.saveReport).mock.invocationCallOrder.at(-1)).toBeLessThan(vi.mocked(api.finalizeReport).mock.invocationCallOrder.at(-1)!);
+  vi.mocked(api.finalizeReport).mockClear();
+  vi.mocked(api.saveReport).mockRejectedValueOnce({ message: 'Falha ao salvar' });
+  editor.innerHTML = '<p>Outra correção</p>';
+  await clickText('Finalizar');
+  expect(api.finalizeReport).not.toHaveBeenCalled();
+  expect(document.body.textContent).toContain('Falha ao salvar');
+  expect(editor.innerHTML).toBe('<p>Outra correção</p>');
+  await act(async () => root.unmount());
+});
+
+test('laudos: impressão salva alterações antes de solicitar o impresso', async () => {
+  const draft = { id: 'r1', patient_id: 'pt1', status: 'RASCUNHO', content_html: '<p>Original</p>', print_count: 0, events: [] };
+  vi.mocked(api.report).mockResolvedValue(draft as never);
+  vi.mocked(api.saveReport).mockResolvedValue(draft as never);
+  vi.mocked(api.printReport).mockResolvedValue({ print_html: '<p>Corrigido</p>', print_count: 1 });
+  const root = await render(<LaudosPage user={user(['reports.view', 'reports.write'])} />);
+  await act(async () => {
+    const input = document.querySelector('input')!;
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, '11144477735');
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+  });
+  await clickText('Localizar'); await clickText('Abrir');
+  document.querySelector('[aria-label="Conteúdo do laudo"]')!.innerHTML = '<p>Corrigido</p>';
+  await clickText('Imprimir');
+  expect(api.saveReport).toHaveBeenLastCalledWith('r1', '<p>Corrigido</p>');
+  expect(vi.mocked(api.saveReport).mock.invocationCallOrder.at(-1)).toBeLessThan(vi.mocked(api.printReport).mock.invocationCallOrder.at(-1)!);
   await act(async () => root.unmount());
 });

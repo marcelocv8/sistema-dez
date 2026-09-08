@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient, useInfiniteQuery } from '@tanstack/react-query';
 import { api, apiErrorMessage, type ChatConversationSummary } from '@dez/api';
 import { Alert, Button, EmptyState, LoadingState, Panel, TextField } from '@dez/ui';
 
@@ -17,12 +17,16 @@ export default function ChatPage() {
 
   const conversations = useQuery({ queryKey: ['chat-conversations'], queryFn: api.chatConversations, refetchInterval: 10000 });
   const participants = useQuery({ queryKey: ['chat-participants'], queryFn: api.chatParticipants, enabled: newMode });
-  const messages = useQuery({
+  const messages = useInfiniteQuery({
     queryKey: ['chat-messages', activeId],
-    queryFn: () => api.chatMessages(activeId),
+    initialPageParam: undefined as string | undefined,
+    queryFn: ({ pageParam }) => api.chatMessages(activeId, undefined, pageParam),
+    getNextPageParam: (lastPage) => lastPage.length === 200 ? lastPage[0].id : undefined,
     enabled: Boolean(activeId),
     refetchInterval: 5000,
   });
+
+  const messageRows = [...new Map((messages.data?.pages.slice().reverse().flat() ?? []).map((message) => [message.id, message])).values()];
 
   useEffect(() => {
     if (!activeId && (conversations.data?.length ?? 0) > 0) setActiveId(conversations.data![0].id);
@@ -30,7 +34,7 @@ export default function ChatPage() {
 
   useEffect(() => {
     if (typeof bottom.current?.scrollIntoView === 'function') bottom.current.scrollIntoView({ block: 'end' });
-  }, [messages.data?.length]);
+  }, [messageRows.length]);
 
   const invalidate = () => Promise.all([
     client.invalidateQueries({ queryKey: ['chat-conversations'] }),
@@ -116,7 +120,8 @@ export default function ChatPage() {
         <h2>{title}</h2>
         {!activeId ? <EmptyState title="Selecione uma conversa" description="Escolha uma conversa à esquerda ou comece uma nova." /> : null}
         {activeId && messages.isLoading ? <LoadingState label="Carregando mensagens" /> : null}
-        <div className="chat-messages">{(messages.data ?? []).map((message) => <div key={message.id} className={`chat-bubble ${message.mine ? 'mine' : ''}`}>
+        {messages.hasNextPage ? <Button variant="outline" disabled={messages.isFetchingNextPage} onClick={() => messages.fetchNextPage()}>Mensagens anteriores</Button> : null}
+        <div className="chat-messages">{messageRows.map((message) => <div key={message.id} className={`chat-bubble ${message.mine ? 'mine' : ''}`}>
           <small>{message.author.name}{message.patient ? ` · 🩺 ${message.patient.name}` : ''}</small>
           <p>{message.body}</p>
           <time>{message.created_at.slice(11, 16)}</time>

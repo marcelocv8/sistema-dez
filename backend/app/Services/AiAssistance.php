@@ -77,7 +77,7 @@ class AiAssistance
 
     private function buildPrompt(Patient $patient, ?Appointment $appointment, string $question): string
     {
-        $age = $patient->birth_date !== null ? (int) now(config('sistema_dez.timezone'))->diffInYears($patient->birth_date) : null;
+        $age = $patient->birth_date !== null ? (int) $patient->birth_date->diffInYears(now(config('sistema_dez.timezone'))) : null;
         $context = 'PACIENTE: '.($patient->name ?? '—');
         $context .= $age !== null ? " ({$age} anos)" : '';
         $alerts = $patient->alerts()->where('active', true)->get(['kind', 'title', 'detail']);

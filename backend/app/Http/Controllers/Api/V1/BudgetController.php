@@ -6,9 +6,10 @@ use App\Http\Controllers\Controller;
 use App\Models\Agreement;
 use App\Models\Budget;
 use App\Models\BudgetItem;
-use App\Models\Procedure;
 use App\Models\ProcedurePrice;
+use App\Models\Unit;
 use App\Services\AuditRecorder;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -39,8 +40,10 @@ class BudgetController extends Controller
     {
         $data = $request->validate([
             'patient_id' => ['required', 'uuid', 'exists:patients,id'],
-            'agreement_id' => ['nullable', 'uuid', 'exists:agreements,id'],
+            'agreement_id' => ['required', 'uuid', 'exists:agreements,id'],
+            'unit_id' => ['required', 'uuid', 'exists:units,id'],
             'items' => ['required', 'array', 'min:1', 'max:50'],
+            'items.*.procedure_price_id' => ['required', 'uuid', 'exists:procedure_prices,id'],
             'items.*.procedure_id' => ['required', 'uuid', 'exists:procedures,id'],
             'items.*.amount' => ['required', 'numeric', 'min:0', 'max:1000000'],
             'items.*.quantity' => ['nullable', 'integer', 'min:1', 'max:99'],
@@ -48,7 +51,8 @@ class BudgetController extends Controller
         ]);
 
         $budget = DB::transaction(function () use ($request, $data): Budget {
-            $agreementId = $data['agreement_id'] ?? null;
+            $agreementId = $data['agreement_id'];
+            abort_unless(Unit::query()->whereKey($data['unit_id'])->where('active', true)->where('operational_enabled', true)->exists(), 422, 'Unidade indisponível.');
             if ($agreementId !== null) {
                 $agreement = Agreement::query()->findOrFail($agreementId);
                 abort_unless($agreement->active, 422, 'Convênio inativo para orçamento.');
@@ -56,16 +60,22 @@ class BudgetController extends Controller
             $budget = Budget::query()->create([
                 'patient_id' => $data['patient_id'],
                 'agreement_id' => $agreementId,
+                'unit_id' => $data['unit_id'],
                 'status' => 'RASCUNHO',
                 'subtotal_gross' => '0.00',
                 'created_by' => $request->user()->id,
             ]);
             foreach ($data['items'] as $item) {
-                $procedure = Procedure::query()->findOrFail($item['procedure_id']);
+                $price = $this->eligiblePrices($agreementId, $data['unit_id'])->whereKey($item['procedure_price_id'])->first();
+                if ($price === null || $price->procedure_id !== $item['procedure_id'] || (int) round((float) $price->amount * 100) !== (int) round((float) $item['amount'] * 100)) {
+                    throw ValidationException::withMessages(['items' => 'Preço alterado, vencido ou incompatível com a tabela/unidade. Busque os itens novamente.']);
+                }
+                $procedure = $price->procedure;
                 $budget->items()->create([
                     'procedure_id' => $procedure->id,
+                    'procedure_price_id' => $price->id,
                     'procedure_name' => (string) $procedure->name,
-                    'amount' => (string) $item['amount'],
+                    'amount' => (string) $price->amount,
                     'quantity' => $item['quantity'] ?? 1,
                 ]);
             }
@@ -135,11 +145,10 @@ class BudgetController extends Controller
     {
         $data = $request->validate([
             'agreement_id' => ['required', 'uuid', 'exists:agreements,id'],
+            'unit_id' => ['required', 'uuid', 'exists:units,id'],
             'q' => ['nullable', 'string', 'min:3', 'max:100'],
         ]);
-        $prices = ProcedurePrice::query()->with('procedure:id,name,type')
-            ->where('agreement_id', $data['agreement_id'])
-            ->where('status', 'VALID')
+        $prices = $this->eligiblePrices($data['agreement_id'], $data['unit_id'])->with('procedure:id,name,type')
             ->when($data['q'] ?? null, function ($query, $term) {
                 $ascii = mb_strtolower(iconv('UTF-8', 'ASCII//TRANSLIT', $term) ?: $term);
                 $query->whereHas('procedure', fn ($procedure) => $procedure
@@ -149,11 +158,25 @@ class BudgetController extends Controller
             ->orderBy('procedure_id')->limit(50)->get();
 
         return response()->json(['data' => $prices->map(fn (ProcedurePrice $price): array => [
+            'id' => $price->id,
+            'unit_id' => $price->unit_id,
             'procedure_id' => $price->procedure_id,
             'procedure_name' => $price->procedure?->name,
             'type' => $price->procedure?->type?->value,
             'amount' => (string) $price->amount,
         ])->values()->all()]);
+    }
+
+    private function eligiblePrices(string $agreementId, string $unitId): Builder
+    {
+        $today = now(config('sistema_dez.timezone'))->toDateString();
+
+        return ProcedurePrice::query()->where('agreement_id', $agreementId)->where('unit_id', $unitId)->where('status', 'VALID')
+            ->where(fn ($q) => $q->whereNull('valid_from')->orWhereDate('valid_from', '<=', $today))
+            ->where(fn ($q) => $q->whereNull('valid_until')->orWhereDate('valid_until', '>=', $today))
+            ->whereHas('procedure', fn ($q) => $q->where('active', true))
+            ->whereHas('agreement', fn ($q) => $q->where('active', true))
+            ->whereHas('unit', fn ($q) => $q->where('active', true)->where('operational_enabled', true));
     }
 
     private function storePrescription(Request $request, Budget $budget): void

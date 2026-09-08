@@ -16,6 +16,7 @@ vi.mock('@dez/api', () => ({
     createBudget: vi.fn(),
     sendBudget: vi.fn(),
     resolveBudget: vi.fn(),
+    budgetPrescription: vi.fn().mockResolvedValue(new Blob(["pdf"])),
     budgetPrescriptionUrl: vi.fn().mockReturnValue('http://x/prescription'),
     chatLookupPatient: vi.fn(),
     routines: vi.fn().mockResolvedValue({ date: '2026-09-08', scope: 'all', tasks: [] }),
@@ -78,5 +79,36 @@ test('rotinas: pendentes e concluídas com tick e reabrir', async () => {
   expect(document.body.textContent).toContain('Concluídas (1)');
   expect(document.body.textContent).toContain('Crítica: Aceito por ligação');
   expect(document.body.textContent).toContain('Reabrir');
+  await act(async () => root.unmount());
+});
+
+
+test('orçamentos: trocar tabela remove itens e download usa cliente autenticado', async () => {
+  vi.mocked(api.catalog).mockImplementation(async (resource) => ({ data: resource === 'units'
+    ? [{ id: 'unit1', name: 'Messejana', operational_enabled: true }]
+    : [{ id: 'agr1', name: 'Particular' }, { id: 'agr2', name: 'Outra tabela' }], meta: {} }) as never);
+  vi.mocked(api.chatLookupPatient).mockResolvedValue({ id: 'pt1', name: 'Maria' });
+  vi.mocked(api.budgetPriceOptions).mockResolvedValue([{ id: 'price1', unit_id: 'unit1', procedure_id: 'p1', procedure_name: 'Procedimento de teste', type: 'EXAM', amount: '130.00' }]);
+  const root = await render(<BudgetsPage user={user(['budgets.view', 'budgets.manage'])} />);
+  const change = async (element: HTMLInputElement | HTMLSelectElement, value: string) => act(async () => {
+    const prototype = element instanceof HTMLInputElement ? HTMLInputElement.prototype : HTMLSelectElement.prototype;
+    Object.getOwnPropertyDescriptor(prototype, 'value')!.set!.call(element, value);
+    element.dispatchEvent(new Event(element instanceof HTMLInputElement ? 'input' : 'change', { bubbles: true }));
+  });
+  await change(document.querySelector('input')!, '11144477735');
+  await act(async () => { [...document.querySelectorAll('button')].find((button) => button.textContent === 'Localizar')!.click(); });
+  const selects = document.querySelectorAll('select');
+  await change(selects[0], 'unit1'); await change(selects[1], 'agr1');
+  await change(document.querySelectorAll('input')[1], 'teste');
+  await waitForText('Procedimento de teste');
+  await act(async () => { [...document.querySelectorAll('button')].find((button) => button.textContent === 'Incluir')!.click(); });
+  expect(document.body.textContent).toContain('Itens do orçamento');
+  await change(selects[1], 'agr2');
+  expect(document.body.textContent).not.toContain('Itens do orçamento');
+  const createUrl = vi.fn().mockReturnValue('blob:download');
+  Object.defineProperty(URL, 'createObjectURL', { value: createUrl, configurable: true });
+  vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
+  await act(async () => { [...document.querySelectorAll('button')].find((button) => button.textContent === 'Prescrição')!.click(); });
+  expect(api.budgetPrescription).toHaveBeenCalledWith('b9'); expect(createUrl).toHaveBeenCalled();
   await act(async () => root.unmount());
 });

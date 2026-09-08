@@ -26,14 +26,15 @@ test('Prontuário: alerta, nota e laudo publicado no portal (folha de acesso)', 
   await page.keyboard.type('Paciente relata cefaleia há 3 dias; orientado hidratação e retorno.');
   await page.getByRole('button', { name: 'Registrar nota' }).click();
   await expect(page.getByText('Nota registrada no prontuário.')).toBeVisible();
-  await expect(page.getByText('Cefaleia há 3 dias')).toBeVisible();
+  await expect(page.getByText('Paciente relata cefaleia há 3 dias; orientado hidratação e retorno.', { exact: true }).last()).toBeVisible();
 
   // Laudo finalizado publicado no portal com folha de acesso.
   await page.goto('/laudos');
   await page.getByLabel('CPF do paciente').fill('111.444.777-35');
   await page.getByRole('button', { name: 'Localizar' }).click();
   await expect(page.getByText('Paciente:')).toBeVisible();
-  await page.getByRole('button', { name: 'Criar laudo' }).click();
+  await page.getByLabel(/Modelo para/).first().selectOption({ label: 'ECO PILOTO E2E · PROFISSIONAL PILOTO E2E' });
+  await page.getByRole('button', { name: 'Criar laudo' }).first().click();
   await expect(page.locator('h2', { hasText: 'Laudo (rascunho)' })).toBeVisible();
   await page.getByRole('button', { name: 'Finalizar' }).click();
   await expect(page.locator('h2', { hasText: 'Laudo (finalizado)' })).toBeVisible();

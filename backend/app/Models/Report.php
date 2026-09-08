@@ -2,7 +2,9 @@
 
 namespace App\Models;
 
+use App\Services\ClinicalHtml;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
+use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -17,10 +19,19 @@ class Report extends Model
 
     public const STATUS_FINALIZADO = 'FINALIZADO';
 
+    protected function contentHtml(): Attribute
+    {
+        return Attribute::make(
+            get: fn ($value) => ClinicalHtml::clean($value),
+            set: fn ($value) => ClinicalHtml::clean($value),
+        );
+    }
+
     protected function casts(): array
     {
         return [
             'status' => 'string',
+            'purged_at' => 'immutable_datetime',
             'finalized_at' => 'immutable_datetime',
             'retention_until' => 'immutable_date:Y-m-d',
             'signed_manual_at' => 'immutable_datetime',

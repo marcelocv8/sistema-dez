@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Models\AuditLog;
+use App\Models\Report;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
@@ -12,6 +13,18 @@ class AuditRecorder
     /** @param array<string, mixed>|null $before @param array<string, mixed>|null $after */
     public function record(Request $request, Model $entity, string $action, ?array $before, ?array $after): AuditLog
     {
+        if ($entity instanceof Report) {
+            foreach (['content_html', 'content_backup', 'adendo'] as $field) {
+                if (isset($before[$field])) {
+                    $before[$field.'_sha256'] = hash('sha256', $before[$field]);
+                    unset($before[$field]);
+                }
+                if (isset($after[$field])) {
+                    $after[$field.'_sha256'] = hash('sha256', $after[$field]);
+                    unset($after[$field]);
+                }
+            }
+        }
         $entityKey = (string) $entity->getKey();
 
         return AuditLog::create([

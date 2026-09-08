@@ -169,6 +169,8 @@ class ProntuarioController extends Controller
         $patient = Patient::query()->findOrFail($data['patient_id']);
         $appointment = isset($data['appointment_id']) ? Appointment::query()->findOrFail($data['appointment_id']) : null;
 
+        abort_if($appointment !== null && $appointment->patient_id !== $patient->id, 422, 'Atendimento não pertence ao paciente.');
+
         ['ai_request' => $aiRequest, 'response_text' => $responseText] = $this->ai->suggest($patient, $appointment, $data['question'], (int) $request->user()->id);
         $this->logEvent($patient->id, $appointment?->id, $aiRequest->id, ProntuarioEvent::AI_REQUESTED, $request);
         $this->audit->record($request, $aiRequest, 'prontuario.ai.requested', null, ['ai_request_id' => $aiRequest->id, 'status' => $aiRequest->status]);

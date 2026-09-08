@@ -7,7 +7,7 @@ use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
-#[Fillable(['budget_id', 'procedure_id', 'procedure_name', 'amount', 'quantity'])]
+#[Fillable(['budget_id', 'procedure_id', 'procedure_price_id', 'procedure_name', 'amount', 'quantity'])]
 class BudgetItem extends Model
 {
     use HasUuids;

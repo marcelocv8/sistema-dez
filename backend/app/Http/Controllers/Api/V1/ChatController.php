@@ -90,17 +90,25 @@ class ChatController extends Controller
     {
         $userId = (int) $request->user()->id;
         abort_unless($chatConversation->participants()->whereKey($userId)->exists(), 403, 'Você não participa desta conversa.');
-        $data = $request->validate(['after' => ['nullable', 'date']]);
+        $data = $request->validate(['after' => ['nullable', 'date'], 'before_id' => ['nullable', 'uuid']]);
 
+        $before = isset($data['before_id']) ? $chatConversation->messages()->findOrFail($data['before_id']) : null;
         $messages = $chatConversation->messages()->with(['author:id,name', 'patient:id,name'])
+            ->when($before, fn ($query) => $query->where(fn ($q) => $q
+                ->where('created_at', '<', $before->getRawOriginal('created_at'))
+                ->orWhere(fn ($q) => $q->where('created_at', $before->getRawOriginal('created_at'))->where('id', '<', $before->id))))
             ->when($data['after'] ?? null, fn ($query, $after) => $query->where('created_at', '>', CarbonImmutable::parse($after)))
-            ->orderBy('created_at')->limit(200)->get();
+            ->reorder()->orderBy('created_at', isset($data['after']) ? 'asc' : 'desc')
+            ->orderBy('id', isset($data['after']) ? 'asc' : 'desc')->limit(200)->get();
+        if (! isset($data['after'])) {
+            $messages = $messages->reverse()->values();
+        }
 
         return response()->json(['data' => $messages->map(fn (ChatMessage $message): array => [
             'id' => $message->id,
             'author' => ['id' => (int) $message->user_id, 'name' => $message->author?->name],
             'body' => $message->body,
-            'created_at' => $message->created_at?->toIso8601String(),
+            'created_at' => $message->created_at?->toISOString(),
             'patient' => $message->patient ? ['id' => $message->patient->id, 'name' => $message->patient->name] : null,
             'mine' => (int) $message->user_id === $userId,
         ])->all()]);
@@ -132,7 +140,7 @@ class ChatController extends Controller
         }, 3);
 
         return response()->json(['data' => [
-            'id' => $message->id, 'created_at' => $message->created_at?->toIso8601String(),
+            'id' => $message->id, 'created_at' => $message->created_at?->toISOString(),
             'author' => ['id' => $userId, 'name' => $request->user()->name], 'body' => $message->body,
             'patient' => $message->patient?->only(['id', 'name']), 'mine' => true,
         ]], 201);

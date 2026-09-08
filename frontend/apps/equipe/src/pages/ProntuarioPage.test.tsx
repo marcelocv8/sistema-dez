@@ -88,3 +88,25 @@ test('prontuário: IA oculta sem key e bloqueada para quem não tem permissão',
   expect(document.body.textContent).not.toContain('Registrar nota');
   await act(async () => root.unmount());
 });
+
+
+test('prontuário: resposta de IA do paciente anterior não aparece nem pode ser inserida', async () => {
+  vi.mocked(api.aiStatus).mockResolvedValue({ enabled: true, model: 'test' });
+  let finish!: (result: never) => void;
+  vi.mocked(api.aiSuggest).mockImplementation(() => new Promise((resolve) => { finish = resolve; }));
+  const root = await render(<ProntuarioPage user={user(['prontuario.view', 'prontuario.write', 'ai.use'])} />);
+  await typeCpf('11144477735'); await waitForText('Maria Prontuário'); await waitForText('Sugerir conduta (IA)');
+  await act(async () => {
+    const input = [...document.querySelectorAll('input')].find((input) => input.placeholder.startsWith('Ex.: conduta'))!;
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, 'Pergunta clínica A');
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+  });
+  await act(async () => { [...document.querySelectorAll('button')].find((button) => button.textContent === 'Sugerir conduta (IA)')!.click(); });
+  vi.mocked(api.chatLookupPatient).mockResolvedValueOnce({ id: 'pt2', name: 'Paciente B' });
+  await typeCpf('52998224725'); await waitForText('Paciente B');
+  await act(async () => { finish({ suggestion_html: '<p>Exclusivo de A</p>', ai_request_id: 'ai1', model: 'test' } as never); });
+  expect(document.body.textContent).not.toContain('Exclusivo de A');
+  expect(document.body.textContent).not.toContain('Inserir no prontuário');
+  expect(document.querySelector('[aria-label="Nova nota do prontuário"]')?.innerHTML).toBe('');
+  await act(async () => root.unmount());
+});

@@ -9,8 +9,12 @@ use App\Models\ProntuarioEvent;
 use App\Models\Report;
 use App\Models\ReportEvent;
 use App\Services\AuditRecorder;
+use App\Services\ReportEligibility;
+use Endroid\QrCode\Builder\Builder;
+use Endroid\QrCode\Writer\SvgWriter;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
 class PortalController extends Controller
@@ -26,7 +30,13 @@ class PortalController extends Controller
             'force_new_credential' => ['nullable', 'boolean'],
         ]);
 
-        [$report, $password] = $this->publishReport($request, $report, (bool) ($data['force_new_credential'] ?? false));
+        [$report, $password] = DB::transaction(function () use ($request, $report, $data) {
+            $locked = Report::query()->lockForUpdate()->findOrFail($report->id);
+            abort_unless($locked->status === Report::STATUS_FINALIZADO, 422, 'Laudo não finalizado.');
+            ReportEligibility::assertCanComplete($locked);
+
+            return $this->publishReport($request, $locked, (bool) ($data['force_new_credential'] ?? false));
+        }, 3);
 
         return response()->json(['data' => $this->serializePublication($report, $password)]);
     }
@@ -171,7 +181,7 @@ class PortalController extends Controller
 
     private function folhaHtml(Report $report, ?PortalAccess $access, string $portalUrl, ?string $password): string
     {
-        $qrNote = 'QR Code: em breve (pendente) — use a URL abaixo.';
+        $qr = (new Builder(writer: new SvgWriter, data: $portalUrl, size: 160, margin: 8))->build();
         $passwordLine = $password !== null
             ? '<strong>Senha:</strong> '.e($password)
             : '<strong>Senha:</strong> a mesma entregue na primeira folha (se perdida, gere uma nova credencial).';
@@ -183,11 +193,12 @@ class PortalController extends Controller
             .'<header><h1>Clínica DEZ</h1><p>Folha de acesso ao resultado do exame</p></header>'
             .'<div class="box">'
             .'<p><strong>Resultado:</strong> '.e((string) ($report->procedure?->name ?? 'Laudo médico')).'</p>'
+            .'<p><img class="qr" src="'.$qr->getDataUri().'" width="160" height="160" alt="QR Code do portal de resultados"></p>'
             .'<p><strong>Acesse:</strong> '.e($portalUrl).'</p>'
             .'<p><strong>Login:</strong> '.e((string) $access?->login).'</p>'
             .'<p>'.$passwordLine.'</p>'
             .'<p><strong>Validade:</strong> '.$access?->expires_at?->format('d/m/Y').'</p>'
-            .'<p class="muted">'.$qrNote.' A senha é pessoal e intransferível; após o prazo o acesso é encerrado.</p>'
+            .'<p class="muted">A senha é pessoal e intransferível; após o prazo o acesso é encerrado.</p>'
             .'</div></body></html>';
     }
 }

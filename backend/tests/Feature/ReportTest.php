@@ -49,7 +49,7 @@ class ReportTest extends TestCase
         $this->assertCount(3, $templates);
 
         $patient = Patient::factory()->create(['name' => 'Maria Laudo', 'birth_date' => '1990-05-10']);
-        $appointment = Appointment::factory()->create([
+        $appointment = Appointment::factory()->create(['status' => 'CHECKED_IN', 'payment_status' => 'PAID', 'care_started_at' => now(),
             'patient_id' => $patient->id,
             'service_offering_id' => ServiceOfferingFactory::new()->create(['procedure_id' => $ecoProcedure->id, 'professional_id' => $professional->id])->id,
         ]);
@@ -70,7 +70,7 @@ class ReportTest extends TestCase
         $finalized = $this->postJson("/api/v1/team/reports/{$report['id']}/finalize")->assertOk()->json('data');
         $this->assertSame('FINALIZADO', $finalized['status']);
         $this->assertNotNull($finalized['retention_until']);
-        $this->assertSame(now()->addYears(5)->toDateString(), $finalized['retention_until']);
+        $this->assertSame(now()->addYears(20)->toDateString(), $finalized['retention_until']);
 
         $printed = $this->postJson("/api/v1/team/reports/{$report['id']}/print")->assertOk()->json('data');
         $this->assertSame(1, $printed['print_count']);
@@ -102,7 +102,7 @@ class ReportTest extends TestCase
         $template = ReportTemplate::factory()->create([
             'legacy_type' => 'LAUDO', 'legacy_id' => 900, 'nome' => 'T', 'content_html' => '<p>x</p>',
         ]);
-        $appointment = Appointment::factory()->create();
+        $appointment = Appointment::factory()->create(['status' => 'CHECKED_IN', 'payment_status' => 'PAID', 'care_started_at' => now()]);
         $report = $this->postJson('/api/v1/team/reports', [
             'appointment_id' => $appointment->id, 'template_id' => $template->id,
         ])->assertCreated()->json('data');

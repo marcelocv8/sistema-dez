@@ -3175,11 +3175,12 @@ export interface paths {
         };
         /**
          * Mensagens da conversa (só participantes)
-         * @description Requer chat.use. Parâmetro after para polling incremental.
+         * @description Sem cursor, retorna as 200 mensagens mais recentes em ordem cronológica. before_id carrega mensagens anteriores, com desempate por id; after preserva microssegundos.
          */
         get: {
             parameters: {
                 query?: {
+                    before_id?: string;
                     after?: string;
                 };
                 header?: never;
@@ -3465,8 +3466,12 @@ export interface paths {
                         /** Format: uuid */
                         patient_id: string;
                         /** Format: uuid */
-                        agreement_id?: string;
+                        agreement_id: string;
+                        /** Format: uuid */
+                        unit_id: string;
                         items: {
+                            /** Format: uuid */
+                            procedure_price_id: string;
                             /** Format: uuid */
                             procedure_id: string;
                             amount: number;
@@ -3519,6 +3524,7 @@ export interface paths {
             parameters: {
                 query: {
                     agreement_id: string;
+                    unit_id: string;
                     q?: string;
                 };
                 header?: never;

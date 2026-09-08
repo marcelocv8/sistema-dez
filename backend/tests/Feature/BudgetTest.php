@@ -27,9 +27,9 @@ class BudgetTest extends TestCase
 
         $budget = $this->postJson('/api/v1/team/budgets', [
             'patient_id' => $patient->id,
-            'agreement_id' => $price->agreement_id,
+            'agreement_id' => $price->agreement_id, 'unit_id' => $price->unit_id,
             'items' => [
-                ['procedure_id' => $price->procedure_id, 'amount' => '150.00', 'quantity' => 2],
+                ['procedure_price_id' => $price->id, 'procedure_id' => $price->procedure_id, 'amount' => '150.00', 'quantity' => 2],
             ],
             'prescription' => UploadedFile::fake()->createWithContent('prescricao.pdf', '%PDF-1.4 teste'),
         ], ['Accept' => 'application/json'])->assertCreated()->json('data');
@@ -68,10 +68,10 @@ class BudgetTest extends TestCase
         $price = ProcedurePrice::factory()->create(['amount' => '80.00']);
         $this->actingAs(User::factory()->create(['role' => UserRole::Doctor]));
         $this->getJson('/api/v1/team/budgets')->assertForbidden();
-        $this->getJson("/api/v1/team/budgets/price-options?agreement_id={$price->agreement_id}&q=exa")->assertForbidden();
+        $this->getJson("/api/v1/team/budgets/price-options?agreement_id={$price->agreement_id}&unit_id={$price->unit_id}&q=exa")->assertForbidden();
 
         $this->actingAs(User::factory()->create(['role' => UserRole::Reception]));
-        $options = $this->getJson("/api/v1/team/budgets/price-options?agreement_id={$price->agreement_id}&q=".substr((string) $price->procedure->name, 0, 5))
+        $options = $this->getJson("/api/v1/team/budgets/price-options?agreement_id={$price->agreement_id}&unit_id={$price->unit_id}&q=".substr((string) $price->procedure->name, 0, 5))
             ->assertOk()->json('data');
         $this->assertNotEmpty($options);
         $this->assertSame('80.00', $options[0]['amount']);
@@ -79,7 +79,7 @@ class BudgetTest extends TestCase
 
         $this->actingAs(User::factory()->create(['role' => UserRole::Cashier]));
         $this->postJson('/api/v1/team/budgets', ['patient_id' => Patient::factory()->create()->id, 'items' => [
-            ['procedure_id' => $price->procedure_id, 'amount' => '80.00'],
+            ['procedure_price_id' => $price->id, 'procedure_id' => $price->procedure_id, 'amount' => '80.00'],
         ]])->assertForbidden();
     }
 }

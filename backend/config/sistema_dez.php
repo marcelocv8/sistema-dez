@@ -3,7 +3,7 @@
 return [
     'stg_import_path' => env('STG_IMPORT_PATH', storage_path('app/imports/stg')),
     'stg_laudos_path' => env('STG_LAUDOS_PATH', storage_path('app/imports/stg-laudos')),
-    'report_retention_years' => 5,
+    'report_retention_years' => 20,
     'timezone' => env('BUSINESS_TIMEZONE', 'America/Fortaleza'),
     'public_booking_horizon_days' => (int) env('PUBLIC_BOOKING_HORIZON_DAYS', 30),
     'public_booking_lead_minutes' => 30,

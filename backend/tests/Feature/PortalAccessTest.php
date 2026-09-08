@@ -20,7 +20,7 @@ class PortalAccessTest extends TestCase
     {
         $reception = User::factory()->create(['role' => UserRole::Reception]);
         $this->actingAs($reception);
-        $appointment = Appointment::factory()->create(['patient_id' => $patient->id]);
+        $appointment = Appointment::factory()->create(['status' => 'CHECKED_IN', 'payment_status' => 'PAID', 'care_started_at' => now(), 'patient_id' => $patient->id]);
         $template = ReportTemplate::query()->create([
             'legacy_type' => 'LAUDO', 'legacy_id' => $legacyId, 'nome' => "ECO T {$legacyId}", 'content_html' => '<p>Normal.</p>',
         ]);
@@ -44,6 +44,7 @@ class PortalAccessTest extends TestCase
         $this->assertStringContainsString('Clínica DEZ', $publication['folha_html']);
         $this->assertStringContainsString($publication['login'], $publication['folha_html']);
         $this->assertStringContainsString('resultados', $publication['folha_html']);
+        $this->assertStringContainsString('data:image/svg+xml;base64,', $publication['folha_html']);
 
         $second = $this->postJson("/api/v1/team/reports/{$report->id}/portal")->assertOk()->json('data');
         $this->assertSame($publication['login'], $second['login']);
@@ -95,7 +96,7 @@ class PortalAccessTest extends TestCase
         $patient = Patient::factory()->create();
         $reception = User::factory()->create(['role' => UserRole::Reception]);
         $this->actingAs($reception);
-        $appointment = Appointment::factory()->create(['patient_id' => $patient->id]);
+        $appointment = Appointment::factory()->create(['status' => 'CHECKED_IN', 'payment_status' => 'PAID', 'care_started_at' => now(), 'patient_id' => $patient->id]);
         $template = ReportTemplate::query()->create([
             'legacy_type' => 'LAUDO', 'legacy_id' => 501, 'nome' => 'ECO T2', 'content_html' => '<p>Rascunho.</p>',
         ]);

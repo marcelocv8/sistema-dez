@@ -8,6 +8,7 @@ use App\Models\Report;
 use App\Models\ReportEvent;
 use App\Models\ReportTemplate;
 use App\Services\AuditRecorder;
+use App\Services\ReportEligibility;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -63,7 +64,10 @@ class ReportController extends Controller
         $report = DB::transaction(function () use ($request, $data): Report {
             $appointment = Appointment::query()->with(['patient:id,name,birth_date', 'serviceOffering:id,procedure_id,professional_id'])->findOrFail($data['appointment_id']);
             $template = ReportTemplate::query()->findOrFail($data['template_id']);
-            abort_unless($template->active, 422, 'Modelo inativo.');
+            abort_unless($template->active && $template->legacy_type === ReportTemplate::TYPE_REPORT, 422, 'Modelo inativo ou não é um laudo.');
+            abort_if($appointment->status === 'CANCELLED', 422, 'Atendimento cancelado.');
+            abort_if(($template->procedure_id !== null && $template->procedure_id !== $appointment->serviceOffering?->procedure_id)
+                || ($template->doctor_id !== null && $template->doctor_id !== $appointment->serviceOffering?->professional_id), 422, 'Modelo incompatível com procedimento ou profissional.');
 
             $report = Report::query()->create([
                 'appointment_id' => $appointment->id,
@@ -125,12 +129,16 @@ class ReportController extends Controller
         $data = $request->validate([
             'content_html' => ['required', 'string', 'max:2000000'],
         ]);
-        if ($report->status !== Report::STATUS_RASCUNHO) {
-            throw ValidationException::withMessages(['report' => 'Somente rascunhos podem ser editados; use o adendo.']);
-        }
-        $before = $report->attributesToArray();
-        $report->forceFill(['content_html' => $data['content_html']])->save();
-        $report->events()->create(['event' => ReportEvent::SAVED, 'by_user_id' => $request->user()->id]);
+        $report = DB::transaction(function () use ($request, $report, $data): Report {
+            $locked = Report::query()->lockForUpdate()->findOrFail($report->id);
+            if ($locked->status !== Report::STATUS_RASCUNHO) {
+                throw ValidationException::withMessages(['report' => 'Somente rascunhos podem ser editados; use o adendo.']);
+            }
+            $locked->forceFill(['content_html' => $data['content_html']])->save();
+            $locked->events()->create(['event' => ReportEvent::SAVED, 'by_user_id' => $request->user()->id]);
+
+            return $locked;
+        }, 3);
 
         return response()->json(['data' => $this->serialize($report->fresh())]);
     }
@@ -142,6 +150,10 @@ class ReportController extends Controller
         }
         $report = DB::transaction(function () use ($request, $report): Report {
             $locked = Report::query()->lockForUpdate()->findOrFail($report->id);
+            if ($locked->status !== Report::STATUS_RASCUNHO) {
+                throw ValidationException::withMessages(['report' => 'Laudo já finalizado.']);
+            }
+            ReportEligibility::assertCanComplete($locked);
             $before = $locked->attributesToArray();
             $locked->forceFill([
                 'status' => Report::STATUS_FINALIZADO,
@@ -165,6 +177,7 @@ class ReportController extends Controller
         ]);
         $report = DB::transaction(function () use ($request, $report, $data): Report {
             $locked = Report::query()->lockForUpdate()->findOrFail($report->id);
+            abort_if($locked->purged_at !== null || $locked->status !== Report::STATUS_FINALIZADO, 422, 'Adendo exige laudo finalizado e não expurgado.');
             $adendo = e($data['adendo']);
             $before = $locked->attributesToArray();
             $locked->forceFill([
@@ -195,13 +208,14 @@ class ReportController extends Controller
 
     public function print(Request $request, Report $report): JsonResponse
     {
-        $event = $report->print_count === 0 ? ReportEvent::PRINTED : ReportEvent::REPRINTED;
-        $report->forceFill([
-            'print_count' => $report->print_count + 1,
-            'last_print_by' => $request->user()->id,
-            'last_printed_at' => now(),
-        ])->save();
-        $report->events()->create(['event' => $event, 'by_user_id' => $request->user()->id]);
+        $report = DB::transaction(function () use ($request, $report): Report {
+            $locked = Report::query()->lockForUpdate()->findOrFail($report->id);
+            $event = $locked->print_count === 0 ? ReportEvent::PRINTED : ReportEvent::REPRINTED;
+            $locked->forceFill(['print_count' => $locked->print_count + 1, 'last_print_by' => $request->user()->id, 'last_printed_at' => now()])->save();
+            $locked->events()->create(['event' => $event, 'by_user_id' => $request->user()->id]);
+
+            return $locked;
+        }, 3);
 
         return response()->json(['data' => [
             'print_html' => $this->printHtml($report->load(['patient', 'procedure:id,name', 'doctor.user', 'doctor'])),
@@ -214,7 +228,7 @@ class ReportController extends Controller
         $patient = $appointment->patient;
         $replacements = [
             '{{PACIENTE_NOME}}' => e((string) $patient?->name),
-            '{{PACIENTE_IDADE}}' => $patient?->birth_date !== null ? (string) (int) now(config('sistema_dez.timezone'))->diffInYears($patient->birth_date) : '____',
+            '{{PACIENTE_IDADE}}' => $patient?->birth_date !== null ? (string) (int) $patient->birth_date->diffInYears(now(config('sistema_dez.timezone'))) : '____',
             '{{DATA_HOJE}}' => now(config('sistema_dez.timezone'))->format('d/m/Y'),
         ];
 
@@ -266,7 +280,7 @@ class ReportController extends Controller
         $signature = $report->signed_manual_at !== null
             ? '<p class="assinatura-registrada">Assinatura manual registrada em '.$report->signed_manual_at->format('d/m/Y H:i').' — conferência pela recepção.</p>'
             : '<p class="assinatura-registrada">Assinatura manual pendente.</p>';
-        $age = $patient?->birth_date !== null ? (int) now(config('sistema_dez.timezone'))->diffInYears($patient->birth_date) : null;
+        $age = $patient?->birth_date !== null ? (int) $patient->birth_date->diffInYears(now(config('sistema_dez.timezone'))) : null;
 
         return '<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><title>Laudo</title>'
             .'<style>body{font-family:Arial,Helvetica,sans-serif;font-size:12pt;margin:32px}header{border-bottom:1px solid #333;padding-bottom:8px;margin-bottom:12px}'

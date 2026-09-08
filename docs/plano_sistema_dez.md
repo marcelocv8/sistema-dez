@@ -271,7 +271,7 @@ Regras de negócio que o motor de agendamento (novo e provisório) deve respeita
 - importar todos os templates/linhas por médico e procedimento, incluindo `01PADRAO`, pré-atendimento e triagem;
 - validar tipos estruturados, cálculos, impressão/PDF, assinatura manual, reimpressão, anexos, adendo, histórico e portal;
 - manter versões/auditoria no Sistema DEZ, sem replicar a falha de validação de revisor identificada no STG;
-- **retenção e layout:** laudos armazenados/auditáveis por **5 anos** (decisão do dono, revisar juridicamente antes do go-live) e interface com **layout moderno** preservando a rotina (o prontuário eletrônico retém 20 anos — §6.18);
+- **retenção e layout:** laudos armazenados/auditáveis por **20 anos** — **decisão do dono 08/09/2026**: o laudo do Sistema DEZ nasce digital e é parte do prontuário eletrônico (CFM 1.821/2007; os 5 anos da regra anterior valiam para descarte do original físico após digitalização). Interface com **layout moderno** preservando a rotina;
 - fonte detalhada e checklist: `C:\Projects\STG\VALIDACAO_LAUDOS.md`.
 
 **Fluxo a preservar (replicar a rotina real da DEZ):**
@@ -1138,8 +1138,23 @@ acima. Lições de ambiente também viraram §15.
 
 1. Commit dos Blocos 1-4 (aguardando autorização do dono).
 2. Validação manual acumulada (3A-1→3D + Blocos 1-4), por decisão do dono — no final do ciclo.
-3. **QR Code na folha de acesso** — precisa de lib (endroid/qr-code) ou implementação própria; ficou fora por não alterar dependências sem aprovação.
-4. Próximo: **Bloco 5 — Medicina do Trabalho + Relatórios/BI + API Hermes (leitura primeiro)**.
+3. Próximo: **Bloco 5 — Medicina do Trabalho + Relatórios/BI + API Hermes (leitura primeiro)**.
+
+---
+
+### 14.18 Bloco 4.1 — QR Code na folha + retenção de laudos = 20 anos (08/09/2026)
+
+**Situação: implementada e validada. Aguardando autorização de commit. Inclui, na mesma árvore, o hardening clínico da sessão paralela do dono (não commitado por mim — registrado aqui por integridade).**
+
+#### Entregue (por mim)
+
+- **QR Code (§6.19):** dependência nova autorizada pelo dono — `endroid/qr-code ^6.1` (composer nativo, sem Docker); folha de acesso do portal agora traz **QR SVG (data URI) apontando para a URL do portal** + URL/login/senha em texto; folha gerada no `PortalController` com `SvgWriter` (sem exigir gd nem no container). Teste valida o QR na folha.
+- **Retenção de laudos = 20 anos (§6.4, decisão do dono):** o laudo nasce digital e é parte do prontuário eletrônico; os 5 anos anteriores valiam para o original físico após digitalização (CFM 1.821/2007). `config('sistema_dez.report_retention_years')` → 20; comando de expurgo já lê a config (fica para o futuro pós-20 anos); plano §6.4 atualizado.
+
+#### Consolidado na árvore (sessão paralela do dono — validado junto)
+
+- `ReportEligibility` (finalizar/publicar laudo exige atendimento iniciado, não cancelado e pago/autorizado B2B), `ClinicalHtml` (sanitização de HTML clínico), migration de hardening (`purged_at`, fontes de orçamento), correções em `BudgetController`/`ChatController`/pages/specs E2E, `ImplementedBlocksRegressionTest` (10 testes: sanitização, elegibilidade, idade positiva, modelo vinculado a médico/procedimento, expurgo atômico, paginação do chat, fontes de preço).
+- **Validação integrada:** backend **123 testes / 1077 asserções** verde; Pint ok; Vitest **32**; typecheck/builds ok; **E2E blocos 3 e 4: 4/4** (desktop+mobile).
 
 ---
 

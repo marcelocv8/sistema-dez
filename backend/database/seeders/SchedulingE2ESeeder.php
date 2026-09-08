@@ -71,7 +71,7 @@ class SchedulingE2ESeeder extends Seeder
             ['patient_id' => $patient->id, 'service_offering_id' => $offering->id],
             ['scheduled_at' => now(config('sistema_dez.timezone'))->addDay()->setTimeFromTimeString('09:00')->utc(),
                 'recommended_arrival_at' => now(config('sistema_dez.timezone'))->addDay()->setTimeFromTimeString('08:30')->utc(),
-                'status' => 'CONFIRMED', 'kind' => 'NEW', 'origin' => 'INTERNAL', 'price_snapshot' => '150.00',
+                'status' => 'CHECKED_IN', 'payment_status' => 'PAID', 'care_started_at' => now(), 'kind' => 'NEW', 'origin' => 'INTERNAL', 'price_snapshot' => '150.00',
                 'idempotency_key' => '00000000-0000-4000-8000-0000000000e2'],
         );
     }

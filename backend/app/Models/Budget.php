@@ -8,7 +8,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
-#[Fillable(['patient_id', 'agreement_id', 'status', 'subtotal_gross', 'prescription_path', 'prescription_original_name', 'sent_at', 'resolved_at', 'resolution_note', 'resolved_by', 'created_by'])]
+#[Fillable(['patient_id', 'unit_id', 'agreement_id', 'status', 'subtotal_gross', 'prescription_path', 'prescription_original_name', 'sent_at', 'resolved_at', 'resolution_note', 'resolved_by', 'created_by'])]
 class Budget extends Model
 {
     use HasUuids;

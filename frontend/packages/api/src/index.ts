@@ -323,7 +323,7 @@ export type ChatMessageItem = {
 };
 
 export type BudgetStatus = 'RASCUNHO' | 'ENVIADO' | 'ACEITO' | 'RECUSADO' | 'PERDIDO';
-export type BudgetItemInput = { procedure_id: UUID; amount: string; quantity?: number };
+export type BudgetItemInput = { procedure_price_id: UUID; procedure_id: UUID; amount: string; quantity?: number };
 export type BudgetItem = { id: UUID; procedure_id: UUID; procedure_name: string; amount: string; quantity: number };
 export type Budget = {
   id: UUID;
@@ -339,7 +339,7 @@ export type Budget = {
   created_at: string | null;
   items: BudgetItem[];
 };
-export type BudgetPriceOption = { procedure_id: UUID; procedure_name: string | null; type: string | null; amount: string };
+export type BudgetPriceOption = { id: UUID; unit_id: UUID; procedure_id: UUID; procedure_name: string | null; type: string | null; amount: string };
 
 export type RoutineType = 'CONFIRMACAO' | 'ORCAMENTO_RETORNO' | 'ANIVERSARIANTE' | 'FATURA_VENCENDO' | 'MANUAL';
 export type RoutineTaskItem = {
@@ -551,7 +551,7 @@ type ApiData<T> = { data: T };
 
 const apiBase = import.meta.env.VITE_API_URL ?? '';
 
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
+async function request<T>(path: string, init?: RequestInit, binary = false): Promise<T> {
   const method = init?.method?.toUpperCase() ?? 'GET';
   const isForm = typeof FormData !== 'undefined' && init?.body instanceof FormData;
   const xsrfToken = init?.credentials === 'omit' || method === 'GET' || method === 'HEAD' ? undefined : readCookie('XSRF-TOKEN');
@@ -570,7 +570,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     throw { ...problem, status: response.status } as ProblemDetails & { status: number };
   }
   if (response.status === 204) return undefined as T;
-  return response.json() as Promise<T>;
+  return (binary ? response.blob() : response.json()) as Promise<T>;
 }
 
 function readCookie(name: string): string | undefined {
@@ -678,8 +678,8 @@ export const api = {
   chatConversations: async () => (await request<ApiData<ChatConversationSummary[]>>('/api/v1/team/chat/conversations')).data,
   createChatConversation: async (input: { type: 'DIRECT' | 'GROUP'; title?: string; participant_ids: number[] }) =>
     (await request<ApiData<{ id: UUID; type: string; title: string | null }>>('/api/v1/team/chat/conversations', { method: 'POST', body: JSON.stringify(input) })).data,
-  chatMessages: async (id: string, after?: string) =>
-    (await request<ApiData<ChatMessageItem[]>>(`/api/v1/team/chat/conversations/${id}/messages${after ? `?after=${encodeURIComponent(after)}` : ''}`)).data,
+  chatMessages: async (id: string, after?: string, before_id?: string) =>
+    (await request<ApiData<ChatMessageItem[]>>(`/api/v1/team/chat/conversations/${id}/messages?${queryString({ after, before_id })}`)).data,
   sendChatMessage: async (id: string, input: { body: string; patient_id?: string; appointment_id?: string }) =>
     (await request<ApiData<ChatMessageItem>>(`/api/v1/team/chat/conversations/${id}/messages`, { method: 'POST', body: JSON.stringify(input) })).data,
   markChatRead: async (id: string) => (await request<ApiData<{ ok: boolean }>>(`/api/v1/team/chat/conversations/${id}/read`, { method: 'POST' })).data,
@@ -689,14 +689,16 @@ export const api = {
     (await request<ApiData<{ id: UUID; name: string } | null>>(`/api/v1/team/chat/patients/lookup?cpf=${cpf}`)).data,
   budgets: async (filters: { status?: string; patient_id?: string } = {}) =>
     (await request<ApiData<Budget[]>>(`/api/v1/team/budgets?${queryString(filters)}`)).data,
-  budgetPriceOptions: async (agreement_id: string, q?: string) =>
-    (await request<ApiData<BudgetPriceOption[]>>(`/api/v1/team/budgets/price-options?${queryString({ agreement_id, q })}`)).data,
-  createBudget: async (input: { patient_id: string; agreement_id?: string; items: BudgetItemInput[]; prescription?: File }) => {
+  budgetPriceOptions: async (agreement_id: string, q?: string, unit_id?: string) =>
+    (await request<ApiData<BudgetPriceOption[]>>(`/api/v1/team/budgets/price-options?${queryString({ agreement_id, q, unit_id })}`)).data,
+  createBudget: async (input: { patient_id: string; unit_id: string; agreement_id?: string; items: BudgetItemInput[]; prescription?: File }) => {
     const form = new FormData();
     form.set('patient_id', input.patient_id);
+    form.set('unit_id', input.unit_id);
     if (input.agreement_id) form.set('agreement_id', input.agreement_id);
     input.items.forEach((item, index) => {
       form.set(`items[${index}][procedure_id]`, item.procedure_id);
+      form.set(`items[${index}][procedure_price_id]`, item.procedure_price_id);
       form.set(`items[${index}][amount]`, item.amount);
       if (item.quantity) form.set(`items[${index}][quantity]`, String(item.quantity));
     });
@@ -706,6 +708,7 @@ export const api = {
   sendBudget: async (id: string) => (await request<ApiData<Budget>>(`/api/v1/team/budgets/${id}/send`, { method: 'POST' })).data,
   resolveBudget: async (id: string, input: { outcome: 'ACEITO' | 'RECUSADO' | 'PERDIDO'; note: string }) =>
     (await request<ApiData<Budget>>(`/api/v1/team/budgets/${id}/resolve`, { method: 'POST', body: JSON.stringify(input) })).data,
+  budgetPrescription: (id: string) => request<Blob>(`/api/v1/team/budgets/${id}/prescription`, undefined, true),
   budgetPrescriptionUrl: (id: string) => `${apiBase}/api/v1/team/budgets/${id}/prescription`,
   routines: async (filters: { date?: string; scope?: 'mine' | 'all' } = {}) =>
     (await request<ApiData<RoutineDay>>(`/api/v1/team/routines?${queryString(filters)}`)).data,
@@ -719,6 +722,7 @@ export const api = {
     (await request<ApiData<ReportTemplateItem[]>>(`/api/v1/team/reports/templates?${queryString(filters)}`)).data,
   reports: async (filters: { appointment_id?: string; patient_id?: string; status?: string } = {}) =>
     (await request<ApiData<Report[]>>(`/api/v1/team/reports?${queryString(filters)}`)).data,
+  report: async (id: string) => (await request<ApiData<Report>>(`/api/v1/team/reports/${id}`)).data,
   reportHistory: async (patient_id: string) =>
     (await request<ApiData<Report[]>>(`/api/v1/team/reports/history?${queryString({ patient_id })}`)).data,
   createReport: async (input: { appointment_id: string; template_id: string }) =>

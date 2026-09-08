@@ -2,8 +2,10 @@
 
 namespace App\Models;
 
+use App\Services\ClinicalHtml;
 use Database\Factories\ReportTemplateFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
+use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -18,6 +20,14 @@ class ReportTemplate extends Model
     public const TYPE_REPORT = 'LAUDO';
 
     public const TYPE_LINE = 'LINHA';
+
+    protected function contentHtml(): Attribute
+    {
+        return Attribute::make(
+            get: fn ($value) => ClinicalHtml::clean($value),
+            set: fn ($value) => ClinicalHtml::clean($value),
+        );
+    }
 
     protected function casts(): array
     {

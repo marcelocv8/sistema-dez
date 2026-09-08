@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api, apiErrorMessage, type CurrentUser, type Report, type ReportTemplateItem } from '@dez/api';
-import { Alert, Button, EmptyState, LoadingState, Panel, StatusPill, TextField } from '@dez/ui';
+import { Alert, Button, EmptyState, LoadingState, Panel, StatusPill, TextField, SelectField } from '@dez/ui';
 
 const clinicToday = () => new Date().toLocaleDateString('en-CA', { timeZone: 'America/Fortaleza' });
 const dateLabel = (value: string | null) => (value ? new Date(value).toLocaleDateString('pt-BR', { timeZone: 'America/Fortaleza' }) : '—');
@@ -9,6 +9,7 @@ const dateLabel = (value: string | null) => (value ? new Date(value).toLocaleDat
 export default function LaudosPage({ user }: { user: CurrentUser }) {
   const client = useQueryClient();
   const [cpf, setCpf] = useState('');
+  const [templateChoices, setTemplateChoices] = useState<Record<string, string>>({});
   const [patient, setPatient] = useState<{ id: string; name: string } | null>(null);
   const [selected, setSelected] = useState<Report | null>(null);
   const [statusMessage, setStatusMessage] = useState('');
@@ -54,11 +55,10 @@ export default function LaudosPage({ user }: { user: CurrentUser }) {
   const refresh = async () => {
     await client.invalidateQueries({ queryKey: ['report-history'] });
     if (selected) {
-      const fresh = await api.reportHistory(patient?.id ?? '');
-      const updated = fresh.find((report) => report.id === selected.id) ?? null;
+      const updated = await api.report(selected.id);
       setSelected(updated);
       if (updated) {
-        editorRef.current!.innerHTML = updated.content_html ?? '';
+        if (editorRef.current) editorRef.current.innerHTML = updated.content_html ?? '';
       }
     }
   };
@@ -67,7 +67,7 @@ export default function LaudosPage({ user }: { user: CurrentUser }) {
     mutationFn: (input: { appointment_id: string; template_id: string }) => api.createReport(input),
     onSuccess: async (report) => {
       await refresh();
-      setSelected(report);
+      setSelected(await api.report(report.id));
       setStatusMessage('Laudo criado a partir do modelo.');
     },
   });
@@ -76,16 +76,16 @@ export default function LaudosPage({ user }: { user: CurrentUser }) {
     onSuccess: async () => { await refresh(); setStatusMessage('Rascunho salvo.'); },
   });
   const finalize = useMutation({
-    mutationFn: () => api.finalizeReport(selected!.id),
-    onSuccess: async (report) => { await refresh(); setSelected(report); setStatusMessage('Laudo finalizado — pode imprimir para o médico revisar e assinar no papel.'); },
+    mutationFn: async () => { await persistEditor(); return api.finalizeReport(selected!.id); },
+    onSuccess: async () => { await refresh(); setStatusMessage('Laudo finalizado — pode imprimir para o médico revisar e assinar no papel.'); },
   });
   const append = useMutation({
     mutationFn: () => api.appendReport(selected!.id, adendoText),
-    onSuccess: async (report) => { setAdendoFor(''); setAdendoText(''); await refresh(); setSelected(report); setStatusMessage('Adendo registrado.'); },
+    onSuccess: async () => { setAdendoFor(''); setAdendoText(''); await refresh(); setStatusMessage('Adendo registrado.'); },
   });
   const sign = useMutation({
     mutationFn: () => api.signReportManual(selected!.id),
-    onSuccess: async (report) => { await refresh(); setSelected(report); setStatusMessage('Assinatura manual registrada.'); },
+    onSuccess: async () => { await refresh(); setStatusMessage('Assinatura manual registrada.'); },
   });
   const printHtml = (html: string) => {
     const frame = document.createElement('iframe');
@@ -122,11 +122,22 @@ export default function LaudosPage({ user }: { user: CurrentUser }) {
     onSuccess: async () => { setRevokeFor(''); setRevokeReason(''); await refresh(); setStatusMessage('Publicação revogada.'); },
   });
   const print = useMutation({
-    mutationFn: () => api.printReport(selected!.id),
+    mutationFn: async () => { await persistEditor(); return api.printReport(selected!.id); },
     onSuccess: async ({ print_html }) => {
       await refresh();
       printHtml(print_html);
     },
+  });
+
+  const busy = save.isPending || finalize.isPending || print.isPending || append.isPending || sign.isPending || publishPortal.isPending || revokePortal.isPending;
+  const persistEditor = async () => {
+    if (selected?.status === 'RASCUNHO' && canWrite && editorRef.current && editorRef.current.innerHTML !== selected.content_html) {
+      await api.saveReport(selected.id, editorRef.current.innerHTML);
+    }
+  };
+  const openReport = useMutation({
+    mutationFn: (id: string) => api.report(id),
+    onSuccess: (report) => setSelected(report),
   });
 
   const exec = (command: string) => {
@@ -148,7 +159,7 @@ export default function LaudosPage({ user }: { user: CurrentUser }) {
       <small>{dateLabel(report.created_at)} · {report.status}{report.print_count > 0 ? ` · ${report.print_count} impressão(ões)` : ''}{report.signed_manual ? ' · assinado' : ''}</small>
     </span>
     <StatusPill tone={report.status === 'FINALIZADO' ? 'success' : 'warning'}>{report.status}</StatusPill>
-    <div className="catalog-actions"><Button variant="outline" onClick={() => setSelected(report)}>Abrir</Button></div>
+    <div className="catalog-actions"><Button variant="outline" disabled={busy || openReport.isPending} onClick={() => openReport.mutate(report.id)}>Abrir</Button></div>
   </div>;
 
   return <div className="page laudos-page">
@@ -159,8 +170,8 @@ export default function LaudosPage({ user }: { user: CurrentUser }) {
 
     <Panel>
       <div className="patient-lookup">
-        <TextField label="CPF do paciente" value={cpf} onChange={(event) => { setCpf(event.target.value); setPatient(null); setSelected(null); }} />
-        <Button type="button" variant="outline" disabled={cpf.replace(/\D/g, '').length !== 11 || lookup.isPending} onClick={() => lookup.mutate()}>Localizar</Button>
+        <TextField label="CPF do paciente" disabled={busy || openReport.isPending || create.isPending} value={cpf} onChange={(event) => { setCpf(event.target.value); setPatient(null); setSelected(null); }} />
+        <Button type="button" variant="outline" disabled={busy || openReport.isPending || create.isPending || cpf.replace(/\D/g, '').length !== 11 || lookup.isPending} onClick={() => lookup.mutate()}>Localizar</Button>
         {patient ? <p><strong>Paciente:</strong> {patient.name}</p> : null}
       </div>
       {lookup.isError ? <Alert tone="danger" title="Paciente não encontrado">{apiErrorMessage(lookup.error)}</Alert> : null}
@@ -180,15 +191,16 @@ export default function LaudosPage({ user }: { user: CurrentUser }) {
             <small>{dateLabel(appointment.scheduled_at)} · {appointment.professional?.name ?? '—'} · {appointment.status}</small>
           </span>
           <div className="catalog-actions">
-            <Button variant="outline" onClick={() => {
-              const procedureId = appointment.procedure?.id;
-              const candidates = (templates.data ?? []).filter(
-                (template) => procedureId == null || template.procedure == null || template.procedure.id === procedureId,
-              );
-              const target = candidates[0];
-              if (!target) { setStatusMessage('Nenhum modelo disponível para este exame.'); return; }
-              create.mutate({ appointment_id: appointment.id, template_id: target.id });
-            }}>Criar laudo</Button>
+            <SelectField label={'Modelo para ' + (appointment.procedure?.name ?? 'consulta')} value={templateChoices[appointment.id] ?? ''}
+              onChange={(event) => setTemplateChoices((current) => ({ ...current, [appointment.id]: event.target.value }))}>
+              <option value="">Escolha o modelo</option>
+              {(templates.data ?? []).filter((template) =>
+                (template.procedure === null || template.procedure.id === appointment.procedure?.id) &&
+                (template.doctor === null || template.doctor.id === appointment.professional?.id)
+              ).map((template) => <option key={template.id} value={template.id}>{template.nome} · {template.doctor?.name ?? 'Modelo geral'}</option>)}
+            </SelectField>
+            <Button variant="outline" disabled={busy || !canWrite || create.isPending || !templateChoices[appointment.id]}
+              onClick={() => create.mutate({ appointment_id: appointment.id, template_id: templateChoices[appointment.id] })}>Criar laudo</Button>
           </div>
         </div>)}
       </div>
@@ -196,6 +208,7 @@ export default function LaudosPage({ user }: { user: CurrentUser }) {
       {create.isError ? <Alert tone="danger" title="Não criou">{apiErrorMessage(create.error)}</Alert> : null}
     </Panel> : null}
 
+    {openReport.isError ? <Alert tone="danger" title="Laudo indisponível">{apiErrorMessage(openReport.error)}</Alert> : null}
     {selected ? <Panel>
       <h2>Laudo {selected.status === 'RASCUNHO' ? '(rascunho)' : '(finalizado)'}</h2>
       <p className="muted">
@@ -216,13 +229,13 @@ export default function LaudosPage({ user }: { user: CurrentUser }) {
       <div
         className="report-editor"
         ref={editorRef}
-        contentEditable={selected.status === 'RASCUNHO' && canWrite}
+        contentEditable={selected.status === 'RASCUNHO' && canWrite && !busy}
         suppressContentEditableWarning
         aria-label="Conteúdo do laudo"
       />
       {selected.status === 'RASCUNHO' && canWrite ? <div className="catalog-form-actions">
-        <Button variant="success" disabled={save.isPending} onClick={() => save.mutate()}>Salvar rascunho</Button>
-        <Button disabled={finalize.isPending} onClick={() => finalize.mutate()}>Finalizar</Button>
+        <Button variant="success" disabled={busy} onClick={() => save.mutate()}>Salvar rascunho</Button>
+        <Button disabled={busy} onClick={() => finalize.mutate()}>Finalizar</Button>
       </div> : null}
       {selected.status === 'FINALIZADO' && canWrite ? <div className="catalog-form-actions">
         {adendoFor === selected.id
@@ -234,11 +247,11 @@ export default function LaudosPage({ user }: { user: CurrentUser }) {
           : <Button variant="outline" onClick={() => { setAdendoFor(selected.id); setAdendoText(''); }}>Adicionar adendo</Button>}
       </div> : null}
       <div className="catalog-form-actions">
-        <Button variant="outline" disabled={print.isPending} onClick={() => print.mutate()}>Imprimir{selected.print_count > 0 ? ` (reimpressão #${selected.print_count + 1})` : ''}</Button>
+        <Button variant="outline" disabled={busy} onClick={() => print.mutate()}>Imprimir{selected.print_count > 0 ? ` (reimpressão #${selected.print_count + 1})` : ''}</Button>
         {selected.status === 'FINALIZADO' && !selected.signed_manual && canSign
-          ? <Button variant="success" disabled={sign.isPending} onClick={() => sign.mutate()}>Marcar assinatura manual</Button> : null}
+          ? <Button variant="success" disabled={busy} onClick={() => sign.mutate()}>Marcar assinatura manual</Button> : null}
         {selected.status === 'FINALIZADO' && canWrite && !selected.portal_published
-          ? <Button variant="success" disabled={publishPortal.isPending} onClick={() => publishPortal.mutate()}>Publicar resultado no portal</Button> : null}
+          ? <Button variant="success" disabled={busy} onClick={() => publishPortal.mutate()}>Publicar resultado no portal</Button> : null}
         {selected.status === 'FINALIZADO' && selected.portal_published
           ? <Button variant="outline" disabled={printFolha.isPending} onClick={() => printFolha.mutate()}>Folha de acesso</Button> : null}
         {selected.status === 'FINALIZADO' && canWrite && selected.portal_published && revokeFor !== selected.id

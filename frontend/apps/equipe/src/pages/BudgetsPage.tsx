@@ -15,8 +15,9 @@ export default function BudgetsPage({ user }: { user: CurrentUser }) {
   const [patientCpf, setPatientCpf] = useState('');
   const [patient, setPatient] = useState<{ id: string; name: string } | null>(null);
   const [agreementId, setAgreementId] = useState('');
+  const [unitId, setUnitId] = useState('');
   const [search, setSearch] = useState('');
-  const [items, setItems] = useState<Array<{ procedure_id: string; name: string; amount: string; quantity: number }>>([]);
+  const [items, setItems] = useState<Array<{ procedure_price_id: string; procedure_id: string; name: string; amount: string; quantity: number }>>([]);
   const [prescription, setPrescription] = useState<File | undefined>();
   const [resolveFor, setResolveFor] = useState('');
   const [outcome, setOutcome] = useState<'ACEITO' | 'RECUSADO' | 'PERDIDO'>('ACEITO');
@@ -24,11 +25,12 @@ export default function BudgetsPage({ user }: { user: CurrentUser }) {
   const canManage = user.permissions.includes('budgets.manage');
 
   const agreements = useQuery({ queryKey: ['catalog-agreements-b2b'], queryFn: () => api.catalog('agreements', { active: '1' }) });
+  const units = useQuery({ queryKey: ['budget-units'], queryFn: () => api.catalog('units', { active: '1' }) });
   const budgets = useQuery({ queryKey: ['budgets', statusFilter], queryFn: () => api.budgets({ status: statusFilter || undefined }) });
   const options = useQuery({
-    queryKey: ['budget-options', agreementId, search],
-    queryFn: () => api.budgetPriceOptions(agreementId, search || undefined),
-    enabled: Boolean(agreementId) && search.length >= 3,
+    queryKey: ['budget-options', agreementId, unitId, search],
+    queryFn: () => api.budgetPriceOptions(agreementId, search || undefined, unitId),
+    enabled: Boolean(agreementId && unitId) && search.length >= 3,
   });
   const rows = budgets.data ?? [];
   const total = items.reduce((sum, item) => sum + Number(item.amount) * item.quantity, 0);
@@ -42,13 +44,22 @@ export default function BudgetsPage({ user }: { user: CurrentUser }) {
   });
   const create = useMutation({
     mutationFn: () => api.createBudget({
-      patient_id: patient!.id, agreement_id: agreementId || undefined,
-      items: items.map<BudgetItemInput>((item) => ({ procedure_id: item.procedure_id, amount: item.amount, quantity: item.quantity })),
+      patient_id: patient!.id, unit_id: unitId, agreement_id: agreementId || undefined,
+      items: items.map<BudgetItemInput>((item) => ({ procedure_price_id: item.procedure_price_id, procedure_id: item.procedure_id, amount: item.amount, quantity: item.quantity })),
       prescription,
     }),
     onSuccess: async () => {
       setItems([]); setPrescription(undefined); setSearch(''); setPatient(null); setPatientCpf('');
       await refresh();
+    },
+  });
+  const download = useMutation({
+    mutationFn: (id: string) => api.budgetPrescription(id),
+    onSuccess: (blob) => {
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement('a'); anchor.href = url; anchor.download = 'prescricao';
+      document.body.appendChild(anchor); anchor.click(); anchor.remove();
+      window.setTimeout(() => URL.revokeObjectURL(url), 60000);
     },
   });
   const send = useMutation({ mutationFn: (id: string) => api.sendBudget(id), onSuccess: refresh });
@@ -68,7 +79,11 @@ export default function BudgetsPage({ user }: { user: CurrentUser }) {
       <div className="catalog-form-grid">
         <TextField label="CPF do paciente" value={patientCpf} onChange={(event) => { setPatientCpf(event.target.value); setPatient(null); }} />
         <Button type="button" variant="outline" disabled={patientCpf.replace(/\D/g, '').length !== 11 || lookup.isPending} onClick={() => lookup.mutate()}>Localizar</Button>
-        <SelectField label="Convênio da tabela" value={agreementId} onChange={(event) => { setAgreementId(event.target.value); setSearch(''); }}>
+        <SelectField label="Unidade do orçamento" value={unitId} onChange={(event) => { setUnitId(event.target.value); setSearch(''); setItems([]); }}>
+          <option value="">Selecione</option>
+          {(units.data?.data ?? []).filter((unit) => unit.operational_enabled === true).map((unit) => <option key={unit.id} value={unit.id}>{unit.name}</option>)}
+        </SelectField>
+        <SelectField label="Convênio da tabela" value={agreementId} onChange={(event) => { setAgreementId(event.target.value); setSearch(''); setItems([]); }}>
           <option value="">Selecione</option>
           {(agreements.data?.data ?? []).map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
         </SelectField>
@@ -79,10 +94,10 @@ export default function BudgetsPage({ user }: { user: CurrentUser }) {
         <TextField label="Buscar procedimento (3+ letras/TUSS)" value={search} onChange={(event) => setSearch(event.target.value)} />
       </div>
       {options.isFetching ? <LoadingState label="Buscando preços" /> : null}
-      {(options.data ?? []).slice(0, 6).map((option) => <div className="catalog-row" key={option.procedure_id}>
+      {(options.data ?? []).slice(0, 6).map((option) => <div className="catalog-row" key={option.id}>
         <span><strong>{option.procedure_name}</strong><small>{option.type}</small></span>
         <b>{formatMoney(option.amount)}</b>
-        <div className="catalog-actions"><Button disabled={!patient || !agreementId} onClick={() => setItems((current) => current.some((item) => item.procedure_id === option.procedure_id) ? current : [...current, { procedure_id: option.procedure_id, name: option.procedure_name ?? '', amount: option.amount, quantity: 1 }])}>Incluir</Button></div>
+        <div className="catalog-actions"><Button disabled={!patient || !agreementId} onClick={() => setItems((current) => current.some((item) => item.procedure_id === option.procedure_id) ? current : [...current, { procedure_price_id: option.id, procedure_id: option.procedure_id, name: option.procedure_name ?? '', amount: option.amount, quantity: 1 }])}>Incluir</Button></div>
       </div>)}
       {items.length > 0 ? <>
         <SectionTitle title={`Itens do orçamento · ${formatMoney(total)}`} />
@@ -95,7 +110,7 @@ export default function BudgetsPage({ user }: { user: CurrentUser }) {
           <label className="catalog-check"><input type="file" accept=".pdf,.jpg,.jpeg,.png,.webp" onChange={(event) => setPrescription(event.target.files?.[0])} />Anexar prescrição (foto/PDF, opcional mas recomendado)</label>
         </div>
         {create.isError ? <Alert tone="danger" title="Orçamento não criado">{apiErrorMessage(create.error)}</Alert> : null}
-        <div className="catalog-form-actions"><Button disabled={!patient || !agreementId || items.length === 0 || create.isPending} onClick={() => create.mutate()}>{create.isPending ? 'Criando...' : `Criar orçamento (${formatMoney(total)})`}</Button></div>
+        <div className="catalog-form-actions"><Button disabled={!patient || !agreementId || !unitId || items.length === 0 || create.isPending} onClick={() => create.mutate()}>{create.isPending ? 'Criando...' : `Criar orçamento (${formatMoney(total)})`}</Button></div>
       </> : null}
     </Panel> : null}
     <Panel>
@@ -111,7 +126,7 @@ export default function BudgetsPage({ user }: { user: CurrentUser }) {
           {budget.resolution_note ? <small>Resolução: {budget.resolution_note}</small> : null}</span>
         <StatusPill tone={statusTone[budget.status]}>{budget.status}</StatusPill>
         <div className="catalog-actions">
-          {budget.has_prescription ? <a className="dez-button dez-button--outline" href={api.budgetPrescriptionUrl(budget.id)} target="_blank" rel="noreferrer">Prescrição</a> : null}
+          {budget.has_prescription ? <Button variant="outline" disabled={download.isPending} onClick={() => download.mutate(budget.id)}>Prescrição</Button> : null}
           {budget.status === 'RASCUNHO' && canManage ? <Button disabled={send.isPending} onClick={() => send.mutate(budget.id)}>Enviar ao paciente</Button> : null}
           {budget.status === 'ENVIADO' && canManage ? <Button variant="outline" onClick={() => { setResolveFor(budget.id); setOutcome('ACEITO'); setNote(''); }}>Resolver sim/não</Button> : null}
         </div>
@@ -123,6 +138,7 @@ export default function BudgetsPage({ user }: { user: CurrentUser }) {
         </div> : null}
         {resolveFor === budget.id ? <div className="catalog-form-actions"><Button disabled={note.trim().length < 3 || resolve.isPending} onClick={() => resolve.mutate()}>Registrar resolução</Button></div> : null}
       </div>)}
+      {download.isError ? <Alert tone="danger" title="Download falhou">{apiErrorMessage(download.error)}</Alert> : null}
       {send.isError ? <Alert tone="danger" title="Envio falhou">{apiErrorMessage(send.error)}</Alert> : null}
       {resolve.isError ? <Alert tone="danger" title="Resolução falhou">{apiErrorMessage(resolve.error)}</Alert> : null}
     </Panel>

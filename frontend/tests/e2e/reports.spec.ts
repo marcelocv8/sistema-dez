@@ -16,7 +16,8 @@ test('Laudo do STG: cria por modelo, finaliza, imprime e registra assinatura man
   await expect(page.getByText('Paciente:')).toBeVisible();
   await expect(page.getByText(/Sem laudos/).or(page.locator('.catalog-row').first())).toBeVisible();
 
-  await page.getByRole('button', { name: 'Criar laudo' }).click();
+  await page.getByLabel(/Modelo para/).first().selectOption({ label: 'ECO PILOTO E2E · PROFISSIONAL PILOTO E2E' });
+  await page.getByRole('button', { name: 'Criar laudo' }).first().click();
   const editorPanel = page.locator('h2', { hasText: 'Laudo (rascunho)' });
   await expect(editorPanel).toBeVisible();
   const editor = page.locator('[aria-label="Conteúdo do laudo"]');

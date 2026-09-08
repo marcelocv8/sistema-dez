@@ -2,7 +2,9 @@
 
 namespace App\Models;
 
+use App\Services\ClinicalHtml;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
+use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -20,6 +22,14 @@ class ClinicalNote extends Model
     public const KIND_INTERCORRENCIA = 'INTERCORRENCIA';
 
     public const KIND_ALTA = 'ALTA';
+
+    protected function contentHtml(): Attribute
+    {
+        return Attribute::make(
+            get: fn ($value) => ClinicalHtml::clean($value),
+            set: fn ($value) => ClinicalHtml::clean($value),
+        );
+    }
 
     protected function casts(): array
     {
