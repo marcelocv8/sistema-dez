@@ -2,7 +2,7 @@ import type { ReactNode } from 'react';
 import { useState } from 'react';
 import { NavLink } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
-import { Activity, Banknote, BarChart3, Bell, CalendarDays, ChevronLeft, ClipboardList, FileHeart, FileText, HardHat, LayoutDashboard, LogOut, Menu, MessageCircle, Search, Settings, Sparkles, Tags, Users, WalletCards, X } from 'lucide-react';
+import { Activity, Banknote, BarChart3, Bell, CalendarDays, ChevronLeft, ClipboardList, FileHeart, FileText, HardHat, LayoutDashboard, LogOut, Menu, MessageCircle, MessageSquare, Search, Settings, Sparkles, Tags, Users, WalletCards, X } from 'lucide-react';
 import { api, type CurrentUser } from '@dez/api';
 import { BrandLogo, IconButton } from '@dez/ui';
 
@@ -19,6 +19,7 @@ const sections = [
     { to: '/orcamentos', label: 'Orçamentos', icon: Tags, permission: 'budgets.view' },
     { to: '/rotinas', label: 'Rotinas', icon: ClipboardList, permission: 'routine.view' },
     { to: '/medicina-trabalho', label: 'Medicina do Trabalho', icon: HardHat, permission: 'mt.view' },
+    { to: '/whatsapp', label: 'WhatsApp', icon: MessageSquare, permission: 'team.manage' },
     { to: '/recepcao?fila=1', label: 'Fila de espera', icon: ClipboardList },
   ] },
   { label: 'Clínico', items: [

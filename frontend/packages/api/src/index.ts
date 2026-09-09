@@ -115,6 +115,7 @@ export type Appointment = {
   payment_method_code: string | null;
   receipt_number: number | null;
   care_started_at: string | null;
+  confirmation_status?: 'PENDING' | 'CONFIRMED' | 'DECLINED' | 'NO_RESPONSE' | null;
 };
 
 export type QueuePriority = { code: string; label: string };
@@ -868,11 +869,15 @@ export const api = {
     (await request<ApiData<MtCompanyReport>>(`/api/v1/team/mt/companies/${agreementId}/report?${queryString(filters)}`)).data,
   analytics: async (filters: { from?: string; to?: string; unit_id?: string; doctor_id?: string; agreement_id?: string } = {}) =>
     (await request<ApiData<AnalyticsSummary>>(`/api/v1/team/analytics?${queryString(filters)}`)).data,
-  analyticsExportUrl: (type: string, filters: { from?: string; to?: string; agreement_id?: string } = {}) => `/api/v1/team/analytics/export?${queryString({ type, ...filters })}`,
+  analyticsExportUrl: (type: string, filters: { from?: string; to?: string; agreement_id?: string } = {}) =>
+    `/api/v1/team/analytics/export?${queryString({ type, ...filters })}`,
   agentTokens: async () => (await request<ApiData<AgentToken[]>>('/api/v1/team/agents')).data,
   createAgentToken: async (input: { name: string; scopes: string[] }) =>
     (await request<ApiData<AgentToken & { token: string; warning?: string }>>('/api/v1/team/agents', { method: 'POST', body: JSON.stringify(input) })).data,
   revokeAgentToken: async (id: string) => (await request<ApiData<AgentToken>>(`/api/v1/team/agents/${id}/revoke`, { method: 'POST' })).data,
+  whatsappLines: async () => (await request<ApiData<WhatsappLines>>('/api/v1/team/whatsapp/lines')).data,
+  selectWhatsappLine: async (conexao_id: number | null) =>
+    (await request<ApiData<{ selected: number | null }>>('/api/v1/team/whatsapp/lines', { method: 'PUT', body: JSON.stringify({ conexao_id }) })).data,
 };
 
 export type MtRisk = { id: UUID; name: string; active: boolean; legacy_id: number | null };
@@ -941,6 +946,9 @@ export type AgentToken = {
   revoked_at: string | null;
   created_at: string | null;
 };
+
+export type WhatsappLine = { id: number; numero: string; status_saude: string; provedor: string };
+export type WhatsappLines = { enabled: boolean; lines: WhatsappLine[]; selected: number | null; error: string | null };
 
 export function apiErrorMessage(error: unknown): string {
   const problem = error as { message?: string; errors?: Record<string, string[]>; fields?: Record<string, string[]> };

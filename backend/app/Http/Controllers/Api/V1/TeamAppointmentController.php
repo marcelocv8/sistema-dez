@@ -7,6 +7,7 @@ use App\Actions\Scheduling\ChangeAppointment;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Api\V1\StorePublicAppointmentRequest;
 use App\Models\Appointment;
+use App\Models\AppointmentConfirmation;
 use App\Models\Patient;
 use App\Services\AuditRecorder;
 use Carbon\CarbonImmutable;
@@ -48,6 +49,7 @@ class TeamAppointmentController extends Controller
                 'scheduleOccurrence',
                 'paymentMethod:id,code,name',
                 'cashMovement:id,receipt_number',
+                'confirmations:id,appointment_id,status,requested_on,requested_at',
             ])
             ->when($professionalId, fn ($query) => $query->whereHas(
                 'serviceOffering',
@@ -108,6 +110,9 @@ class TeamAppointmentController extends Controller
         $duration = $offering->duration_override_minutes ?? $procedure->duration_minutes;
         $startsAt = $appointment->scheduled_at->setTimezone($offering->unit->timezone);
         $endsAt = $appointment->scheduleOccurrence ? $startsAt->setTimeFromTimeString($appointment->scheduleOccurrence->ends_at) : $startsAt->addMinutes((int) $duration);
+        $confirmation = $appointment->confirmations
+            ->sortByDesc(fn (AppointmentConfirmation $c) => [$c->requested_on->toDateString(), $c->requested_at])
+            ->first();
 
         return [
             'id' => $appointment->id,
@@ -136,6 +141,7 @@ class TeamAppointmentController extends Controller
             'payment_method_code' => $appointment->paymentMethod?->code,
             'receipt_number' => $appointment->cashMovement?->receipt_number,
             'care_started_at' => $appointment->care_started_at?->toIso8601String(),
+            'confirmation_status' => $confirmation?->status,
         ];
     }
 }

@@ -7161,7 +7161,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Exportação CSV (type=production|revenue|b2b_open|asos_due) */
+        /**
+         * Exportação CSV (type=production|revenue|b2b_open|asos_due)
+         * @description As datas usam o fuso da clínica. Empresa filtra todos os CSVs; unidade e médico filtram produção e receita.
+         */
         get: {
             parameters: {
                 query: {
@@ -7169,6 +7172,8 @@ export interface paths {
                     from?: string;
                     to?: string;
                     agreement_id?: string;
+                    unit_id?: string;
+                    doctor_id?: string;
                 };
                 header?: never;
                 path?: never;
@@ -7513,6 +7518,170 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/agents/whatsapp/events": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * [Integração] Webhook do AppChat (T2) — eventos de mensagens e receipts (escopo whatsapp.events)
+         * @description Eventos entregues pelo fork AppChat. `mensagem_recebida` casa respostas SIM/NÃO com confirmações D-2 pendentes (§6.2.4/§6.17); `mensagem_status` atualiza receipts da outbox. Idempotente por event_id (replay é no-op). Audited em agent_requests.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        /** @enum {string} */
+                        event: "mensagem_recebida" | "mensagem_status";
+                        /** @example mensagem_recebida|wamid.XYZ */
+                        event_id: string;
+                        payload: {
+                            message_key?: string | null;
+                            phone_e164?: string | null;
+                            texto?: string | null;
+                            status?: string | null;
+                            conversa_id?: number | null;
+                            conexao_id?: number | null;
+                        };
+                    };
+                };
+            };
+            responses: {
+                /** @description Evento processado */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            data?: {
+                                /** @enum {string} */
+                                result?: "CONFIRMED" | "DECLINED" | "IGNORED" | "STATUS";
+                                duplicate?: boolean;
+                            };
+                        };
+                    };
+                };
+                /** @description Token ausente/inválido/revogado */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description Sem o escopo */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                422: components["responses"]["ValidationError"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/team/whatsapp/lines": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Linhas WhatsApp disponíveis no AppChat (T2; team.manage) */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Linhas (id/numero/status_saude/provedor) + linha selecionada */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            data?: {
+                                enabled?: boolean;
+                                lines?: {
+                                    id?: number;
+                                    numero?: string;
+                                    status_saude?: string;
+                                    provedor?: string;
+                                }[];
+                                selected?: number | null;
+                                error?: string | null;
+                            };
+                        };
+                    };
+                };
+                /** @description Requer team.manage */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        /** Seleciona a linha de envio (app_settings; null = automática) */
+        put: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: {
+                content: {
+                    "application/json": {
+                        conexao_id?: number | null;
+                    };
+                };
+            };
+            responses: {
+                /** @description Seleção registrada (auditada) */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description Requer team.manage */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                422: components["responses"]["ValidationError"];
+            };
+        };
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -7650,6 +7819,11 @@ export interface components {
             receipt_number?: number | null;
             /** Format: date-time */
             care_started_at?: string | null;
+            /**
+             * @description Ciclo de confirmação WhatsApp D-2 mais recente (T3).
+             * @enum {string|null}
+             */
+            confirmation_status?: "PENDING" | "CONFIRMED" | "DECLINED" | "NO_RESPONSE" | null;
         };
         PaymentMethod: {
             /** Format: uuid */

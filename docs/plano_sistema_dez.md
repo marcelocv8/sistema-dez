@@ -1,6 +1,17 @@
 # Sistema DEZ — Clínica DEZ
-## Especificação (v0.14)
+## Especificação (v0.15)
 
+> **v0.15** — Bloco WhatsApp (T2 + T3) implementado em 09/09/2026 — §14.21.
+> Integração com o fork AppChat (plugin genérico opcional, 1 instância/banco por
+> empresa — detalhes e decisões em §22.15 do `PLANO_APP_CREDITO_LEVE.md` do
+> AppChat): mensagem automática de agendamento, confirmações D-2 e respostas
+> SIM/NÃO via API Hermes (AgentToken escopo `whatsapp.events`). Flag
+> `WHATSAPP_ENABLED=false` = tudo inerte. Backend 183 testes/1534 asserções
+> (1 falha pré-existente no WIP da sessão paralela do dono — aging analytics),
+> Pint, Vitest 42, typecheck 7, builds 4. Smoke de ponta a ponta com o AppChat
+> pendente do dono (só número de teste dele) — checklist autocontido em §14.21.
+> Commit autorizado e realizado em 09/09/2026 (sistema-dez e AppChat; push aguarda instrução).
+>
 > **v0.14** — Bloco 5 (Medicina do Trabalho + Relatórios/BI + API Hermes) implementado
 > em 08–09/09/2026 — §14.20. Backend 148 testes/1323 asserções, Vitest 33, typecheck
 > 7 projetos, builds 4 apps e E2E 4/4 (desktop+mobile). Commit autorizado pelo dono.
@@ -1249,6 +1260,74 @@ Carência (decisão do dono), boleto Inter para mensalidade (última tarefa do p
 2. **Extração MT do legado na rede da Clínica DEZ** (pacote em `docs/extracao_mt/` pronto; pendências: IP do servidor, credenciais testadas, CSVs gerados, `stg:import-mt --dry-run` → `--commit`).
 3. ECO estruturado com cálculos + triagem 12/24m dos modelos de laudo: **pós-Bloco 5**, com homologação dos médicos (a ficha do STG é a referência de campos).
 4. Validação manual acumulada pelo dono (inclui o novo `/medicina-trabalho` e `/relatorios`).
+
+---
+
+### 14.21 Bloco WhatsApp (T2 + T3) — fork AppChat via API Hermes (09/09/2026)
+
+**Situação: implementado e validado (backend, frontend, AppChat). Commit autorizado pelo dono e realizado em 09/09/2026 (nos dois repos).**
+
+**Decisões do dono (09/09):** (1) fork permanece **produto independente** (multi-empresa) — NÃO absorvido pelo DEZ; (2) **1 instância + 1 banco AppChat por empresa**; o DEZ aponta para a instância da clínica via env; (3) plugin de integração **genérico e opcional** no AppChat (inerte sem envs; outras empresas intocadas); (4) resposta D-2 em **texto livre SIM/NÃO**; (5) **linha de envio escolhida pelo Admin no DEZ** (fallback: única linha conectada; várias sem seleção = 409 honesto); (6) mensagem imediata no ato do agendamento **incluída** (§6.2.4); (7) webhook AppChat→DEZ autenticado pela **API Hermes** (AgentToken escopo `whatsapp.events`) em vez de HMAC dedicado — reuso da infra §6.14 com auditoria `agent_requests` e revogação pela UI.
+
+#### Entregue (lado DEZ)
+
+- **Tabelas:** `whatsapp_outbox` (event_key booking|d2_confirmation, status QUEUED/SENT/DELIVERED/READ/FAILED, `provider_message_key`, `idempotency_key` única), `whatsapp_events` (append-only, `provider_event_id` única — replay/auditoria) e `appointment_confirmations` (ciclo D-2 por atendimento+dia; PENDING/CONFIRMED/DECLINED/NO_RESPONSE).
+- **Serviços (`App\Services\WhatsApp`):** `AppChatClient` (X-Api-Key, timeout 5s), `WhatsAppDispatcher` (outbox + envio fail-open; linha em `app_settings.whatsapp_conexao_id`), `WhatsAppResponseMatcher` (eventos idempotentes por `provider_event_id`; SIM/NÃO com acentos/pontuação/1-2/cancela; receipts monotônicos).
+- **Webhook:** `POST /api/v1/agents/whatsapp/events` no grupo `v1/agents` existente (agent.token + agent.scope + throttle) — zero código de auth novo; escopo `whatsapp.events` adicionado a `AgentToken::SCOPES`.
+- **T3:** comando `whatsapp:dispatch-confirmations` agendado (10:00 America/Fortaleza, configurável): D+2 CONFIRMED/SCHEDULED com telefone e unidade operacional → mensagem com link privado de gestão; reprocessa outbox FAILED de dias anteriores com a mesma chave. `RoutineGenerator` (§6.17): CONFIRMACAO (ligação D+1) só para quem **não respondeu** ao D-2; flag off = comportamento original.
+- **Reserva:** `BookAppointment` envia confirmação imediata (público e recepção) fora da transação, fail-open — falha de WhatsApp nunca derruba a reserva.
+- **Config:** `WHATSAPP_ENABLED`/`APPCHAT_BASE_URL`/`APPCHAT_API_KEY`/`WHATSAPP_REMINDER_DAYS=2`/`WHATSAPP_REMINDER_HOUR=10:00`/`BOOKING_BASE_URL` em `config/sistema_dez.php` + `.env.example`.
+- **Frontend:** página `/whatsapp` (Operação, gate `team.manage`) — lista linhas do AppChat (fail-open), seleção da linha de envio, guia de funcionamento; chip de confirmação WhatsApp na agenda (`confirmation_status` no payload de `GET /team/appointments`); handlers MSW.
+- **Contratos:** OpenAPI **v0.18.0** (+`whatsapp.events` no scheme `agentToken`, paths `/agents/whatsapp/events` e `/team/whatsapp/lines`, `confirmation_status` em TeamAppointment) + `schema.generated.ts` regenerado.
+
+#### Lado AppChat (plugin, §22.15 do plano deles)
+
+`backend/src/integracoes/` (auth X-Api-Key constant-time, routes, envio com ator `sistema` sem prefixo de vendedor, webhook-out com Bearer + BullMQ 5 tentativas, subscriber aditivo no `realtime.ts`), migration `0032` (`integracao_envio`), registro em `app.ts`. Inerte sem `INTEGRATION_API_KEY`/`INTEGRATION_WEBHOOK_URL`. Event_id sem `:` (limite do BullMQ — separador `|`). Documentado como v4.29 em `docs/PLANO_APP_CREDITO_LEVE.md`.
+
+#### Validação
+
+- **Backend:** 183 testes / 1534 asserções; **12 testes novos** em `WhatsappIntegrationTest` (auth/escopo 401/403, SIM/NÃO/ignorado com replay idempotente, receipts monotônicos, reserva com idempotência, sem telefone, flag inerte, comando D-2 idempotente + reprocesso de falha, 2ª camada de rotina, linhas RBAC + fail-open) — **verdes**. Pint ok. Única falha da suíte: `RemainingBlocksRegressionTest::test_aging_respects_calendar_day_boundaries` — **WIP da sessão paralela do dono** (arquivo untracked + `AnalyticsController` alterado por ele; aging B2B), fora deste bloco. Migrations aplicadas no dev (`sistema_dez`).
+- **AppChat:** `tsc` ok; **75 unit + 148 integração (22 arquivos)** verdes em 2 rodadas consecutivas (flake de ordem eliminado isolando linhas conectadas no setup e restaurando no teardown).
+- **Frontend:** Vitest **42** (3 novos em `WhatsAppPage.test.tsx`), typecheck 7 projetos, builds 4 apps.
+- **Sem E2E Playwright neste ciclo** — chip é aditivo (nulo sem confirmação) e os fluxos existentes não mudam; smoke de ponta a ponta com o dono pendente (AppChat local + **somente o número de teste dele**).
+
+#### Smoke manual — WhatsApp ponta a ponta (§14.21; agendado pelo dono para quando quiser)
+
+Checklist autocontido — um agente ou o dono executa sem contexto extra. **Regra absoluta: disparar/responder somente com o número de teste do dono; NUNCA pacientes reais.**
+
+**Pré-condições (local):** AppChat rodando (`scripts/start_dev.ps1` — appcredito-pg + Memurai + backend :3333) com a **linha de teste pareada** (QR no app do AppChat); DEZ local (API `:8000` + equipe `:5175`); Docker do DEZ de pé (postgres 5433).
+
+**Passos:**
+1. **AppChat — envs:** gerar `INTEGRATION_API_KEY` (hex aleatório ≥ 32), `INTEGRATION_WEBHOOK_URL=http://127.0.0.1:8000/api/v1/agents/whatsapp/events`, `INTEGRATION_WEBHOOK_TOKEN=<o token do passo 3>`; editar `backend/.env` (só via script Node atômico, regra do AppChat) → `npm run db:migrate` → reiniciar o backend.
+2. **DEZ — envs:** `WHATSAPP_ENABLED=true`, `APPCHAT_BASE_URL=http://127.0.0.1:3333`, `APPCHAT_API_KEY=<a do passo 1>`, `BOOKING_BASE_URL=http://localhost:5174` → reiniciar a API (migrations já aplicadas no dev).
+3. **Credencial do webhook:** DEZ `Admin → Cadastros → Agentes` → criar token "AppChat webhook" com escopo `whatsapp.events` → copiar o plaintext `dez_…` (exibido uma única vez) → colar em `INTEGRATION_WEBHOOK_TOKEN` no AppChat (passo 1) e reiniciar.
+4. **Linha:** DEZ `/whatsapp` (Operação) → conferir que a linha pareada aparece com status → "Usar esta linha".
+5. **Reserva:** agendar (site público ou agenda interna) um atendimento em **D+2** para um paciente de teste com o **celular do dono** → WhatsApp chega com o texto + link privado; chip "WhatsApp: aguardando" na agenda; `whatsapp_outbox` com `SENT`.
+6. **Resposta SIM** no celular → chip vira "WhatsApp: confirmado" (evento em `whatsapp_events`; chamada em `agent_requests`).
+7. **Resposta NÃO** (segundo atendimento de teste) → chip "WhatsApp: não vai".
+8. **Sem resposta** (terceiro atendimento) → `php artisan whatsapp:dispatch-confirmations` (ou aguardar 10:00) → confirmação criada; no dia seguinte a rotina **CONFIRMACAO** nasce em `/rotinas` (2ª camada).
+9. **Falha + reprocesso:** desligar a linha no AppChat → novo disparo vira outbox `FAILED` (reserva NÃO quebra); religar e rodar o comando no dia seguinte → reenvio com a mesma chave.
+
+**Critérios de aceite:** os 9 passos ✅; `agent_requests` com endpoint `/agents/whatsapp/events` 200; `integracao_envio` com 1 registro por mensagem (nos dois bancos — DEZ e AppChat); nenhuma mensagem para número que não seja o do dono.
+
+**Evidências (preencher na execução):**
+
+| Data | Etapa | Evidência (id/print) | Resultado |
+|---|---|---|---|
+| | 1-3 envs/credencial | | |
+| | 4 linha listada/selecionada | | |
+| | 5 reserva → WhatsApp | | |
+| | 6 SIM → confirmado | | |
+| | 7 NÃO → não vai | | |
+| | 8 sem resposta → rotina D+1 | | |
+| | 9 falha + reprocesso | | |
+
+#### Pendente
+
+1. Smoke manual acima (agendado pelo dono — quando for fazer, com o número de teste dele).
+2. Push (commit já autorizado e realizado; push aguarda instrução do dono).
+3. Go-live futuro: instância AppChat da clínica com banco próprio + parear linha + AgentToken `whatsapp.events` na UI + envs nos dois lados — **zero código**.
+4. Evoluções fora do escopo: botões interativos (via Meta oficial), orçamentos por WhatsApp (§6.16 usa o mesmo motor), agendamento automático via WhatsApp (T19, ÚLTIMA).
 
 ---
 

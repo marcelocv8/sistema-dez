@@ -8,6 +8,7 @@ use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
 #[Fillable(['patient_id', 'service_offering_id', 'schedule_occurrence_id', 'scheduled_at', 'recommended_arrival_at', 'status', 'kind', 'origin', 'price_snapshot', 'payment_status', 'paid_at', 'payment_method_id', 'cash_movement_id', 'b2b_authorization_code', 'care_started_at', 'idempotency_key', 'management_token_hash', 'return_override_reason', 'cancellation_reason', 'created_by'])]
@@ -46,5 +47,11 @@ class Appointment extends Model
     public function cashMovement(): BelongsTo
     {
         return $this->belongsTo(CashMovement::class);
+    }
+
+    /** @return HasMany<AppointmentConfirmation, $this> */
+    public function confirmations(): HasMany
+    {
+        return $this->hasMany(AppointmentConfirmation::class);
     }
 }

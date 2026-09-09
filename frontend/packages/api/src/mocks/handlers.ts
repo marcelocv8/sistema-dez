@@ -159,6 +159,16 @@ export const handlers = [
     return HttpResponse.json({ data: overdue ? [due] : [due, { ...loyaltyDueMock, id: 'due-2', status: 'PAGA', overdue: false, paid_at: new Date().toISOString() }] });
   }),
   http.post('/api/v1/team/loyalty/dues/:id/collect', async ({ params }) => HttpResponse.json({ data: { ...loyaltyDueMock, id: params.id, status: 'PAGA', overdue: false, paid_at: new Date().toISOString() } }, { status: 201 })),
+  http.get('/api/v1/team/whatsapp/lines', () => HttpResponse.json({ data: {
+    enabled: true,
+    lines: [{ id: 7, numero: '5585888800010', status_saude: 'conectado', provedor: 'baileys' }],
+    selected: null,
+    error: null,
+  } })),
+  http.put('/api/v1/team/whatsapp/lines', async ({ request }) => {
+    const body = await request.json() as { conexao_id: number | null };
+    return HttpResponse.json({ data: { selected: body.conexao_id } });
+  }),
 ];
 
 const loyaltySubscriptionMock = {

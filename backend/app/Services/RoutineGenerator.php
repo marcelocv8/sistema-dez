@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Enums\AsoStatus;
 use App\Enums\AsoType;
 use App\Models\Appointment;
+use App\Models\AppointmentConfirmation;
 use App\Models\B2bInvoice;
 use App\Models\Budget;
 use App\Models\MtAso;
@@ -34,7 +35,10 @@ class RoutineGenerator
         return DB::transaction(function () use ($date): int {
             $created = 0;
 
-            // 1. Confirmação 2ª camada: consultas de amanhã (sem WhatsApp, viram ligação).
+            // 1. Confirmação 2ª camada: consultas de amanhã. Com WhatsApp ativo (T2),
+            // a ligação só entra para quem NÃO respondeu ao pedido D-2 (ordem de
+            // disparos definida pelo DEZ); sem integração, comportamento original.
+            $whatsapp = (bool) config('sistema_dez.whatsapp.enabled') && (bool) config('sistema_dez.whatsapp.api_key');
             $tomorrow = $date->addDay()->toDateString();
             $appointments = Appointment::query()
                 ->whereIn('status', ['CONFIRMED'])
@@ -42,6 +46,15 @@ class RoutineGenerator
                 ->whereHas('serviceOffering.unit', fn ($unit) => $unit->where('operational_enabled', true))
                 ->with('patient:id,name')->get();
             foreach ($appointments as $appointment) {
+                if ($whatsapp) {
+                    $answered = AppointmentConfirmation::query()
+                        ->where('appointment_id', $appointment->id)
+                        ->whereIn('status', [AppointmentConfirmation::CONFIRMED, AppointmentConfirmation::DECLINED])
+                        ->exists();
+                    if ($answered) {
+                        continue;
+                    }
+                }
                 $created += $this->task(
                     RoutineTask::CONFIRMACAO, 'appointments', $appointment->id,
                     self::TYPES[RoutineTask::CONFIRMACAO].': '.$appointment->patient?->name,

@@ -16,7 +16,7 @@ class AgentToken extends Model
     /** @use HasFactory<AgentTokenFactory> */
     use HasFactory, HasUuids;
 
-    public const SCOPES = ['agenda.read', 'patients.read', 'finance.read', 'mt.read'];
+    public const SCOPES = ['agenda.read', 'patients.read', 'finance.read', 'mt.read', 'whatsapp.events'];
 
     /** @var list<string> */
     private const AllowedScopes = self::SCOPES;

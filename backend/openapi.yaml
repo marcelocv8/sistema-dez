@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Sistema DEZ API
-  version: 0.17.0
+  version: 0.18.0
 servers:
   - url: http://localhost:8000/api/v1
 paths:
@@ -1618,6 +1618,7 @@ paths:
   /team/analytics/export:
     get:
       summary: Exportação CSV (type=production|revenue|b2b_open|asos_due)
+      description: As datas usam o fuso da clínica. Empresa filtra todos os CSVs; unidade e médico filtram produção e receita.
       security: [{ cookieAuth: [] }]
       tags: [relatorios]
       parameters:
@@ -1625,6 +1626,8 @@ paths:
         - { name: from, in: query, schema: { type: string, format: date } }
         - { name: to, in: query, schema: { type: string, format: date } }
         - { name: agreement_id, in: query, schema: { type: string, format: uuid } }
+        - { name: unit_id, in: query, schema: { type: string, format: uuid } }
+        - { name: doctor_id, in: query, schema: { type: string, format: uuid } }
       responses:
         '200':
           description: Arquivo CSV (UTF-8 BOM)
@@ -1703,6 +1706,100 @@ paths:
       tags: [hermes]
       responses:
         '200': { description: ASOs vencidos/a vencer }
+  /agents/whatsapp/events:
+    post:
+      summary: "[Integração] Webhook do AppChat (T2) — eventos de mensagens e receipts (escopo whatsapp.events)"
+      description: >
+        Eventos entregues pelo fork AppChat. `mensagem_recebida` casa respostas
+        SIM/NÃO com confirmações D-2 pendentes (§6.2.4/§6.17); `mensagem_status`
+        atualiza receipts da outbox. Idempotente por event_id (replay é no-op).
+        Audited em agent_requests.
+      security: [{ agentToken: [] }]
+      tags: [hermes]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [event, event_id, payload]
+              properties:
+                event:
+                  type: string
+                  enum: [mensagem_recebida, mensagem_status]
+                event_id:
+                  type: string
+                  maxLength: 191
+                  example: "mensagem_recebida|wamid.XYZ"
+                payload:
+                  type: object
+                  properties:
+                    message_key: { type: string, nullable: true }
+                    phone_e164: { type: string, nullable: true }
+                    texto: { type: string, nullable: true }
+                    status: { type: string, nullable: true }
+                    conversa_id: { type: integer, nullable: true }
+                    conexao_id: { type: integer, nullable: true }
+      responses:
+        '200':
+          description: Evento processado
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      result: { type: string, enum: [CONFIRMED, DECLINED, IGNORED, STATUS] }
+                      duplicate: { type: boolean }
+        '401': { description: Token ausente/inválido/revogado }
+        '403': { description: Sem o escopo }
+        '422': { $ref: '#/components/responses/ValidationError' }
+  /team/whatsapp/lines:
+    get:
+      summary: Linhas WhatsApp disponíveis no AppChat (T2; team.manage)
+      security: [{ cookieAuth: [] }]
+      tags: [whatsapp]
+      responses:
+        '200':
+          description: Linhas (id/numero/status_saude/provedor) + linha selecionada
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      enabled: { type: boolean }
+                      lines:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            id: { type: integer }
+                            numero: { type: string }
+                            status_saude: { type: string }
+                            provedor: { type: string }
+                      selected: { type: integer, nullable: true }
+                      error: { type: string, nullable: true }
+        '403': { description: Requer team.manage }
+    put:
+      summary: Seleciona a linha de envio (app_settings; null = automática)
+      security: [{ cookieAuth: [] }]
+      tags: [whatsapp]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                conexao_id: { type: integer, nullable: true }
+      responses:
+        '200': { description: Seleção registrada (auditada) }
+        '403': { description: Requer team.manage }
+        '422': { $ref: '#/components/responses/ValidationError' }
 components:
   securitySchemes:
     agentToken:
@@ -1840,6 +1937,7 @@ components:
         payment_method_code: { type: [string, 'null'] }
         receipt_number: { type: [integer, 'null'] }
         care_started_at: { type: [string, 'null'], format: date-time }
+        confirmation_status: { type: [string, 'null'], enum: [PENDING, CONFIRMED, DECLINED, NO_RESPONSE, null], description: Ciclo de confirmação WhatsApp D-2 mais recente (T3). }
     PaymentMethod:
       type: object
       required: [id, code, name, extra_percent, active]

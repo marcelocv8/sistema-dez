@@ -23,6 +23,7 @@ const RepassesPage = lazy(() => import('./pages/RepassesPage'));
 const SouDezPage = lazy(() => import('./pages/SouDezPage'));
 const MtPage = lazy(() => import('./pages/MtPage'));
 const RelatoriosPage = lazy(() => import('./pages/RelatoriosPage'));
+const WhatsAppPage = lazy(() => import('./pages/WhatsAppPage'));
 
 export function App() {
   const queryClient = useQueryClient();
@@ -48,6 +49,7 @@ export function App() {
     <Route path="/rotinas" element={<RoutinesPage user={currentUser.data} />} />
     <Route path="/sou-dez" element={<SouDezPage user={currentUser.data} />} />
     <Route path="/medicina-trabalho" element={<MtPage user={currentUser.data} />} />
+    <Route path="/whatsapp" element={<WhatsAppPage user={currentUser.data} />} />
     <Route path="/relatorios" element={<RelatoriosPage />} />
     <Route path="*" element={<Navigate to="/visao-geral" replace />} />
   </Routes></Suspense></AppShell></BrowserRouter>;

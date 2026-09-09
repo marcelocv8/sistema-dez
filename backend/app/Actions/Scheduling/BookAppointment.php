@@ -10,18 +10,20 @@ use App\Models\ScheduleOccurrence;
 use App\Models\ServiceOffering;
 use App\Models\User;
 use App\Services\LoyaltyEligibility;
+use App\Services\WhatsApp\WhatsAppDispatcher;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
+use Throwable;
 
 class BookAppointment
 {
-    public function __construct(private readonly BuildAvailability $availability, private readonly MaterializeScheduleOccurrences $materialize, private readonly LoyaltyEligibility $loyalty) {}
+    public function __construct(private readonly BuildAvailability $availability, private readonly MaterializeScheduleOccurrences $materialize, private readonly LoyaltyEligibility $loyalty, private readonly WhatsAppDispatcher $whatsapp) {}
 
     /** @param array<string, mixed> $data */
     public function handle(array $data, ?User $actor = null): Appointment
     {
-        return DB::transaction(function () use ($data, $actor): Appointment {
+        $appointment = DB::transaction(function () use ($data, $actor): Appointment {
             $startsAt = CarbonImmutable::parse($data['starts_at'])->setTimezone(config('sistema_dez.timezone'));
             $existing = Appointment::query()->where('idempotency_key', $data['idempotency_key'])->first();
             if ($existing) {
@@ -105,6 +107,15 @@ class BookAppointment
 
             return $this->withManagementToken($appointment->load('serviceOffering.procedure'), $data['idempotency_key']);
         }, 3);
+
+        // T2 (§6.2.4): mensagem automática no ato do agendamento — fora da
+        // transação e fail-open: falha de envio nunca derruba a reserva.
+        try {
+            $this->whatsapp->bookingMessage($appointment);
+        } catch (Throwable) {
+        }
+
+        return $appointment;
     }
 
     private function withManagementToken(Appointment $appointment, string $idempotencyKey): Appointment

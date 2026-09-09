@@ -188,11 +188,25 @@ function AppointmentCard({ appointment, onClick }: { appointment: Appointment; o
     : appointment.payment_status === 'AUTHORIZED'
       ? { label: 'Autorizado B2B', tone: 'info' as const }
       : { label: 'Aguardando pagamento', tone: 'warning' as const };
+  const confirmation = confirmationLabel(appointment.confirmation_status ?? null);
   return <button onClick={onClick} className={`appointment appointment--${meta.tone}`} title={`${appointment.procedure.name}${appointment.patient_name ? ` · ${appointment.patient_name}` : ''}`}>
     <time>{appointment.scheduled_at.slice(11, 16)} – {appointment.ends_at.slice(11, 16)}</time>
     <strong>{appointment.patient_name ?? appointment.procedure.name}</strong>
     <span>{appointment.procedure.name}</span>
     <StatusPill tone={payment.tone}>{payment.label}</StatusPill>
+    {confirmation ? <StatusPill tone={confirmation.tone}>{confirmation.label}</StatusPill> : null}
     {appointment.care_started_at ? <span>Em atendimento</span> : null}
   </button>;
+}
+
+const CONFIRMATION_META: Record<string, { label: string; tone: 'success' | 'warning' | 'danger' }> = {
+  PENDING: { label: 'WhatsApp: aguardando', tone: 'warning' },
+  CONFIRMED: { label: 'WhatsApp: confirmado', tone: 'success' },
+  DECLINED: { label: 'WhatsApp: não vai', tone: 'danger' },
+  NO_RESPONSE: { label: 'WhatsApp: sem resposta', tone: 'danger' },
+};
+
+function confirmationLabel(status: Appointment['confirmation_status']) {
+  if (!status) return null;
+  return CONFIRMATION_META[status] ?? null;
 }

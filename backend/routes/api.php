@@ -38,6 +38,8 @@ use App\Http\Controllers\Api\V1\TeamAvailabilityController;
 use App\Http\Controllers\Api\V1\TeamPriceController;
 use App\Http\Controllers\Api\V1\TeamPriceOptionsController;
 use App\Http\Controllers\Api\V1\TeamUserController;
+use App\Http\Controllers\Api\V1\TeamWhatsappController;
+use App\Http\Controllers\Api\V1\WhatsappEventController;
 use Illuminate\Support\Facades\Route;
 
 Route::prefix('v1/public')->middleware('throttle:public-api')->group(function (): void {
@@ -65,6 +67,7 @@ Route::prefix('v1/agents')->middleware(['throttle:agents', 'agent.token'])->grou
     Route::get('cash-summary', [HermesController::class, 'cashSummary'])->middleware('agent.scope:finance.read')->name('api.v1.agents.cash-summary');
     Route::get('b2b-invoices', [HermesController::class, 'b2bInvoices'])->middleware('agent.scope:finance.read')->name('api.v1.agents.b2b-invoices');
     Route::get('asos/due', [HermesController::class, 'asosDue'])->middleware('agent.scope:mt.read')->name('api.v1.agents.asos.due');
+    Route::post('whatsapp/events', [WhatsappEventController::class, 'store'])->middleware('agent.scope:whatsapp.events')->name('api.v1.agents.whatsapp.events');
 });
 
 Route::prefix('v1/auth')->group(function (): void {
@@ -223,6 +226,8 @@ Route::prefix('v1')->middleware(['auth:sanctum', 'throttle:team-api'])->group(fu
         Route::get('agents', [HermesAgentController::class, 'index'])->middleware('permission:team.manage')->name('api.v1.team.agents.index');
         Route::post('agents', [HermesAgentController::class, 'store'])->middleware('permission:team.manage')->name('api.v1.team.agents.store');
         Route::post('agents/{agentToken}/revoke', [HermesAgentController::class, 'revoke'])->middleware('permission:team.manage')->name('api.v1.team.agents.revoke');
+        Route::get('whatsapp/lines', [TeamWhatsappController::class, 'lines'])->middleware('permission:team.manage')->name('api.v1.team.whatsapp.lines.index');
+        Route::put('whatsapp/lines', [TeamWhatsappController::class, 'selectLine'])->middleware('permission:team.manage')->name('api.v1.team.whatsapp.lines.select');
         Route::prefix('mt')->middleware('permission:mt.view')->group(function (): void {
             Route::get('options', [MtController::class, 'options'])->name('api.v1.team.mt.options');
             Route::get('risks', [MtController::class, 'risksIndex'])->name('api.v1.team.mt.risks.index');
