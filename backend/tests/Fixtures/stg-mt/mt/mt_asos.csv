@@ -1,0 +1,7 @@
+legacy_id,legacy_paciente_id,legacy_convenio_id,legacy_setor_id,legacy_funcao_id,legacy_risco_ids,legacy_exame_nomes,tipo,legacy_situacao,data_cadastro,data_realizacao,data_validade,ativo,impressao_aso_json
+100,1001,49,10,20,1|2,ASO CLINICO; AUDIOIMETRIA,PERÍODICO,,2025-09-01,2025-09-10,2026-09-10,1,"{""setor"":""10"",""funcao"":""20"",""riscos"":[""1"",""2""]}"
+101,1002,49,10,21,,AUDIOIMETRIA,ADMISSIONAL,,2026-01-05,,          ,1,"{""setor"":""10"",""funcao"":""21"",""riscos"":[""2""]}"
+102,1003,49,,,,,,TIPO ESTRANHO,,2026-03-03,2026-03-05,1,"{}"
+103,1004,7777,10,,,,PERIODICO,,2026-04-04,,2026-04-06,1,"{}"
+104,1005,49,10,20,,EXAME INATIVO,PERIODICO,,2026-05-05,,2026-05-06,0,"{}"
+105,1006,49,12,22,,EXAME SETOR ORFAO,PERIODICO,,2026-06-06,,2026-06-06,1,"{}"

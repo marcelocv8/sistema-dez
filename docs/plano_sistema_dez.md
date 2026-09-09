@@ -1,6 +1,12 @@
 # Sistema DEZ — Clínica DEZ
-## Especificação (v0.13)
+## Especificação (v0.14)
 
+> **v0.14** — Bloco 5 (Medicina do Trabalho + Relatórios/BI + API Hermes) implementado
+> em 08–09/09/2026 — §14.20. Backend 148 testes/1323 asserções, Vitest 33, typecheck
+> 7 projetos, builds 4 apps e E2E 4/4 (desktop+mobile). Commit autorizado pelo dono.
+> Pendências transferidas: extração MT do legado (na rede da clínica, pacote pronto em
+> `docs/extracao_mt/`) e ECO estruturado/triagem de modelos (pós-homologação com os médicos).
+>
 > **v0.13** — Bloco 6 (Sou DEZ/fidelidade, T20) implementado em 08/09/2026,
 > executado **antes** do Bloco 5 (MT + BI + Hermes) por pedido do dono — §14.19.
 > Gestão nativa do programa de fidelidade: planos, assinaturas com dependentes,
@@ -1194,6 +1200,55 @@ acima. Lições de ambiente também viraram §15.
 #### Não incluído
 
 Carência (decisão do dono), boleto Inter para mensalidade (última tarefa do plano), carteirinha virtual/impressa com QR, app do paciente, estorno de mensalidade paga (fica para necessidade real), integração com orçamentos (a tabela Sou DEZ já sai do catálogo/preços).
+
+---
+
+### 14.20 Bloco 5 — Medicina do Trabalho + Relatórios/BI + API Hermes (leitura) (08/09–09/09/2026)
+
+**Situação: implementado e validado (backend 148 testes / 1323 asserções, Pint, Vitest 33, typecheck 7 projetos, builds 4 apps, E2E 4/4 desktop+mobile). Commit autorizado e realizado em 09/09/2026. Composto na mesma árvore com o Bloco "6" (Sou DEZ) da sessão paralela do dono — sem conflitos; RBAC e rotas coexistem.**
+
+#### Decisões do dono que moldaram o bloco
+
+- **Extração MT do legado adiada para a rede da Clínica DEZ** (o Postgres do STG, db `dez`, não é acessível de fora; o "túnel Samba" só existe na rede da clínica). Deixei o pacote pronto: `docs/extracao_mt/` (script PHP read-only `extract_mt.php` com `--discover`, `extract_mt.sql` para psql no servidor, README com checklist e o formato canônico dos 4 CSVs que `stg:import-mt` consome).
+- **ASO reusa o motor de laudos** (§6.4): emissão cria um `reports` (rascunho → finalizar → assinatura → impressão → portal) com template ASO; variáveis novas `{{EMPRESA}}`, `{{SETOR}}`, `{{FUNCAO}}`, `{{RISCO}}`, `{{TIPO_ASO}}`, `{{DATA_ASO}}`, `{{VALIDADE_ASO}}`; sem template escolhido, um documento ASO padrão nasce com "APTO (revisar antes de finalizar)".
+- **ECO estruturado adiado** para pós-Bloco 5 (decisão do dono após verificação: o legado tem a ficha `ecocardiograma-ficha.php` com ~17 campos digitados + impressão própria, **sem nenhum cálculo** — a ficha serve de referência para a homologação com os médicos).
+- **Hermes = pacote de leitura proposto** (agenda, pacientes, produção/financeiro, B2B em aberto, ASOs a vencer) com escopos `agenda.read`, `patients.read`, `finance.read`, `mt.read`.
+- **Relatórios = pacote completo do §6.13**.
+
+#### Entregue
+
+- **Tabelas:** `mt_risks`, `mt_sectors` (por convênio/empresa), `mt_functions` (setor + risco), `mt_asos` (funcionário + empresa + setor/função + tipo + status + `realized_at`/`expires_at` + vínculo `appointment_id`/`report_id` + `legacy_id`), pivô `mt_aso_risks` (riscos multivalorados, como no STG) e `mt_aso_events` append-only (CRIADO, AGENDADO, VINCULADO_EXAME, EMITIDO, PRORROGADO, CANCELADO, EDITADO).
+- **API MT (`/team/mt`, RBAC `mt.view` todos os papéis / `mt.manage` Admin+Supervisor+Gerente+Recepção):** options (empresas/setores/funções/riscos), CRUD riscos/setores/funções (setor de outra empresa → 422; duplicado → 422), ASOs (listagem com filtros + paginação, criação, edição com trilha, cancelamento com motivo, prorrogação `PRORROGADO`, `VINCULADO_EXAME` exige atendimento do mesmo paciente), **`POST mt/batch-schedule`** (agendamento em lote por empresa: itens por funcionário/hora; `BookAppointment` ganhou suporte a `patient_id` — funcionário já cadastrado; conflitos reportados por item, `scheduled`/`failed` no resumo), **`POST mt/asos/{id}/emit`** (exige atendimento vinculado do mesmo paciente; cria laudo rascunho + `EMITIDO` + `expires_at` automático = +1 ano para periódico sem data), **`GET mt/asos/due`** (periódicos vencidos/a vencer com `overdue` e `days_until_due`, janela `MT_DUE_WARNING_DAYS`, padrão 30) e **`GET mt/companies/{agreement}/report`** (por empresa: totais, por status/tipo, vencidos, a vencer, atendimentos do período).
+- **Rotinas (§6.17):** novo tipo `ASO_VENCENDO` no `RoutineGenerator` — ASO periódico vencido ou vencendo no dia vira tarefa "agendar renovação" (idempotente por type/ref/dia).
+- **Importador:** `stg:import-mt --dry-run|--commit` (`StgMtImporter`) lendo `<STG_IMPORT_PATH>/mt/{mt_riscos,mt_setores,mt_funcoes,mt_asos}.csv`; idempotente por `legacy_id`; normaliza tipos do STG (`PERÍODICO`→`PERIODICO`, etc.); parseia setor/função/riscos do JSON `impressao_aso` com fallback para as colunas; issues não bloqueantes (`MT_AGREEMENT_NOT_FOUND`, `MT_SECTOR_NOT_FOUND`, `MT_ASO_TYPE_UNKNOWN`); ASO inativo pulado; `created_by` = usuário da execução (ou primeiro Admin). Fixtures `tests/Fixtures/stg-mt/` + `StgMtImporterTest` (dry-run reverte tudo; commit idempotente: 2ª passada não cria nada).
+- **Relatórios & BI (§6.13):** `GET team/analytics?from&to&unit_id&doctor_id&agreement_id` (permissão nova `analytics.view`: Admin, Supervisor, Gerente) com agendados/realizados/cancelados/no-show + taxa, receita paga, ticket médio, mix de formas de pagamento, **produção por médico**, receita por convênio, caixa (quebra, sangrias, repasses pagos e em aberto), **B2B em aberto com aging** (a vencer/30/60/90/90+), fila (tempo médio de atendimento) e ASOs a vencer. **`GET team/analytics/export?type=production|revenue|b2b_open|asos_due`** → CSV com BOM UTF-8. **Dashboard `/visao-geral` com números reais** (receita paga do dia, quebra do dia, repasses em aberto, saldo B2B aberto; `financials_available: true` — antes eram zeros hardcoded).
+- **Classificação de uso dos modelos (carregado do Bloco 3):** fica para a triagem 12/24m junto do ECO (contagem de uso por template é consultável via analytics de produção; a UI de triagem entra no polimento pós-homologação).
+- **API Hermes (§6.14, leitura primeiro):** tabela `agent_tokens` (nome, `token_hash` = HMAC-SHA256 com `MANAGEMENT_TOKEN_SECRET`, escopos JSON, ativo, `last_used_at`, revogação) + `agent_requests` append-only (agente, endpoint, método, status, duração — **toda chamada é auditada**); gestão Admin (`GET/POST team/agents`, `POST agents/{id}/revoke`; plaintext `dez_…` exibido **uma única vez**; hash nunca sai); middleware `agent.token` (Bearer) + `agent.scope` + throttle dedicado `agents` (60/min); endpoints `GET /api/v1/agents/*`: `agenda` (janela ≤ 60 dias), `patients?cpf` (identificação mínima), `production` (≤ 366 dias), `cash-summary?date`, `b2b-invoices` (em aberto), `asos/due`. 401 sem token/revogado; 403 sem escopo.
+- **Frontend:** página **`/medicina-trabalho`** (equipe) com tabs Vencimentos (flag Vencido + prorrogar) / ASOs (listagem + cadastro por CPF via lookup + emitir laudo + cancelar) / Empresas (empresa→setor→função→risco, criação inline) / **Agendar lote** (empresa → funcionários das ASOs → oferta + data + hora inicial, slots de 30 min, resultado por item) / Relatório empresa; página **`/relatorios`** (equipe) com filtros período/empresa, KPIs, tabelas de produção e receita, mix, caixa, aging B2B e botões CSV; itens de menu em Operação ("Medicina do Trabalho", `mt.view`) e Gestão ("Relatórios & BI", `analytics.view`). Vitest `MtPage.test.tsx` (2) + `RelatoriosPage.test.tsx` (1).
+- **Config:** `MT_DUE_WARNING_DAYS` (30) no `config/sistema_dez.php` + `.env.example`; OpenAPI **v0.17.0** (security scheme `agentToken` + rotas MT/analytics/Hermes) + `schema.generated.ts` regenerado.
+- **Seed E2E:** `seedMt` (empresa MT + setor/função/risco + 2 funcionários com ASOs: um vencido, um a vencer) — sem tocar no seed da sessão paralela.
+
+#### Validação
+
+- Backend: **148 testes / 1323 asserções** verde (inclui `MtTest` 7, `StgMtImporterTest` 2, `AnalyticsTest` 3, `HermesApiTest` 4, `DashboardControllerTest` atualizado). Pint ok. Vitest 33; typecheck 7 projetos; builds 4 apps ok.
+- **E2E Bloco 5: 4/4** (desktop 1440×1000 + mobile Pixel 7; `mt-relatorios.spec.ts` + `playwright.bloco5.config.ts` e runner local `tests/e2e/run-bloco5.mjs`): fluxo MT completo (vencido com flag → ASOs → setor criado na hora → relatório por empresa com 2 ASOs) + Relatórios (KPIs + CSVs). O `api-server.mjs` sobe a API de E2E nos **dois stacks** (127.0.0.1 + `[::1]`) na :18001, para não depender da resolução de `localhost` (a dev :8000 segue intocada no compose).
+- **`schema.generated.ts` regenerado com as paths MT/analytics/Hermes e já incluso no commit `417d9f7` da sessão paralela (Bloco 6) — nada pendente de regeneração.**
+- **Commit autorizado pelo dono (09/09/2026)** — inclui, no mesmo commit, 3 arquivos de ajustes da sessão paralela (BudgetsPage, LaudosPage + teste) validados junto desta suíte.
+
+#### Armadilhas registradas (aprendizados desta sessão)
+
+1. **Nomes de parâmetro de rota têm que bater com o argumento do controller** (`{mtAso}` ↔ `MtAso $mtAso`): nome diferente faz o Laravel injetar um **model vazio** pelo container (sem erro de binding!) — o 404 "No query results" só aparece no primeiro uso do model. Todos os controllers novos seguem a convenção.
+2. **`artisan serve`/`php -S` morrem ao fim de cada comando do agente** (tree-kill): para E2E local, servidores + testes na MESMA instrução — por isso o runner `run-bloco5.mjs` sobe API + Vite, roda os cenários e desliga tudo. `zumbis` de sessões passadas travam o `migrate:fresh` do banco de teste (deadlock) — matar php/phpunit órfãos antes.
+3. **O wrapper de shell duplica processos que contêm "phpunit"/"artisan test"** (rodadas duplas = deadlock no banco de teste): local, rodar PHPUnit via runner renomeado (cópia do binário com outro nome, ex. `%TEMP%\dez-runner.php`) ou aceitar a dupla execução. CI não é afetado.
+4. **E2E: API e frontend no MESMO host (`localhost`)** — página em `localhost:4175` chamando `127.0.0.1:18001` quebra o CSRF (o `document.cookie` não lê cookie de outro host → 419) e CORS; com a API em `localhost:18001` nos dois stacks (IPv4+IPv6), funciona. `PHP_CLI_SERVER_WORKERS` não existe no Windows ("forking is not supported").
+5. **Origem do front controla a CORS**: subir o Vite em `127.0.0.1:4175` muda a Origin e o backend (liberado para `localhost:4175`) bloqueia tudo — manter o host do Vite em `localhost`.
+
+#### Pendente
+
+1. ~~Commit dos Blocos 5 e 6~~ — Bloco 6 commitado pela sessão paralela (`417d9f7` + `c7c23b8`); Bloco 5 commitado com autorização do dono em 09/09/2026.
+2. **Extração MT do legado na rede da Clínica DEZ** (pacote em `docs/extracao_mt/` pronto; pendências: IP do servidor, credenciais testadas, CSVs gerados, `stg:import-mt --dry-run` → `--commit`).
+3. ECO estruturado com cálculos + triagem 12/24m dos modelos de laudo: **pós-Bloco 5**, com homologação dos médicos (a ficha do STG é a referência de campos).
+4. Validação manual acumulada pelo dono (inclui o novo `/medicina-trabalho` e `/relatorios`).
 
 ---
 

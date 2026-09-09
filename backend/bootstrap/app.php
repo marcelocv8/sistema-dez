@@ -1,5 +1,7 @@
 <?php
 
+use App\Http\Middleware\EnsureAgentScope;
+use App\Http\Middleware\EnsureAgentToken;
 use App\Http\Middleware\EnsurePermission;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
@@ -18,7 +20,7 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->redirectGuestsTo(
             fn (Request $request): ?string => $request->is('api/*') ? null : '/',
         );
-        $middleware->alias(['permission' => EnsurePermission::class]);
+        $middleware->alias(['permission' => EnsurePermission::class, 'agent.token' => EnsureAgentToken::class, 'agent.scope' => EnsureAgentScope::class]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         $exceptions->shouldRenderJsonWhen(

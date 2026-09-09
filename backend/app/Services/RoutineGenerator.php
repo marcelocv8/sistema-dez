@@ -2,9 +2,12 @@
 
 namespace App\Services;
 
+use App\Enums\AsoStatus;
+use App\Enums\AsoType;
 use App\Models\Appointment;
 use App\Models\B2bInvoice;
 use App\Models\Budget;
+use App\Models\MtAso;
 use App\Models\Patient;
 use App\Models\RoutineTask;
 use Carbon\CarbonImmutable;
@@ -22,6 +25,7 @@ class RoutineGenerator
         RoutineTask::ORCAMENTO_RETORNO => 'Orçamento sem resposta: buscar o sim/não',
         RoutineTask::ANIVERSARIANTE => 'Ligação de retorno (aniversariante de consulta)',
         RoutineTask::FATURA_VENCENDO => 'Fatura B2B a vencer/vencida: conferir cobrança',
+        RoutineTask::ASO_VENCENDO => 'ASO vencido/vencendo: agendar renovação',
     ];
 
     /** @return int quantidade criada */
@@ -94,6 +98,20 @@ class RoutineGenerator
                     RoutineTask::FATURA_VENCENDO, 'b2b_invoices', $invoice->id,
                     self::TYPES[RoutineTask::FATURA_VENCENDO].': '.$invoice->agreement?->name,
                     'Competência '.$invoice->competence->format('m/Y').', venceu em '.$due->toDateString().'.',
+                    $date, null,
+                );
+            }
+
+            // 5. ASO periódico vencido ou vencendo hoje (§6.7): renovação via Medicina do Trabalho.
+            $asos = MtAso::query()->whereIn('status', [AsoStatus::Emitido->value, AsoStatus::Pendente->value])
+                ->where('type', AsoType::Periodico)
+                ->whereDate('expires_at', '<=', $date->toDateString())
+                ->with(['patient:id,name', 'agreement:id,name'])->get();
+            foreach ($asos as $aso) {
+                $created += $this->task(
+                    RoutineTask::ASO_VENCENDO, 'mt_asos', $aso->id,
+                    self::TYPES[RoutineTask::ASO_VENCENDO].': '.$aso->patient?->name.' ('.$aso->agreement?->name.')',
+                    'Venceu/vence em '.$aso->expires_at?->format('d/m/Y').'. Agendar exame periódico.',
                     $date, null,
                 );
             }

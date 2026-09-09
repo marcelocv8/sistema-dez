@@ -705,6 +705,7 @@ export const api = {
     (await request<ApiData<B2bInvoice>>('/api/v1/team/b2b-invoices/generate', { method: 'POST', body: JSON.stringify(input) })).data,
   sendB2bInvoice: async (id: string) => (await request<ApiData<B2bInvoice>>(`/api/v1/team/b2b-invoices/${id}/send`, { method: 'POST' })).data,
   settleB2bInvoice: async (id: string, input: { amount: string; proof_reference: string }) =>
+    (await request<ApiData<B2bInvoice>>(`/api/v1/team/b2b-invoices/${id}/settle`, { method: 'POST', body: JSON.stringify(input) })).data,
   loyaltyPlans: async () => (await request<ApiData<LoyaltyPlan[]>>('/api/v1/team/loyalty/plans')).data,
   createLoyaltyPlan: async (input: { name: string; agreement_id: string; monthly_fee: string; due_day: number; active?: boolean }) =>
     (await request<ApiData<LoyaltyPlan>>('/api/v1/team/loyalty/plans', { method: 'POST', body: JSON.stringify(input) })).data,
@@ -727,7 +728,6 @@ export const api = {
     (await request<ApiData<LoyaltyDue>>(`/api/v1/team/loyalty/dues/${id}/collect`, { method: 'POST', body: JSON.stringify(input) })).data,
   loyaltyEligibility: async (agreement_id: string, patient_id: string) =>
     (await request<ApiData<LoyaltyEligibility>>(`/api/v1/team/loyalty/eligibility?${queryString({ agreement_id, patient_id })}`)).data,
-    (await request<ApiData<B2bInvoice>>(`/api/v1/team/b2b-invoices/${id}/settle`, { method: 'POST', body: JSON.stringify(input) })).data,
   attendanceReport: async (filters: { from: string; to: string; user_id?: string }) =>
     (await request<ApiData<AttendanceReport>>(`/api/v1/team/attendance?${queryString(filters)}`)).data,
   attendanceExport: async (filters: { from: string; to: string }) =>
@@ -841,6 +841,105 @@ export const api = {
     (await request(`/api/v1/team/professionals/${professionalId}/commissions/${commissionId}`, { method: 'DELETE' })),
   callPatient: (id: UUID) => request<{ ok: true }>(`/api/v1/queue/${id}/call`, { method: 'POST' }),
   publishReport: (id: UUID) => request<{ publishedAt: string }>(`/api/v1/reports/${id}/publish`, { method: 'POST' }),
+  mtOptions: async () => (await request<ApiData<{ agreements: CatalogItem[]; risks: { id: UUID; name: string }[]; sectors: MtSector[]; functions: MtFunction[] }>>('/api/v1/team/mt/options')).data,
+  mtRisks: async () => (await request<ApiData<MtRisk[]>>('/api/v1/team/mt/risks')).data,
+  createMtRisk: async (name: string) => (await request<ApiData<MtRisk>>('/api/v1/team/mt/risks', { method: 'POST', body: JSON.stringify({ name }) })).data,
+  updateMtRisk: async (id: string, input: { name?: string; active?: boolean }) => (await request<ApiData<MtRisk>>(`/api/v1/team/mt/risks/${id}`, { method: 'PUT', body: JSON.stringify(input) })).data,
+  mtSectors: async (agreementId?: string) => (await request<ApiData<MtSector[]>>(`/api/v1/team/mt/sectors?${queryString({ agreement_id: agreementId })}`)).data,
+  createMtSector: async (input: { agreement_id: string; name: string }) => (await request<ApiData<MtSector>>('/api/v1/team/mt/sectors', { method: 'POST', body: JSON.stringify(input) })).data,
+  updateMtSector: async (id: string, input: { name?: string; active?: boolean }) => (await request<ApiData<MtSector>>(`/api/v1/team/mt/sectors/${id}`, { method: 'PUT', body: JSON.stringify(input) })).data,
+  mtFunctions: async (filters: { agreement_id?: string; sector_id?: string } = {}) => (await request<ApiData<MtFunction[]>>(`/api/v1/team/mt/functions?${queryString(filters)}`)).data,
+  createMtFunction: async (input: { agreement_id: string; sector_id?: string; risk_id?: string; name: string }) => (await request<ApiData<MtFunction>>('/api/v1/team/mt/functions', { method: 'POST', body: JSON.stringify(input) })).data,
+  updateMtFunction: async (id: string, input: { sector_id?: string; risk_id?: string; name?: string; active?: boolean }) => (await request<ApiData<MtFunction>>(`/api/v1/team/mt/functions/${id}`, { method: 'PUT', body: JSON.stringify(input) })).data,
+  mtAsos: async (filters: { agreement_id?: string; status?: string; type?: string; due_from?: string; due_to?: string; q?: string; page?: string } = {}) =>
+    request<{ data: { items: MtAso[]; page: number; pages: number; total: number } }>(`/api/v1/team/mt/asos?${queryString(filters)}`),
+  createMtAso: async (input: MtAsoInput) => (await request<ApiData<MtAso>>('/api/v1/team/mt/asos', { method: 'POST', body: JSON.stringify(input) })).data,
+  updateMtAso: async (id: string, input: Partial<MtAsoInput>) => (await request<ApiData<MtAso>>(`/api/v1/team/mt/asos/${id}`, { method: 'PUT', body: JSON.stringify(input) })).data,
+  cancelMtAso: async (id: string, reason: string) => (await request<ApiData<MtAso>>(`/api/v1/team/mt/asos/${id}/cancel`, { method: 'POST', body: JSON.stringify({ reason }) })).data,
+  extendMtAso: async (id: string, expires_at: string) => (await request<ApiData<MtAso>>(`/api/v1/team/mt/asos/${id}/extend`, { method: 'POST', body: JSON.stringify({ expires_at }) })).data,
+  linkMtAsoExam: async (id: string, appointment_id: string) => (await request<ApiData<MtAso>>(`/api/v1/team/mt/asos/${id}/link-exam`, { method: 'POST', body: JSON.stringify({ appointment_id }) })).data,
+  emitMtAso: async (id: string, input: { appointment_id?: string; template_id?: string; expires_at?: string }) =>
+    (await request<ApiData<{ aso: MtAso; report: { id: UUID; status: string; content_html: string } }>>(`/api/v1/team/mt/asos/${id}/emit`, { method: 'POST', body: JSON.stringify(input) })).data,
+  mtDue: async (filters: { days?: string; agreement_id?: string } = {}) =>
+    (await request<ApiData<{ days: number; items: (MtAso & { overdue: boolean; days_until_due: number | null })[] }>>(`/api/v1/team/mt/asos/due?${queryString(filters)}`)).data,
+  mtBatchSchedule: async (input: { offering_id: string; items: { patient_id: string; starts_at: string }[] }) =>
+    (await request<ApiData<{ scheduled: number; failed: number; results: { index: number; patient_id: string; status: 'ok' | 'error'; appointment_id?: string; error?: string }[] }>>('/api/v1/team/mt/batch-schedule', { method: 'POST', body: JSON.stringify(input) })).data,
+  mtCompanyReport: async (agreementId: string, filters: { from?: string; to?: string } = {}) =>
+    (await request<ApiData<MtCompanyReport>>(`/api/v1/team/mt/companies/${agreementId}/report?${queryString(filters)}`)).data,
+  analytics: async (filters: { from?: string; to?: string; unit_id?: string; doctor_id?: string; agreement_id?: string } = {}) =>
+    (await request<ApiData<AnalyticsSummary>>(`/api/v1/team/analytics?${queryString(filters)}`)).data,
+  analyticsExportUrl: (type: string, filters: { from?: string; to?: string; agreement_id?: string } = {}) => `/api/v1/team/analytics/export?${queryString({ type, ...filters })}`,
+  agentTokens: async () => (await request<ApiData<AgentToken[]>>('/api/v1/team/agents')).data,
+  createAgentToken: async (input: { name: string; scopes: string[] }) =>
+    (await request<ApiData<AgentToken & { token: string; warning?: string }>>('/api/v1/team/agents', { method: 'POST', body: JSON.stringify(input) })).data,
+  revokeAgentToken: async (id: string) => (await request<ApiData<AgentToken>>(`/api/v1/team/agents/${id}/revoke`, { method: 'POST' })).data,
+};
+
+export type MtRisk = { id: UUID; name: string; active: boolean; legacy_id: number | null };
+export type MtSector = { id: UUID; agreement: { id: UUID; name: string } | null; name: string; active: boolean };
+export type MtFunction = { id: UUID; name: string; sector: { id: UUID; name: string } | null; risk: { id: UUID; name: string } | null; active: boolean };
+export type MtAso = {
+  id: UUID;
+  patient: { id: UUID; name: string; cpf_last_four: string | null; birth_date: string | null } | null;
+  agreement: { id: UUID; name: string } | null;
+  sector: { id: UUID; name: string } | null;
+  function: { id: UUID; name: string } | null;
+  risks: { id: UUID; name: string }[];
+  type: 'ADMISSIONAL' | 'PERIODICO' | 'RETORNO_AO_TRABALHO' | 'MUDANCA_DE_FUNCAO' | 'DEMISSIONAL';
+  type_label: string;
+  status: 'PENDENTE' | 'AGENDADO' | 'EMITIDO' | 'CANCELADO';
+  status_label: string;
+  realized_at: string | null;
+  expires_at: string | null;
+  issued_at: string | null;
+  appointment: { id: UUID; scheduled_at: string; status: string } | null;
+  report: { id: UUID; status: string } | null;
+  notes: string | null;
+  legacy_id: number | null;
+};
+export type MtAsoInput = {
+  patient_id: string;
+  agreement_id: string;
+  sector_id?: string;
+  function_id?: string;
+  risks?: string[];
+  type: MtAso['type'];
+  realized_at?: string;
+  expires_at?: string;
+  appointment_id?: string;
+  notes?: string;
+};
+export type MtCompanyReport = {
+  agreement: { id: UUID; name: string };
+  period: { from: string; to: string };
+  total_asos: number;
+  by_status: Record<string, number>;
+  by_type: Record<string, number>;
+  linked_appointments_in_period: number;
+  overdue: MtAso[];
+  due_soon: MtAso[];
+};
+export type AnalyticsSummary = {
+  period: { from: string; to: string };
+  appointments: { scheduled: number; done: number; cancelled: number; no_show: number; no_show_rate: number };
+  revenue: string;
+  ticket_avg: string;
+  payment_mix: { method: string; total: number; count: number }[];
+  production_by_doctor: { doctor_id: UUID; doctor: string; appointments: number; revenue: number }[];
+  revenue_by_agreement: { agreement_id: UUID; agreement: string; total: number; count: number }[];
+  cash: { break_total: string; sangrias: string; payouts_paid: string; payouts_open: string };
+  b2b_open: { count: number; aging: Record<string, number> };
+  queue: { avg_care_minutes: number };
+  asos_due: number;
+};
+export type AgentToken = {
+  id: UUID;
+  name: string;
+  scopes: string[];
+  active: boolean;
+  last_used_at: string | null;
+  revoked_at: string | null;
+  created_at: string | null;
 };
 
 export function apiErrorMessage(error: unknown): string {

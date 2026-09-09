@@ -22,7 +22,7 @@ vi.mock('@dez/api', () => ({
       ? [{ id: 'lt1', legacy_type: 'LINHA', nome: 'BETA- HCG', doctor: null, procedure: null, legacy_procedure: null, preview: 'RESULTADO', content_html: '<p>RESULTADO</p>' }]
       : [{ id: 'tp1', legacy_type: 'LAUDO', nome: 'ECO PADRAO', doctor: null, procedure: null, legacy_procedure: null, preview: 'ECODOPPLER', content_html: null }]),
     report: vi.fn().mockImplementation(async () => ({
-      id: 'r1', patient_id: 'pt1', status: 'FINALIZADO', content_html: '<p>ECO normal.</p>', print_count: 1,
+      id: 'r1', patient_id: 'pt1', status: 'FINALIZADO', content_html: '<p>ECO normal.</p>', print_count: 1, retention_until: '2046-09-07',
       patient: { id: 'pt1', name: 'Maria Laudo' }, procedure: { id: 'p1', name: 'ECOCARDIOGRAMA' },
       events: [{ id: 'e1', event: 'FINALIZADO', by: { id: 'u1', name: 'Responsável' }, created_at: '2026-09-07T12:00:00Z' }],
     })),
@@ -85,6 +85,7 @@ test('laudos: histórico do paciente por CPF com status e trilha', async () => {
   expect(document.body.textContent).toContain('Adicionar adendo');
   expect(document.body.textContent).toContain('Trilha do laudo (1)');
   expect(document.body.textContent).toContain('Responsável');
+  expect(document.body.textContent).toContain('expurgo 07/09/2046');
   await act(async () => root.unmount());
 });
 

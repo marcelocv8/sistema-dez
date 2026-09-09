@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Sistema DEZ API
-  version: 0.16.0
+  version: 0.17.0
 servers:
   - url: http://localhost:8000/api/v1
 paths:
@@ -1436,8 +1436,279 @@ paths:
       responses:
         '200': { description: Elegibilidade e motivo }
         '403': { description: Requer soudez.view }
+  /team/mt/options:
+    get:
+      summary: Opções do módulo Medicina do Trabalho (§6.7)
+      description: Empresas (convênios ativos), riscos, setores e funções para os seletores. Requer mt.view.
+      security: [{ cookieAuth: [] }]
+      tags: [medicina-trabalho]
+      responses:
+        '200': { description: Catálogo de opções do MT }
+        '403': { description: Requer mt.view }
+  /team/mt/risks:
+    get:
+      summary: Lista riscos ocupacionais
+      security: [{ cookieAuth: [] }]
+      tags: [medicina-trabalho]
+      responses:
+        '200': { description: Riscos (ativos por padrão) }
+    post:
+      summary: Cria risco ocupacional
+      security: [{ cookieAuth: [] }]
+      tags: [medicina-trabalho]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name: { type: string, maxLength: 200 }
+      responses:
+        '201': { description: Risco criado }
+        '422': { $ref: '#/components/responses/ValidationError' }
+  /team/mt/risks/{id}:
+    put:
+      summary: Renomeia/ativa-inativa risco
+      security: [{ cookieAuth: [] }]
+      tags: [medicina-trabalho]
+      responses:
+        '200': { description: Risco atualizado }
+  /team/mt/sectors:
+    get:
+      summary: Lista setores por empresa
+      security: [{ cookieAuth: [] }]
+      tags: [medicina-trabalho]
+      parameters:
+        - { name: agreement_id, in: query, schema: { type: string, format: uuid } }
+      responses:
+        '200': { description: Setores }
+    post:
+      summary: Cria setor (empresa + nome, §6.7)
+      security: [{ cookieAuth: [] }]
+      tags: [medicina-trabalho]
+      responses:
+        '201': { description: Setor criado }
+        '422': { $ref: '#/components/responses/ValidationError' }
+  /team/mt/sectors/{id}:
+    put:
+      summary: Atualiza setor
+      security: [{ cookieAuth: [] }]
+      tags: [medicina-trabalho]
+      responses:
+        '200': { description: Setor atualizado }
+  /team/mt/functions:
+    get:
+      summary: Lista funções (por empresa/setor)
+      security: [{ cookieAuth: [] }]
+      tags: [medicina-trabalho]
+      responses:
+        '200': { description: Funções }
+    post:
+      summary: Cria função (setor + risco + nome)
+      security: [{ cookieAuth: [] }]
+      tags: [medicina-trabalho]
+      responses:
+        '201': { description: Função criada }
+        '422': { $ref: '#/components/responses/ValidationError' }
+  /team/mt/functions/{id}:
+    put:
+      summary: Atualiza função
+      security: [{ cookieAuth: [] }]
+      tags: [medicina-trabalho]
+      responses:
+        '200': { description: Função atualizada }
+  /team/mt/asos:
+    get:
+      summary: Lista ASOs com filtros (§6.7)
+      security: [{ cookieAuth: [] }]
+      tags: [medicina-trabalho]
+      parameters:
+        - { name: agreement_id, in: query, schema: { type: string, format: uuid } }
+        - { name: status, in: query, schema: { type: string, enum: [PENDENTE, AGENDADO, EMITIDO, CANCELADO] } }
+        - { name: type, in: query, schema: { type: string, enum: [ADMISSIONAL, PERIODICO, RETORNO_AO_TRABALHO, MUDANCA_DE_FUNCAO, DEMISSIONAL] } }
+        - { name: due_from, in: query, schema: { type: string, format: date } }
+        - { name: due_to, in: query, schema: { type: string, format: date } }
+        - { name: q, in: query, schema: { type: string, description: Busca por nome do funcionário } }
+      responses:
+        '200': { description: ASOs paginados }
+    post:
+      summary: Cadastra ASO (funcionário + empresa + setor/função/riscos + tipo)
+      security: [{ cookieAuth: [] }]
+      tags: [medicina-trabalho]
+      responses:
+        '201': { description: ASO criado com evento CRIADO }
+        '422': { $ref: '#/components/responses/ValidationError' }
+  /team/mt/asos/due:
+    get:
+      summary: Vencimentos de ASOs periódicos (janela configurável MT_DUE_WARNING_DAYS)
+      security: [{ cookieAuth: [] }]
+      tags: [medicina-trabalho]
+      parameters:
+        - { name: days, in: query, schema: { type: integer } }
+        - { name: agreement_id, in: query, schema: { type: string, format: uuid } }
+      responses:
+        '200': { description: ASOs a vencer/vencidos com flags }
+  /team/mt/asos/{id}:
+    put:
+      summary: Edita ASO (setor/função/risco/tipo/observações)
+      security: [{ cookieAuth: [] }]
+      tags: [medicina-trabalho]
+      responses:
+        '200': { description: ASO atualizado com evento EDITADO }
+  /team/mt/asos/{id}/cancel:
+    post:
+      summary: Cancela ASO com motivo (nada é apagado)
+      security: [{ cookieAuth: [] }]
+      tags: [medicina-trabalho]
+      responses:
+        '200': { description: ASO cancelado }
+  /team/mt/asos/{id}/extend:
+    post:
+      summary: Prorroga validade (PRORROGADO)
+      security: [{ cookieAuth: [] }]
+      tags: [medicina-trabalho]
+      responses:
+        '200': { description: Validade prorrogada }
+  /team/mt/asos/{id}/link-exam:
+    post:
+      summary: Vincula atendimento/exame ao ASO
+      security: [{ cookieAuth: [] }]
+      tags: [medicina-trabalho]
+      responses:
+        '200': { description: ASO vinculado (VINCULADO_EXAME) }
+  /team/mt/asos/{id}/emit:
+    post:
+      summary: Emite ASO como laudo (reusa o motor de laudos; variáveis {{SETOR}}, {{FUNCAO}}, {{RISCO}}, {{TIPO_ASO}}, {{EMPRESA}})
+      security: [{ cookieAuth: [] }]
+      tags: [medicina-trabalho]
+      responses:
+        '201': { description: Laudo criado em rascunho + ASO EMITIDO }
+        '422': { $ref: '#/components/responses/ValidationError' }
+  /team/mt/batch-schedule:
+    post:
+      summary: Agendamento em lote por empresa (§6.7) — um item por funcionário, conflitos reportados por item
+      security: [{ cookieAuth: [] }]
+      tags: [medicina-trabalho]
+      responses:
+        '200': { description: Resultado por item (ok/erro) }
+        '422': { $ref: '#/components/responses/ValidationError' }
+  /team/mt/companies/{agreement}/report:
+    get:
+      summary: Relatório por empresa (ASOs por status/tipo, vencidos, a vencer, atendimentos do período)
+      security: [{ cookieAuth: [] }]
+      tags: [medicina-trabalho]
+      responses:
+        '200': { description: Relatório consolidado da empresa }
+  /team/analytics:
+    get:
+      summary: KPIs de relatórios/BI (§6.13) — produção, receita, no-show, ticket, mix de pagamento, caixa, B2B em aberto, fila, ASOs a vencer
+      security: [{ cookieAuth: [] }]
+      tags: [relatorios]
+      parameters:
+        - { name: from, in: query, schema: { type: string, format: date } }
+        - { name: to, in: query, schema: { type: string, format: date } }
+        - { name: unit_id, in: query, schema: { type: string, format: uuid } }
+        - { name: doctor_id, in: query, schema: { type: string, format: uuid } }
+        - { name: agreement_id, in: query, schema: { type: string, format: uuid } }
+      responses:
+        '200': { description: Consolidado do período }
+        '403': { description: Requer analytics.view }
+  /team/analytics/export:
+    get:
+      summary: Exportação CSV (type=production|revenue|b2b_open|asos_due)
+      security: [{ cookieAuth: [] }]
+      tags: [relatorios]
+      parameters:
+        - { name: type, in: query, required: true, schema: { type: string, enum: [production, revenue, b2b_open, asos_due] } }
+        - { name: from, in: query, schema: { type: string, format: date } }
+        - { name: to, in: query, schema: { type: string, format: date } }
+        - { name: agreement_id, in: query, schema: { type: string, format: uuid } }
+      responses:
+        '200':
+          description: Arquivo CSV (UTF-8 BOM)
+          content:
+            text/csv:
+              schema: { type: string }
+  /team/agents:
+    get:
+      summary: Lista tokens de agentes Hermes (§6.14)
+      security: [{ cookieAuth: [] }]
+      tags: [hermes]
+      responses:
+        '200': { description: Tokens (sem hash/plaintext) }
+        '403': { description: Requer team.manage }
+    post:
+      summary: Cria token de agente (plaintext exibido uma única vez)
+      security: [{ cookieAuth: [] }]
+      tags: [hermes]
+      responses:
+        '201': { description: Token criado }
+        '422': { $ref: '#/components/responses/ValidationError' }
+  /team/agents/{id}/revoke:
+    post:
+      summary: Revoga token de agente (auditado)
+      security: [{ cookieAuth: [] }]
+      tags: [hermes]
+      responses:
+        '200': { description: Token revogado }
+  /agents/agenda:
+    get:
+      summary: "[Hermes] Agenda por período (escopo agenda.read)"
+      security: [{ agentToken: [] }]
+      tags: [hermes]
+      parameters:
+        - { name: from, in: query, schema: { type: string, format: date } }
+        - { name: to, in: query, schema: { type: string, format: date } }
+        - { name: unit_id, in: query, schema: { type: string, format: uuid } }
+      responses:
+        '200': { description: Agendamentos do período }
+        '401': { description: Token ausente/inválido/revogado }
+        '403': { description: Sem o escopo }
+  /agents/patients:
+    get:
+      summary: "[Hermes] Identificação do paciente por CPF (escopo patients.read)"
+      security: [{ agentToken: [] }]
+      tags: [hermes]
+      parameters:
+        - { name: cpf, in: query, required: true, schema: { type: string } }
+      responses:
+        '200': { description: Dados de identificação (ou null) }
+  /agents/production:
+    get:
+      summary: "[Hermes] Produção/receita por período (escopo finance.read)"
+      security: [{ agentToken: [] }]
+      tags: [hermes]
+      responses:
+        '200': { description: Consolidado de produção }
+  /agents/cash-summary:
+    get:
+      summary: "[Hermes] Resumo de caixa do dia (escopo finance.read)"
+      security: [{ agentToken: [] }]
+      tags: [hermes]
+      responses:
+        '200': { description: Caixa consolidado do dia }
+  /agents/b2b-invoices:
+    get:
+      summary: "[Hermes] Faturas B2B em aberto (escopo finance.read)"
+      security: [{ agentToken: [] }]
+      tags: [hermes]
+      responses:
+        '200': { description: Faturas em aberto }
+  /agents/asos/due:
+    get:
+      summary: "[Hermes] ASOs a vencer (escopo mt.read)"
+      security: [{ agentToken: [] }]
+      tags: [hermes]
+      responses:
+        '200': { description: ASOs vencidos/a vencer }
 components:
   securitySchemes:
+    agentToken:
+      type: http
+      scheme: bearer
+      description: Token de agente Hermes (§6.14, formato dez_…), criado no módulo de gestão; hash HMAC armazenado, escopos por token, toda requisição auditada.
     managementToken:
       type: http
       scheme: bearer

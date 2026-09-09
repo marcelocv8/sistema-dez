@@ -20,6 +20,8 @@ class RoutineTask extends Model
 
     public const FATURA_VENCENDO = 'FATURA_VENCENDO';
 
+    public const ASO_VENCENDO = 'ASO_VENCENDO';
+
     public const MANUAL = 'MANUAL';
 
     protected function casts(): array

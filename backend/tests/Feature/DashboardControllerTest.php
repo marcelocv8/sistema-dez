@@ -41,7 +41,8 @@ class DashboardControllerTest extends TestCase
             ->assertJsonPath('data.patient_flow.in_care', 1)
             ->assertJsonPath('data.patient_flow.finished', 1)
             ->assertJsonPath('data.patient_flow.checkout', 0)
-            ->assertJsonPath('data.financials_available', false)
+            ->assertJsonPath('data.financials_available', true)
+            ->assertJsonPath('data.revenue', '0.00')
             ->assertJsonCount(3, 'data.queue')
             ->assertJsonPath('data.queue.0.patient_name', $patient->name);
     }

@@ -194,3 +194,22 @@ a { color: var(--dez-teal); text-decoration: none; font-size: 11px; font-weight:
 .ai-panel h3 { margin: 0 0 4px; color: var(--dez-teal, #0d7c85); font-size: 13px; }
 .ai-output { background: white; margin-top: 10px; }
 .prontuario-page .report-editor { min-height: 200px; }
+
+/* Medicina do Trabalho + Relatórios (Bloco 5) */
+.mt-tabs { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px; }
+.mt-tabs .dez-button { min-height: 34px; padding: 6px 12px; font-size: 11px; }
+.mt-tabs .dez-button--active { background: var(--dez-teal-soft, #e3f4f2); color: var(--dez-navy); box-shadow: inset 0 0 0 1px var(--dez-teal, #17a2a6); }
+.data-table { width: 100%; border-collapse: collapse; font-size: 11px; margin-top: 10px; }
+.data-table th { text-align: left; color: var(--dez-muted, #6b7a86); font-size: 9px; text-transform: uppercase; letter-spacing: .06em; padding: 8px 10px; border-bottom: 1px solid var(--dez-line, #dfe7ea); }
+.data-table td { padding: 9px 10px; border-bottom: 1px solid var(--dez-line, #eef3f5); color: var(--dez-ink, #17233b); }
+.kpi-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin: 12px 0; }
+.kpi { display: grid; gap: 4px; padding: 12px; border: 1px solid var(--dez-line, #dfe7ea); border-radius: 10px; background: white; }
+.kpi-label { color: var(--dez-muted, #6b7a86); font-size: 9px; text-transform: uppercase; letter-spacing: .06em; }
+.kpi-value { color: var(--dez-navy, #17233b); font-size: 17px; font-weight: 800; }
+.two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+@media (max-width: 900px) { .two-col { grid-template-columns: 1fr; } }
+.plain-list { list-style: none; margin: 8px 0; padding: 0; display: grid; gap: 6px; font-size: 11px; color: var(--dez-ink, #17233b); }
+.inline-actions { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.inline-actions input[type="date"] { height: 34px; border: 1px solid var(--dez-line, #dfe7ea); border-radius: 8px; padding: 0 8px; font-size: 11px; }
+.export-row { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+.export-row a.dez-button { text-decoration: none; }

@@ -4,7 +4,11 @@ import { api, apiErrorMessage, type CurrentUser, type Report, type ReportTemplat
 import { Alert, Button, EmptyState, LoadingState, Panel, StatusPill, TextField, SelectField } from '@dez/ui';
 
 const clinicToday = () => new Date().toLocaleDateString('en-CA', { timeZone: 'America/Fortaleza' });
-const dateLabel = (value: string | null) => (value ? new Date(value).toLocaleDateString('pt-BR', { timeZone: 'America/Fortaleza' }) : '—');
+const dateLabel = (value: string | null) => {
+  if (!value) return '—';
+  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) return value.split('-').reverse().join('/');
+  return new Date(value).toLocaleDateString('pt-BR', { timeZone: 'America/Fortaleza' });
+};
 
 export default function LaudosPage({ user }: { user: CurrentUser }) {
   const client = useQueryClient();

@@ -3,6 +3,8 @@
 namespace Database\Seeders;
 
 use App\Actions\Scheduling\MaterializeScheduleOccurrences;
+use App\Enums\AsoStatus;
+use App\Enums\AsoType;
 use App\Enums\BookingMode;
 use App\Enums\Modality;
 use App\Enums\UserRole;
@@ -10,6 +12,10 @@ use App\Models\Agreement;
 use App\Models\Appointment;
 use App\Models\CatalogLink;
 use App\Models\LoyaltyPlan;
+use App\Models\MtAso;
+use App\Models\MtFunction;
+use App\Models\MtRisk;
+use App\Models\MtSector;
 use App\Models\Patient;
 use App\Models\ProcedurePrice;
 use App\Models\Professional;
@@ -51,6 +57,7 @@ class SchedulingE2ESeeder extends Seeder
                 $this->seedReportTemplates($link->procedure_id, $link->professional_id);
                 $this->seedPilotAppointment($link);
                 $this->seedLoyalty($link);
+                $this->seedMt($link);
             }
 
             return;
@@ -66,6 +73,41 @@ class SchedulingE2ESeeder extends Seeder
         $this->seedReportTemplates($price->procedure_id, $professional->id);
         $this->seedPilotAppointment($link);
         $this->seedLoyalty($link);
+        $this->seedMt($link);
+    }
+
+    private function seedMt(CatalogLink $base): void
+    {
+        if (Agreement::query()->where('name', 'EMPRESA MT PILOTO E2E')->exists()) {
+            return;
+        }
+        $company = Agreement::factory()->create(['name' => 'EMPRESA MT PILOTO E2E', 'type' => 'B2B', 'is_default' => false, 'requires_authorization' => false, 'active' => true]);
+        ProcedurePrice::factory()->create(['procedure_id' => $base->procedure_id, 'agreement_id' => $company->id, 'unit_id' => $base->unit_id, 'amount' => '150.00']);
+        CatalogLink::create(['unit_id' => $base->unit_id, 'procedure_id' => $base->procedure_id,
+            'professional_id' => $base->professional_id, 'agreement_id' => $company->id, 'active' => true]);
+
+        $risk = MtRisk::query()->updateOrCreate(['name' => 'RUIDO'], ['active' => true]);
+        $sector = MtSector::query()->updateOrCreate(['agreement_id' => $company->id, 'name' => 'PRODUCAO MT'], ['active' => true]);
+        MtFunction::query()->updateOrCreate(['agreement_id' => $company->id, 'name' => 'OPERADOR MT'], ['sector_id' => $sector->id, 'risk_id' => $risk->id, 'active' => true]);
+
+        $admin = User::query()->where('email', 'admin-piloto@example.test')->firstOrFail();
+        foreach ([
+            ['cpf' => '12345678909', 'name' => 'Funcionario MT Vencido E2E', 'last_four' => '8909', 'expires_at' => now()->subDays(10)->toDateString()],
+            ['cpf' => '98765432100', 'name' => 'Funcionario MT A Vencer E2E', 'last_four' => '2100', 'expires_at' => now()->addDays(20)->toDateString()],
+        ] as $employee) {
+            $hash = hash_hmac('sha256', $employee['cpf'], (string) config('sistema_dez.identity_pepper'));
+            $patient = Patient::query()->updateOrCreate(
+                ['cpf_hash' => $hash],
+                ['name' => $employee['name'], 'cpf_last_four' => $employee['last_four'], 'phone' => '85999990000',
+                    'birth_date' => '1988-03-10', 'privacy_consent_at' => now(), 'privacy_consent_source' => 'E2E'],
+            );
+            MtAso::query()->updateOrCreate(['legacy_id' => $employee['last_four'] === '8909' ? 9001 : 9002], [
+                'patient_id' => $patient->id, 'agreement_id' => $company->id, 'sector_id' => $sector->id,
+                'type' => AsoType::Periodico, 'status' => AsoStatus::Emitido,
+                'realized_at' => now()->subYear()->toDateString(), 'expires_at' => $employee['expires_at'],
+                'issued_at' => now(), 'created_by' => $admin->id,
+            ]);
+        }
     }
 
     private function seedLoyalty(CatalogLink $base): void
@@ -106,6 +148,7 @@ class SchedulingE2ESeeder extends Seeder
             ]);
         }
     }
+
     private function seedPilotAppointment(CatalogLink $link): void
     {
         $patient = Patient::query()->where('name', 'Paciente Piloto E2E')->firstOrFail();

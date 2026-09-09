@@ -2,7 +2,7 @@ import type { ReactNode } from 'react';
 import { useState } from 'react';
 import { NavLink } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
-import { Activity, Banknote, Bell, CalendarDays, ChevronLeft, ClipboardList, FileHeart, FileText, LayoutDashboard, LogOut, Menu, MessageCircle, Search, Settings, Sparkles, Tags, Users, WalletCards, X } from 'lucide-react';
+import { Activity, Banknote, BarChart3, Bell, CalendarDays, ChevronLeft, ClipboardList, FileHeart, FileText, HardHat, LayoutDashboard, LogOut, Menu, MessageCircle, Search, Settings, Sparkles, Tags, Users, WalletCards, X } from 'lucide-react';
 import { api, type CurrentUser } from '@dez/api';
 import { BrandLogo, IconButton } from '@dez/ui';
 
@@ -18,6 +18,7 @@ const sections = [
     { to: '/batepapo', label: 'Bate-papo', icon: MessageCircle, permission: 'chat.use' },
     { to: '/orcamentos', label: 'Orçamentos', icon: Tags, permission: 'budgets.view' },
     { to: '/rotinas', label: 'Rotinas', icon: ClipboardList, permission: 'routine.view' },
+    { to: '/medicina-trabalho', label: 'Medicina do Trabalho', icon: HardHat, permission: 'mt.view' },
     { to: '/recepcao?fila=1', label: 'Fila de espera', icon: ClipboardList },
   ] },
   { label: 'Clínico', items: [
@@ -25,6 +26,7 @@ const sections = [
     { to: '/laudos', label: 'Laudos', icon: FileText, permission: 'reports.view' },
   ] },
   { label: 'Gestão', items: [
+    { to: '/relatorios', label: 'Relatórios & BI', icon: BarChart3, permission: 'analytics.view' },
     { to: '/sou-dez', label: 'Sou DEZ', icon: Sparkles, permission: 'soudez.view' },
     { to: '/cadastros', label: 'Cadastros e acessos', icon: Settings, permission: 'catalog.view' },
     { to: '/repasses', label: 'Repasses médicos', icon: WalletCards, permission: 'payouts.view' },

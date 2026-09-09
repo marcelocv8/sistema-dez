@@ -3,6 +3,10 @@
 namespace App\Http\Controllers\Api\V1;
 
 use App\Http\Controllers\Controller;
+use App\Models\Appointment;
+use App\Models\B2bInvoice;
+use App\Models\CashRegister;
+use App\Models\Payout;
 use App\Models\QueueEntry;
 use Carbon\CarbonImmutable;
 use Illuminate\Http\JsonResponse;
@@ -41,16 +45,25 @@ class DashboardController extends Controller
             ])
             ->all();
 
+        $revenue = (float) Appointment::query()->where('payment_status', 'PAID')
+            ->whereDate('paid_at', $date)->sum('price_snapshot');
+        $cashDifference = (float) CashRegister::query()->where('status', 'FECHADO')
+            ->whereDate('closed_at', $date)->sum('cash_difference');
+        $commissions = (float) Payout::query()->whereIn('status', ['OPEN', 'CONFIRMED', 'CONTESTED'])->sum('total_commission');
+        $b2bOpen = (float) B2bInvoice::query()->whereIn('status', ['EMITIDA', 'ENVIADA'])
+            ->whereColumn('settled_amount', '<', 'subtotal_gross')
+            ->selectRaw('coalesce(sum(subtotal_gross - settled_amount), 0) as balance')->value('balance');
+
         return new JsonResponse(['data' => [
             'date' => $date->toDateString(),
             'patient_flow' => $flow,
             'queue' => $queue,
-            'financials_available' => false,
-            'revenue' => '0.00',
+            'financials_available' => true,
+            'revenue' => number_format($revenue, 2, '.', ''),
             'cash_expected' => '0.00',
-            'cash_difference' => '0.00',
-            'commissions' => '0.00',
-            'b2b_invoices' => '0.00',
+            'cash_difference' => number_format($cashDifference, 2, '.', ''),
+            'commissions' => number_format($commissions, 2, '.', ''),
+            'b2b_invoices' => number_format($b2bOpen, 2, '.', ''),
         ]]);
     }
 

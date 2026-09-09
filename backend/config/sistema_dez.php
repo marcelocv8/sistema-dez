@@ -8,6 +8,7 @@ return [
     'public_booking_horizon_days' => (int) env('PUBLIC_BOOKING_HORIZON_DAYS', 30),
     'public_booking_lead_minutes' => 30,
     'routine_return_months' => (int) env('ROUTINE_RETURN_MONTHS', 6),
+    'mt_due_warning_days' => (int) env('MT_DUE_WARNING_DAYS', 30),
     'identity_pepper' => env('IDENTITY_PEPPER', env('APP_KEY')),
     'management_token_secret' => env('MANAGEMENT_TOKEN_SECRET', env('APP_KEY')),
     'deepseek_api_key' => env('DEEPSEEK_API_KEY'),

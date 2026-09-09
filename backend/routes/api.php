@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\Api\V1\AnalyticsController;
 use App\Http\Controllers\Api\V1\AppointmentPaymentController;
 use App\Http\Controllers\Api\V1\AttendanceController;
 use App\Http\Controllers\Api\V1\AuditLogController;
@@ -12,8 +13,11 @@ use App\Http\Controllers\Api\V1\CatalogLinkController;
 use App\Http\Controllers\Api\V1\ChatController;
 use App\Http\Controllers\Api\V1\DashboardController;
 use App\Http\Controllers\Api\V1\DisplayController;
+use App\Http\Controllers\Api\V1\HermesAgentController;
+use App\Http\Controllers\Api\V1\HermesController;
 use App\Http\Controllers\Api\V1\ImportIssueController;
 use App\Http\Controllers\Api\V1\LoyaltyController;
+use App\Http\Controllers\Api\V1\MtController;
 use App\Http\Controllers\Api\V1\OfferingVisibilityController;
 use App\Http\Controllers\Api\V1\PatientAppointmentController;
 use App\Http\Controllers\Api\V1\PayoutController;
@@ -52,6 +56,15 @@ Route::prefix('v1/public')->middleware('throttle:public-api')->group(function ()
     });
     Route::get('units', [DisplayController::class, 'units'])->name('api.v1.public.units.index');
     Route::get('display', [DisplayController::class, 'show'])->name('api.v1.public.display.show');
+});
+
+Route::prefix('v1/agents')->middleware(['throttle:agents', 'agent.token'])->group(function (): void {
+    Route::get('agenda', [HermesController::class, 'agenda'])->middleware('agent.scope:agenda.read')->name('api.v1.agents.agenda');
+    Route::get('patients', [HermesController::class, 'patients'])->middleware('agent.scope:patients.read')->name('api.v1.agents.patients');
+    Route::get('production', [HermesController::class, 'production'])->middleware('agent.scope:finance.read')->name('api.v1.agents.production');
+    Route::get('cash-summary', [HermesController::class, 'cashSummary'])->middleware('agent.scope:finance.read')->name('api.v1.agents.cash-summary');
+    Route::get('b2b-invoices', [HermesController::class, 'b2bInvoices'])->middleware('agent.scope:finance.read')->name('api.v1.agents.b2b-invoices');
+    Route::get('asos/due', [HermesController::class, 'asosDue'])->middleware('agent.scope:mt.read')->name('api.v1.agents.asos.due');
 });
 
 Route::prefix('v1/auth')->group(function (): void {
@@ -204,6 +217,33 @@ Route::prefix('v1')->middleware(['auth:sanctum', 'throttle:team-api'])->group(fu
             Route::get('dues', [LoyaltyController::class, 'dues'])->name('api.v1.team.loyalty.dues.index');
             Route::post('dues/{loyaltyDue}/collect', [LoyaltyController::class, 'collect'])->name('api.v1.team.loyalty.dues.collect');
             Route::get('eligibility', [LoyaltyController::class, 'eligibility'])->name('api.v1.team.loyalty.eligibility');
+        });
+        Route::get('analytics', [AnalyticsController::class, 'index'])->middleware('permission:analytics.view')->name('api.v1.team.analytics.index');
+        Route::get('analytics/export', [AnalyticsController::class, 'export'])->middleware('permission:analytics.view')->name('api.v1.team.analytics.export');
+        Route::get('agents', [HermesAgentController::class, 'index'])->middleware('permission:team.manage')->name('api.v1.team.agents.index');
+        Route::post('agents', [HermesAgentController::class, 'store'])->middleware('permission:team.manage')->name('api.v1.team.agents.store');
+        Route::post('agents/{agentToken}/revoke', [HermesAgentController::class, 'revoke'])->middleware('permission:team.manage')->name('api.v1.team.agents.revoke');
+        Route::prefix('mt')->middleware('permission:mt.view')->group(function (): void {
+            Route::get('options', [MtController::class, 'options'])->name('api.v1.team.mt.options');
+            Route::get('risks', [MtController::class, 'risksIndex'])->name('api.v1.team.mt.risks.index');
+            Route::post('risks', [MtController::class, 'risksStore'])->middleware('permission:mt.manage')->name('api.v1.team.mt.risks.store');
+            Route::put('risks/{mtRisk}', [MtController::class, 'risksUpdate'])->middleware('permission:mt.manage')->name('api.v1.team.mt.risks.update');
+            Route::get('sectors', [MtController::class, 'sectorsIndex'])->name('api.v1.team.mt.sectors.index');
+            Route::post('sectors', [MtController::class, 'sectorsStore'])->middleware('permission:mt.manage')->name('api.v1.team.mt.sectors.store');
+            Route::put('sectors/{mtSector}', [MtController::class, 'sectorsUpdate'])->middleware('permission:mt.manage')->name('api.v1.team.mt.sectors.update');
+            Route::get('functions', [MtController::class, 'functionsIndex'])->name('api.v1.team.mt.functions.index');
+            Route::post('functions', [MtController::class, 'functionsStore'])->middleware('permission:mt.manage')->name('api.v1.team.mt.functions.store');
+            Route::put('functions/{mtFunction}', [MtController::class, 'functionsUpdate'])->middleware('permission:mt.manage')->name('api.v1.team.mt.functions.update');
+            Route::get('asos/due', [MtController::class, 'asosDue'])->name('api.v1.team.mt.asos.due');
+            Route::get('asos', [MtController::class, 'asosIndex'])->name('api.v1.team.mt.asos.index');
+            Route::post('asos', [MtController::class, 'asosStore'])->middleware('permission:mt.manage')->name('api.v1.team.mt.asos.store');
+            Route::put('asos/{mtAso}', [MtController::class, 'asosUpdate'])->middleware('permission:mt.manage')->name('api.v1.team.mt.asos.update');
+            Route::post('asos/{mtAso}/cancel', [MtController::class, 'asosCancel'])->middleware('permission:mt.manage')->name('api.v1.team.mt.asos.cancel');
+            Route::post('asos/{mtAso}/extend', [MtController::class, 'asosExtend'])->middleware('permission:mt.manage')->name('api.v1.team.mt.asos.extend');
+            Route::post('asos/{mtAso}/link-exam', [MtController::class, 'asosLinkExam'])->middleware('permission:mt.manage')->name('api.v1.team.mt.asos.link-exam');
+            Route::post('asos/{mtAso}/emit', [MtController::class, 'asosEmit'])->middleware('permission:mt.manage')->name('api.v1.team.mt.asos.emit');
+            Route::post('batch-schedule', [MtController::class, 'batchSchedule'])->middleware('permission:mt.manage')->name('api.v1.team.mt.batch-schedule');
+            Route::get('companies/{agreement}/report', [MtController::class, 'companyReport'])->name('api.v1.team.mt.companies.report');
         });
     });
 });

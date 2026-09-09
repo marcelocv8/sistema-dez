@@ -49,7 +49,7 @@ export default function BudgetsPage({ user }: { user: CurrentUser }) {
       prescription,
     }),
     onSuccess: async () => {
-      setItems([]); setPrescription(undefined); setSearch(''); setPatient(null); setPatientCpf('');
+      setItems([]); setPrescription(undefined); setSearch(''); setPatient(null); setPatientCpf(''); lookup.reset();
       await refresh();
     },
   });
@@ -77,7 +77,7 @@ export default function BudgetsPage({ user }: { user: CurrentUser }) {
     {canManage ? <Panel>
       <h2>Novo orçamento</h2>
       <div className="catalog-form-grid">
-        <TextField label="CPF do paciente" value={patientCpf} onChange={(event) => { setPatientCpf(event.target.value); setPatient(null); }} />
+        <TextField label="CPF do paciente" value={patientCpf} onChange={(event) => { setPatientCpf(event.target.value); setPatient(null); lookup.reset(); }} />
         <Button type="button" variant="outline" disabled={patientCpf.replace(/\D/g, '').length !== 11 || lookup.isPending} onClick={() => lookup.mutate()}>Localizar</Button>
         <SelectField label="Unidade do orçamento" value={unitId} onChange={(event) => { setUnitId(event.target.value); setSearch(''); setItems([]); }}>
           <option value="">Selecione</option>
