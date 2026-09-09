@@ -785,7 +785,7 @@ class MockDataSeeder extends Seeder
                 $published++;
                 /** @var PortalAccess $access */
                 $access = PortalAccess::query()->create([
-                    'patient_id' => $report->patient_id, 'login' => 'MOCK'.str_pad((string) ($published + 1000), 6, '0', STR_PAD_LEFT),
+                    'patient_id' => $report->patient_id, 'login' => 'mock'.str_pad((string) ($published + 1000), 6, '0', STR_PAD_LEFT),
                     'password_hash' => Hash::make(self::PORTAL_PASSWORD),
                     'token_hash' => hash('sha256', 'mock-portal-token-'.$published),
                     'expires_at' => now()->addDays(7), 'access_count' => mt_rand(1, 4),

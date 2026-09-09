@@ -38,8 +38,8 @@ class PayoutController extends Controller
             ->withCount('items')
             ->when($data['professional_id'] ?? null, fn ($query, $id) => $query->where('professional_id', $id))
             ->when($data['status'] ?? null, fn ($query, $status) => $query->where('status', $status))
-            ->when($data['from'] ?? null, fn ($query, $from) => $query->where('period_from', '>=', $from))
-            ->when($data['to'] ?? null, fn ($query, $to) => $query->where('period_to', '<=', $to))
+            ->when($data['from'] ?? null, fn ($query, $from) => $query->where('period_to', '>=', $from))
+            ->when($data['to'] ?? null, fn ($query, $to) => $query->where('period_from', '<=', $to))
             ->tap(fn ($query) => $this->scopeToDoctor($request, $query))
             ->orderByDesc('period_from')->orderByDesc('created_at')->limit(50)->get();
 

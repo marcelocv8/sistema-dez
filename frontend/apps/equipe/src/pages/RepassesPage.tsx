@@ -20,7 +20,7 @@ const today = () => new Date().toLocaleDateString('en-CA', { timeZone: 'America/
 const monthStart = () => today().slice(0, 7) + '-01';
 
 function formatDay(value: string): string {
-  const parsed = new Date(value.length === 10 ? `${value}T12:00:00Z` : value);
+  const parsed = new Date(`${value.slice(0, 10)}T12:00:00Z`);
   return Number.isNaN(parsed.getTime()) ? value : parsed.toLocaleDateString('pt-BR', { timeZone: 'America/Fortaleza' });
 }
 
