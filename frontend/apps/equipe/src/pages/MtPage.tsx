@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api, apiErrorMessage, type CurrentUser, type MtAso } from '@dez/api';
 import { Alert, Button, EmptyState, Panel, SectionTitle, SelectField, StatusPill, TextField } from '@dez/ui';
@@ -33,7 +33,7 @@ export default function MtPage({ user }: { user: CurrentUser }) {
   ];
 
   return (
-    <div className="page">
+    <div className="page mt-page">
       <div className="page-heading"><div><h1>Medicina do Trabalho</h1><p>ASOs, setores e funções por empresa (§6.7).</p></div></div>
       <div className="mt-tabs" role="tablist">
         {tabs.map((item) => (
@@ -63,7 +63,7 @@ function DueTab({ canManage, onInvalidate }: { canManage: boolean; onInvalidate:
       <SectionTitle title="ASOs a vencer (30 dias)" subtitle={`${items.filter((item) => item.overdue).length} vencido(s)`} />
       {items.length === 0 ? <EmptyState title="Nada a vencer" description="Nenhum ASO periódico vence nos próximos 30 dias." /> : null}
       {items.length > 0 ? (
-        <table className="data-table">
+        <div className="mt-table-scroll" role="region" aria-label="Tabela de ASOs" tabIndex={0}><table className="data-table">
           <thead><tr><th>Funcionário</th><th>Empresa</th><th>Setor</th><th>Função</th><th>Vencimento</th>{canManage ? <th>Ações</th> : null}</tr></thead>
           <tbody>
             {items.map((item) => (
@@ -77,7 +77,7 @@ function DueTab({ canManage, onInvalidate }: { canManage: boolean; onInvalidate:
               </tr>
             ))}
           </tbody>
-        </table>
+        </table></div>
       ) : null}
     </Panel>
   );
@@ -99,38 +99,44 @@ function AsosTab({ canManage, onInvalidate }: { canManage: boolean; onInvalidate
   const options = useQuery({ queryKey: ['mt-options'], queryFn: api.mtOptions });
   const asos = useQuery({ queryKey: ['mt-asos', agreementId, status], queryFn: () => api.mtAsos({ agreement_id: agreementId || undefined, status: status || undefined }) });
   const [form, setForm] = useState({ cpf: '', agreement_id: '', sector_id: '', function_id: '', type: 'PERIODICO', notes: '' });
-  const lookup = useMutation({ mutationFn: async () => api.lookupPatient(form.cpf.replace(/\D/g, '')) });
+  const patientVersion = useRef(0);
+  const lookup = useMutation({
+    mutationFn: async (input: { cpf: string; version: number }) => ({ ...input, patient: await api.lookupPatient(input.cpf) }),
+  });
+  const identified = lookup.data?.version === patientVersion.current && lookup.data.cpf === form.cpf.replace(/\D/g, '') ? lookup.data.patient : null;
+  const [linkFor, setLinkFor] = useState<MtAso | null>(null);
   const create = useMutation({
     mutationFn: async () => api.createMtAso({
-      patient_id: lookup.data?.id ?? '',
+      patient_id: identified?.id ?? '',
       agreement_id: form.agreement_id,
       sector_id: form.sector_id || undefined,
       function_id: form.function_id || undefined,
       type: form.type as MtAso['type'],
       notes: form.notes || undefined,
     }),
-    onSuccess: () => { setForm({ cpf: '', agreement_id: '', sector_id: '', function_id: '', type: 'PERIODICO', notes: '' }); onInvalidate(); },
+    onSuccess: () => { patientVersion.current++; lookup.reset(); setForm({ cpf: '', agreement_id: '', sector_id: '', function_id: '', type: 'PERIODICO', notes: '' }); onInvalidate(); },
   });
   const emit = useMutation({ mutationFn: async (aso: MtAso) => api.emitMtAso(aso.id, {}), onSuccess: onInvalidate });
   const cancel = useMutation({ mutationFn: async (input: { id: string; reason: string }) => api.cancelMtAso(input.id, input.reason), onSuccess: onInvalidate });
 
   const agreements = options.data?.agreements ?? [];
   const sectors = (options.data?.sectors ?? []).filter((sector) => !form.agreement_id || sector.agreement?.id === form.agreement_id);
-  const functions = (options.data?.functions ?? []).filter((fn) => !form.sector_id || fn.sector?.id === form.sector_id);
+  const functions = (options.data?.functions ?? []).filter((fn) => fn.agreement_id === form.agreement_id && (!form.sector_id || fn.sector?.id === form.sector_id));
   const rows = asos.data?.data.items ?? [];
 
   return (
     <div className="stack-gap">
+      {linkFor ? <AsoExamPicker aso={linkFor} onClose={() => setLinkFor(null)} onLinked={() => { setLinkFor(null); onInvalidate(); }} /> : null}
       {canManage ? (
         <Panel>
           <SectionTitle title="Novo ASO" subtitle="Funcionário já precisa estar cadastrado como paciente" />
           {create.isError ? <Alert tone="danger" title="Erro">{apiErrorMessage(create.error)}</Alert> : null}
           <div className="catalog-form-grid">
-            <TextField label="CPF do funcionário" value={form.cpf} onChange={(event) => setForm({ ...form, cpf: event.target.value })} />
-            <span className="catalog-form-actions"><Button variant="outline" onClick={() => lookup.mutate()} disabled={lookup.isPending}>Localizar</Button></span>
+            <TextField label="CPF do funcionário" value={form.cpf} onChange={(event) => { patientVersion.current++; lookup.reset(); setForm({ ...form, cpf: event.target.value }); }} />
+            <span className="catalog-form-actions"><Button variant="outline" onClick={() => lookup.mutate({ cpf: form.cpf.replace(/\D/g, ''), version: patientVersion.current })} disabled={lookup.isPending}>Localizar</Button></span>
           </div>
           {lookup.isError ? <Alert tone="danger" title="Busca">{apiErrorMessage(lookup.error)}</Alert> : null}
-          {lookup.data ? <p><StatusPill tone="success">Paciente localizado: {lookup.data.name}</StatusPill></p> : null}
+          {identified ? <p><StatusPill tone="success">Paciente localizado: {identified.name}</StatusPill></p> : null}
           <div className="catalog-form-grid">
             <SelectField label="Empresa (convênio)" value={form.agreement_id} onChange={(event) => setForm({ ...form, agreement_id: event.target.value, sector_id: '', function_id: '' })}>
               <option value="">Selecione…</option>
@@ -150,7 +156,7 @@ function AsosTab({ canManage, onInvalidate }: { canManage: boolean; onInvalidate
             <TextField label="Observações" value={form.notes} onChange={(event) => setForm({ ...form, notes: event.target.value })} />
           </div>
           <div className="catalog-form-actions">
-            <Button onClick={() => create.mutate()} disabled={create.isPending || !lookup.data || !form.agreement_id}>Cadastrar ASO</Button>
+            <Button onClick={() => create.mutate()} disabled={create.isPending || !identified || !form.agreement_id}>Cadastrar ASO</Button>
           </div>
         </Panel>
       ) : null}
@@ -170,7 +176,7 @@ function AsosTab({ canManage, onInvalidate }: { canManage: boolean; onInvalidate
         </div>
         {rows.length === 0 ? <EmptyState title="Sem ASOs" description="Cadastre o primeiro ASO acima." /> : null}
         {rows.length > 0 ? (
-          <table className="data-table">
+          <div className="mt-table-scroll" role="region" aria-label="Tabela de ASOs" tabIndex={0}><table className="data-table">
             <thead><tr><th>Funcionário</th><th>Empresa</th><th>Tipo</th><th>Status</th><th>Exame</th><th>Laudo</th>{canManage ? <th>Ações</th> : null}</tr></thead>
             <tbody>
               {rows.map((aso) => (
@@ -184,7 +190,8 @@ function AsosTab({ canManage, onInvalidate }: { canManage: boolean; onInvalidate
                   {canManage && aso.status !== 'CANCELADO' ? (
                     <td>
                       <span className="inline-actions">
-                        <Button variant="outline" onClick={() => emit.mutate(aso)} disabled={emit.isPending}>Emitir laudo</Button>
+                        {!aso.report && aso.status !== 'EMITIDO' ? <Button variant="outline" onClick={() => setLinkFor(aso)}>Vincular atendimento</Button> : null}
+                        <Button variant="outline" onClick={() => emit.mutate(aso)} disabled={emit.isPending || !aso.appointment || Boolean(aso.report)}>Emitir laudo</Button>
                         <Button variant="outline" onClick={() => { const reason = window.prompt('Motivo do cancelamento:'); if (reason) cancel.mutate({ id: aso.id, reason }); }}>Cancelar</Button>
                       </span>
                     </td>
@@ -192,12 +199,46 @@ function AsosTab({ canManage, onInvalidate }: { canManage: boolean; onInvalidate
                 </tr>
               ))}
             </tbody>
-          </table>
+          </table></div>
         ) : null}
         {emit.isError ? <Alert tone="danger" title="Emissão">{apiErrorMessage(emit.error)}</Alert> : null}
       </Panel>
     </div>
   );
+}
+
+function AsoExamPicker({ aso, onClose, onLinked }: { aso: MtAso; onClose: () => void; onLinked: () => void }) {
+  const day = (offset: number) => new Date(Date.now() + offset * 86400000).toLocaleDateString('en-CA', { timeZone: 'America/Fortaleza' });
+  const [from, setFrom] = useState(() => day(-30));
+  const [to, setTo] = useState(() => day(30));
+  const [selected, setSelected] = useState('');
+  const appointments = useQuery({
+    queryKey: ['mt-patient-appointments', aso.patient?.id, from, to],
+    queryFn: async () => (await api.appointments(undefined, { patient_id: aso.patient!.id, from, to })).data.appointments,
+    enabled: Boolean(aso.patient && from && to && from <= to),
+  });
+  const candidates = (appointments.data ?? []).filter((appointment) => appointment.status !== 'CANCELLED');
+  const link = useMutation({ mutationFn: () => api.linkMtAsoExam(aso.id, selected), onSuccess: onLinked });
+  return <Panel>
+    <SectionTitle title={'Vincular atendimento: ' + (aso.patient?.name ?? '')} />
+    <p>Selecione um atendimento do funcionário. Se necessário, agende primeiro na Agenda ou em Agendar lote.</p>
+    <div className="catalog-form-grid">
+      <TextField label="Atendimentos de" type="date" value={from} onChange={(event) => { setFrom(event.target.value); setSelected(''); }} />
+      <TextField label="Atendimentos até" type="date" value={to} onChange={(event) => { setTo(event.target.value); setSelected(''); }} />
+      <SelectField label="Atendimento do funcionário" value={selected} onChange={(event) => setSelected(event.target.value)}>
+        <option value="">Selecione…</option>
+        {candidates.map((appointment) => <option key={appointment.id} value={appointment.id}>{new Date(appointment.scheduled_at).toLocaleString('pt-BR', { timeZone: 'America/Fortaleza' })} · {appointment.procedure?.name} · {appointment.professional?.name} · {appointment.status}</option>)}
+      </SelectField>
+    </div>
+    {appointments.isLoading ? <p>Buscando atendimentos…</p> : null}
+    {appointments.isError ? <Alert tone="danger" title="Busca de atendimentos">{apiErrorMessage(appointments.error)}</Alert> : null}
+    {!appointments.isFetching && !appointments.isError && candidates.length === 0 ? <p>Nenhum atendimento neste período.</p> : null}
+    {link.isError ? <Alert tone="danger" title="Vínculo não concluído">{apiErrorMessage(link.error)}</Alert> : null}
+    <div className="catalog-form-actions">
+      <Button disabled={link.isPending || appointments.isFetching || !candidates.some((appointment) => appointment.id === selected)} onClick={() => link.mutate()}>Confirmar vínculo</Button>
+      <Button variant="outline" disabled={link.isPending} onClick={onClose}>Fechar vínculo</Button>
+    </div>
+  </Panel>;
 }
 
 function CompaniesTab({ canManage, onInvalidate }: { canManage: boolean; onInvalidate: () => void }) {

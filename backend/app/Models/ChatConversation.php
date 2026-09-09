@@ -2,8 +2,10 @@
 
 namespace App\Models;
 
+use Database\Factories\ChatConversationFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
+use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
@@ -12,7 +14,8 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 #[Fillable(['type', 'title', 'unit_id', 'created_by'])]
 class ChatConversation extends Model
 {
-    use HasUuids;
+    /** @use HasFactory<ChatConversationFactory> */
+    use HasFactory, HasUuids;
 
     public function participants(): BelongsToMany
     {

@@ -842,7 +842,7 @@ export const api = {
     (await request(`/api/v1/team/professionals/${professionalId}/commissions/${commissionId}`, { method: 'DELETE' })),
   callPatient: (id: UUID) => request<{ ok: true }>(`/api/v1/queue/${id}/call`, { method: 'POST' }),
   publishReport: (id: UUID) => request<{ publishedAt: string }>(`/api/v1/reports/${id}/publish`, { method: 'POST' }),
-  mtOptions: async () => (await request<ApiData<{ agreements: CatalogItem[]; risks: { id: UUID; name: string }[]; sectors: MtSector[]; functions: MtFunction[] }>>('/api/v1/team/mt/options')).data,
+  mtOptions: async () => (await request<ApiData<{ agreements: CatalogItem[]; risks: { id: UUID; name: string }[]; sectors: MtSector[]; functions: (MtFunction & { agreement_id: UUID })[] }>>('/api/v1/team/mt/options')).data,
   mtRisks: async () => (await request<ApiData<MtRisk[]>>('/api/v1/team/mt/risks')).data,
   createMtRisk: async (name: string) => (await request<ApiData<MtRisk>>('/api/v1/team/mt/risks', { method: 'POST', body: JSON.stringify({ name }) })).data,
   updateMtRisk: async (id: string, input: { name?: string; active?: boolean }) => (await request<ApiData<MtRisk>>(`/api/v1/team/mt/risks/${id}`, { method: 'PUT', body: JSON.stringify(input) })).data,
@@ -869,8 +869,7 @@ export const api = {
     (await request<ApiData<MtCompanyReport>>(`/api/v1/team/mt/companies/${agreementId}/report?${queryString(filters)}`)).data,
   analytics: async (filters: { from?: string; to?: string; unit_id?: string; doctor_id?: string; agreement_id?: string } = {}) =>
     (await request<ApiData<AnalyticsSummary>>(`/api/v1/team/analytics?${queryString(filters)}`)).data,
-  analyticsExportUrl: (type: string, filters: { from?: string; to?: string; agreement_id?: string } = {}) =>
-    `/api/v1/team/analytics/export?${queryString({ type, ...filters })}`,
+  analyticsExport: (type: string, filters: { from?: string; to?: string; agreement_id?: string; unit_id?: string; doctor_id?: string } = {}) => request<Blob>(`/api/v1/team/analytics/export?${queryString({ type, ...filters })}`, undefined, true),
   agentTokens: async () => (await request<ApiData<AgentToken[]>>('/api/v1/team/agents')).data,
   createAgentToken: async (input: { name: string; scopes: string[] }) =>
     (await request<ApiData<AgentToken & { token: string; warning?: string }>>('/api/v1/team/agents', { method: 'POST', body: JSON.stringify(input) })).data,

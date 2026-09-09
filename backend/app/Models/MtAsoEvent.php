@@ -2,15 +2,18 @@
 
 namespace App\Models;
 
+use Database\Factories\MtAsoEventFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
+use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 #[Fillable(['mt_aso_id', 'event', 'by_user_id', 'payload'])]
 class MtAsoEvent extends Model
 {
-    use HasUuids;
+    /** @use HasFactory<MtAsoEventFactory> */
+    use HasFactory, HasUuids;
 
     public const CREATED = 'CRIADO';
 

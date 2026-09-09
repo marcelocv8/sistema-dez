@@ -259,6 +259,7 @@ class MtController extends Controller
         $data = $this->validateAso($request);
 
         $aso = DB::transaction(function () use ($request, $data): MtAso {
+            $this->assertAsoRelations($data);
             $aso = MtAso::query()->create([
                 ...collect($data)->except(['risks'])->all(),
                 'status' => AsoStatus::Pendente,
@@ -289,7 +290,8 @@ class MtController extends Controller
 
         $aso = DB::transaction(function () use ($request, $mtAso, $data): MtAso {
             $locked = MtAso::query()->lockForUpdate()->findOrFail($mtAso->id);
-            abort_if($locked->status === AsoStatus::Cancelado, 422, 'ASO cancelado não pode ser editado.');
+            abort_if(in_array($locked->status, [AsoStatus::Cancelado, AsoStatus::Emitido], true), 422, 'ASO emitido ou cancelado não pode ser editado.');
+            $this->assertAsoRelations($data, $locked);
 
             $before = $locked->attributesToArray();
             $locked->fill(collect($data)->except(['risks'])->all())->save();
@@ -366,7 +368,8 @@ class MtController extends Controller
 
         $aso = DB::transaction(function () use ($request, $mtAso, $data): MtAso {
             $locked = MtAso::query()->lockForUpdate()->findOrFail($mtAso->id);
-            abort_if($locked->status === AsoStatus::Cancelado, 422, 'ASO cancelado.');
+            abort_if(in_array($locked->status, [AsoStatus::Cancelado, AsoStatus::Emitido], true), 422, 'ASO emitido ou cancelado não permite trocar o atendimento.');
+            $this->assertAsoRelations($data, $locked);
 
             $appointment = Appointment::query()->findOrFail($data['appointment_id']);
             abort_if($appointment->patient_id !== $locked->patient_id, 422, 'O atendimento pertence a outro paciente.');
@@ -440,7 +443,9 @@ class MtController extends Controller
 
         $result = DB::transaction(function () use ($request, $mtAso, $data): array {
             $locked = MtAso::query()->lockForUpdate()->findOrFail($mtAso->id);
+            abort_if($locked->status === AsoStatus::Cancelado, 422, 'ASO cancelado não pode ser emitido.');
             abort_if($locked->report_id !== null, 422, 'ASO já possui laudo emitido.');
+            $this->assertAsoRelations(['appointment_id' => $locked->appointment_id ?? ($data['appointment_id'] ?? null)], $locked);
             $locked->loadMissing('agreement:id,name', 'patient:id,name,birth_date');
 
             $appointment = $locked->appointment_id !== null
@@ -457,15 +462,20 @@ class MtController extends Controller
 
             if ($template !== null) {
                 abort_unless($template->active && $template->legacy_type === ReportTemplate::TYPE_REPORT, 422, 'Modelo inativo ou não é um laudo.');
+                abort_if($template->doctor_id !== null && $template->doctor_id !== $appointment->serviceOffering?->professional_id, 422, 'Modelo pertence a outro profissional.');
+                abort_if($template->procedure_id !== null && $template->procedure_id !== $appointment->serviceOffering?->procedure_id, 422, 'Modelo pertence a outro procedimento.');
                 $content = $template->content_html;
             } else {
                 $content = $this->defaultAsoContent($locked, $appointment);
             }
 
-            $content = $this->hydrate($content, $locked, $appointment);
             $realizedAt = $locked->realized_at ?? CarbonImmutable::parse($appointment->scheduled_at)->toDateString();
             $expiresAt = $data['expires_at'] ?? $locked->expires_at
                 ?? ($locked->type === AsoType::Periodico ? CarbonImmutable::parse($realizedAt)->addYear()->toDateString() : null);
+
+            $before = $locked->attributesToArray();
+            $locked->forceFill(['realized_at' => $realizedAt, 'expires_at' => $expiresAt]);
+            $content = $this->hydrate($content, $locked, $appointment);
 
             $report = Report::query()->create([
                 'appointment_id' => $appointment->id,
@@ -483,7 +493,6 @@ class MtController extends Controller
                 'payload' => ['source' => 'mt_aso', 'mt_aso_id' => $locked->id],
             ]);
 
-            $before = $locked->attributesToArray();
             $locked->forceFill([
                 'appointment_id' => $appointment->id,
                 'report_id' => $report->id,
@@ -520,8 +529,8 @@ class MtController extends Controller
         ]);
 
         $timezone = config('sistema_dez.timezone');
-        $to = isset($data['to']) ? CarbonImmutable::parse($data['to']) : CarbonImmutable::today($timezone);
-        $from = isset($data['from']) ? CarbonImmutable::parse($data['from']) : $to->subMonths(12);
+        $to = isset($data['to']) ? CarbonImmutable::parse($data['to'], $timezone)->endOfDay() : CarbonImmutable::today($timezone)->endOfDay();
+        $from = isset($data['from']) ? CarbonImmutable::parse($data['from'], $timezone)->startOfDay() : $to->subMonths(12);
 
         $asos = MtAso::query()->with(['patient:id,name,cpf_last_four', 'agreement:id,name', 'sector:id,name', 'function:id,name', 'risks:id,name'])
             ->where('agreement_id', $agreement->id)
@@ -570,6 +579,28 @@ class MtController extends Controller
             'risks' => ['sometimes', 'array'],
             'risks.*' => ['uuid', 'exists:mt_risks,id'],
         ]);
+    }
+
+    /** @param array<string, mixed> $data */
+    private function assertAsoRelations(array $data, ?MtAso $aso = null): void
+    {
+        $value = fn (string $key) => array_key_exists($key, $data) ? $data[$key] : $aso?->$key;
+        $agreementId = $value('agreement_id');
+        $sectorId = $value('sector_id');
+        $functionId = $value('function_id');
+        if ($sectorId !== null) {
+            $sector = MtSector::query()->findOrFail($sectorId);
+            abort_if($sector->agreement_id !== $agreementId, 422, 'O setor pertence a outra empresa.');
+        }
+        if ($functionId !== null) {
+            $function = MtFunction::query()->findOrFail($functionId);
+            abort_if($function->agreement_id !== $agreementId || ($sectorId !== null && $function->sector_id !== $sectorId), 422, 'A função não pertence à empresa e ao setor informados.');
+        }
+        if ($value('appointment_id') !== null) {
+            $appointment = Appointment::query()->lockForUpdate()->findOrFail($value('appointment_id'));
+            abort_if($appointment->patient_id !== $value('patient_id'), 422, 'O atendimento pertence a outro paciente.');
+            abort_if($appointment->status === 'CANCELLED', 422, 'O atendimento está cancelado.');
+        }
     }
 
     /** @return list<string> */

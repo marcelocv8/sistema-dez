@@ -6,7 +6,10 @@ use App\Enums\AsoType;
 use App\Enums\UserRole;
 use App\Models\AgentToken;
 use App\Models\Appointment;
+use App\Models\CashMovement;
+use App\Models\CashRegister;
 use App\Models\MtAso;
+use App\Models\PaymentMethod;
 use App\Models\User;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 use Tests\TestCase;
@@ -102,6 +105,15 @@ class HermesApiTest extends TestCase
         $production = $this->withToken($plaintext)->getJson('/api/v1/agents/production')->assertOk()->json('data');
         $this->assertSame('180.00', $production['revenue']);
         $this->assertNotEmpty($production['production_by_doctor']);
+
+        $register = CashRegister::factory()->create();
+        $movement = CashMovement::create([
+            'cash_register_id' => $register->id, 'type' => 'RECEBIMENTO',
+            'payment_method_id' => PaymentMethod::where('code', 'PIX')->firstOrFail()->id,
+            'gross_amount' => '180.00', 'fee_amount' => '0.00', 'net_amount' => '180.00',
+            'created_by' => $register->opened_by, 'receipt_number' => 1,
+        ]);
+        $movement->forceFill(['created_at' => '2026-09-05T12:00:00Z'])->save();
 
         $cash = $this->withToken($plaintext)->getJson('/api/v1/agents/cash-summary?date=2026-09-05')->assertOk()->json('data');
         $this->assertSame('180.00', $cash['revenue']);

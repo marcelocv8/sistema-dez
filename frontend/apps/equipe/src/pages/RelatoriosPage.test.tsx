@@ -10,7 +10,7 @@ vi.mock('@dez/api', () => ({
   apiErrorMessage: (error: { message: string }) => error.message,
   api: {
     analytics: vi.fn(),
-    analyticsExportUrl: vi.fn(() => '/api/v1/team/analytics/export?type=revenue'),
+    analyticsExport: vi.fn(),
     mtOptions: vi.fn().mockResolvedValue({ agreements: [], risks: [], sectors: [], functions: [] }),
   },
 }));
@@ -59,6 +59,23 @@ test('relatórios mostra kpis produção mix e aging b2b com csv', async () => {
   expect(document.body.textContent).toContain('PIX');
   expect(document.body.textContent).toContain('Vencida até 30d');
   expect(document.body.textContent).toContain('ASOs a vencer');
-  expect(document.querySelectorAll('a[download]').length).toBe(4);
+  expect([...document.querySelectorAll('button')].filter(button => button.textContent?.startsWith('CSV '))).toHaveLength(4);
   expect(vi.mocked(api.analytics)).toHaveBeenCalled();
+});
+
+test('exportação transmite filtros e mostra falha da API', async () => {
+  vi.mocked(api.analytics).mockResolvedValue(summary as never);
+  vi.mocked(api.mtOptions).mockResolvedValue({ agreements: [{ id: 'a-1', name: 'Empresa teste' }], sectors: [], functions: [], risks: [] } as never);
+  vi.mocked(api.analyticsExport).mockRejectedValueOnce(new Error('Sessão expirada'));
+  const root = await render(<RelatoriosPage />);
+  await act(async () => {
+    const select = document.querySelector('select')!;
+    select.value = 'a-1'; select.dispatchEvent(new Event('change', { bubbles: true }));
+  });
+  const dates = [...document.querySelectorAll<HTMLInputElement>('input[type="date"]')].map(input => input.value);
+  await act(async () => [...document.querySelectorAll('button')].find(button => button.textContent === 'CSV receita')!.click());
+  await waitForText('Sessão expirada');
+  expect(api.analyticsExport).toHaveBeenCalledWith('revenue', { from: dates[0], to: dates[1], agreement_id: 'a-1' });
+  expect(document.body.textContent).toContain('Sessão expirada');
+  await act(async () => root.unmount());
 });

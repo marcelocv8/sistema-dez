@@ -130,6 +130,7 @@ class LoyaltyController extends Controller
                 throw ValidationException::withMessages(['plan_id' => 'Este plano Sou DEZ está inativo.']);
             }
             $titular = $this->resolvePatient($data['patient']);
+            Patient::query()->whereKey($titular->id)->lockForUpdate()->firstOrFail();
             if ($this->loyalty->hasAnyActiveSubscription($titular->id)) {
                 throw ValidationException::withMessages(['patient' => 'O paciente já possui assinatura Sou DEZ ativa (titular ou dependente).']);
             }
@@ -215,6 +216,7 @@ class LoyaltyController extends Controller
         ]);
 
         $due = DB::transaction(function () use ($request, $loyaltyDue, $data): LoyaltyDue {
+            LoyaltySubscription::query()->whereKey($loyaltyDue->subscription_id)->lockForUpdate()->firstOrFail();
             $due = LoyaltyDue::query()->with(['subscription.plan', 'subscription.patient:id,name,cpf_last_four'])
                 ->lockForUpdate()->findOrFail($loyaltyDue->id);
             if ($due->status !== 'PENDENTE') {
@@ -289,6 +291,7 @@ class LoyaltyController extends Controller
         $requestedIds = [];
         foreach ($dependentInputs as $input) {
             $patient = $this->resolvePatient($input);
+            Patient::query()->whereKey($patient->id)->lockForUpdate()->firstOrFail();
             if ($patient->id === $subscription->patient_id) {
                 throw ValidationException::withMessages(['dependents' => 'O titular não pode ser dependente da própria assinatura.']);
             }
@@ -347,29 +350,50 @@ class LoyaltyController extends Controller
 
     private function applyStatus(LoyaltySubscription $subscription, string $status): void
     {
-        if ($status === 'ACTIVE' && $subscription->status !== 'ACTIVE') {
-            $conflict = LoyaltySubscription::query()->where('patient_id', $subscription->patient_id)
+        $reactivating = $status === 'ACTIVE' && $subscription->status !== 'ACTIVE';
+        if ($reactivating) {
+            if (! $subscription->plan->active) {
+                throw ValidationException::withMessages(['status' => 'O plano está inativo.']);
+            }
+            $participants = $subscription->dependents()->where('active', true)->pluck('patient_id')->push($subscription->patient_id)->unique()->sort()->values();
+            Patient::query()->whereIn('id', $participants)->orderBy('id')->lockForUpdate()->get();
+            $conflict = LoyaltySubscription::query()->whereIn('patient_id', $participants)
                 ->where('status', 'ACTIVE')->where('id', '!=', $subscription->id)->exists()
-                || LoyaltyDependent::query()->where('patient_id', $subscription->patient_id)->where('active', true)
+                || LoyaltyDependent::query()->whereIn('patient_id', $participants)->where('active', true)
+                    ->where('subscription_id', '!=', $subscription->id)
                     ->whereHas('subscription', fn ($query) => $query->where('status', 'ACTIVE'))->exists();
             if ($conflict) {
-                throw ValidationException::withMessages(['status' => 'Não é possível reativar: o paciente já participa de outra assinatura ativa (titular ou dependente). Resolva os vínculos antes de reativar.']);
+                throw ValidationException::withMessages(['status' => 'Titular ou dependente já participa de outra assinatura ativa. Resolva os vínculos antes de reativar.']);
             }
+        }
+        if ($status === 'CANCELED') {
+            $subscription->dues()->where('status', 'PENDENTE')
+                ->where('competence', '>', CarbonImmutable::today((string) config('sistema_dez.timezone'))->startOfMonth()->toDateString())
+                ->update(['status' => 'CANCELADA']);
         }
         $subscription->forceFill([
             'status' => $status,
             'ended_at' => $status === 'CANCELED' ? CarbonImmutable::today((string) config('sistema_dez.timezone')) : null,
         ])->save();
+        if ($reactivating) {
+            $due = $this->generateDue($subscription, $subscription->plan);
+            if ($due?->status === 'CANCELADA') {
+                $due->forceFill(['status' => 'PENDENTE'])->save();
+            }
+        }
     }
 
-    private function generateDue(LoyaltySubscription $subscription, LoyaltyPlan $plan, ?CarbonImmutable $fromCompetence = null): LoyaltyDue
+    private function generateDue(LoyaltySubscription $subscription, LoyaltyPlan $plan, ?CarbonImmutable $fromCompetence = null): ?LoyaltyDue
     {
+        if ($subscription->status !== 'ACTIVE') {
+            return null;
+        }
         $competence = ($fromCompetence
             ? CarbonImmutable::parse($fromCompetence)->addMonth()
             : CarbonImmutable::today((string) config('sistema_dez.timezone'))
         )->startOfMonth();
         $dueDate = $competence->setDay(min($plan->due_day, $competence->daysInMonth));
-        if ($dueDate->lessThan(CarbonImmutable::today((string) config('sistema_dez.timezone')))) {
+        if ($fromCompetence === null && $dueDate->lessThan(CarbonImmutable::today((string) config('sistema_dez.timezone')))) {
             $dueDate = CarbonImmutable::today((string) config('sistema_dez.timezone'));
         }
 

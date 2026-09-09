@@ -14,12 +14,15 @@ class LoyaltyEligibility
     public function planForAgreement(string $agreementId): ?LoyaltyPlan
     {
         /** @var LoyaltyPlan|null $plan */
-        return LoyaltyPlan::query()->where('agreement_id', $agreementId)->where('active', true)->first();
+        return LoyaltyPlan::query()->where('agreement_id', $agreementId)->first();
     }
 
     /** @return array{eligible: bool, reason: ?string, subscription: ?LoyaltySubscription} */
     public function check(LoyaltyPlan $plan, Patient $patient): array
     {
+        if (! $plan->active) {
+            return ['eligible' => false, 'reason' => 'Este plano Sou DEZ está inativo. Utilize outro convênio.', 'subscription' => null];
+        }
         $subscription = $this->activeSubscriptionFor($plan->id, $patient->id);
         if (! $subscription) {
             return ['eligible' => false, 'reason' => 'O paciente não possui assinatura Sou DEZ ativa para este plano. Cadastre a assinatura no módulo Sou DEZ ou use o convênio Particular.', 'subscription' => null];

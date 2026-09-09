@@ -213,6 +213,11 @@ a { color: var(--dez-teal); text-decoration: none; font-size: 11px; font-weight:
 .inline-actions input[type="date"] { height: 34px; border: 1px solid var(--dez-line, #dfe7ea); border-radius: 8px; padding: 0 8px; font-size: 11px; }
 .export-row { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
 .export-row a.dez-button { text-decoration: none; }
+
+.mt-page, .mt-page .stack-gap { min-width: 0; }
+.mt-table-scroll { max-width: 100%; overflow-x: auto; overscroll-behavior-x: contain; }
+.mt-table-scroll .data-table { min-width: 720px; }
+
 /* WhatsApp (T2/T3 — fork AppChat) */
 .whatsapp-lines { list-style: none; margin: 10px 0; padding: 0; display: grid; gap: 8px; }
 .whatsapp-line { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: space-between; border: 1px solid var(--dez-line, #dfe7ea); border-radius: 10px; padding: 10px 12px; background: white; }

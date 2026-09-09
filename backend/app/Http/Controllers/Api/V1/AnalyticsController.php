@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Api\V1;
 
+use App\Enums\AsoStatus;
 use App\Enums\AsoType;
 use App\Http\Controllers\Controller;
 use App\Models\Appointment;
@@ -29,8 +30,8 @@ class AnalyticsController extends Controller
         ]);
 
         $timezone = config('sistema_dez.timezone');
-        $to = isset($data['to']) ? CarbonImmutable::parse($data['to'])->endOfDay() : CarbonImmutable::today($timezone)->endOfDay();
-        $from = isset($data['from']) ? CarbonImmutable::parse($data['from'])->startOfDay() : $to->subDays(29)->startOfDay();
+        $to = isset($data['to']) ? CarbonImmutable::parse($data['to'], $timezone)->endOfDay() : CarbonImmutable::today($timezone)->endOfDay();
+        $from = isset($data['from']) ? CarbonImmutable::parse($data['from'], $timezone)->startOfDay() : $to->subDays(29)->startOfDay();
 
         $appointmentQuery = Appointment::query()
             ->when($data['unit_id'] ?? null, fn ($query, $id) => $query->whereHas('serviceOffering', fn ($offering) => $offering->where('unit_id', $id)))
@@ -95,7 +96,7 @@ class AnalyticsController extends Controller
         $cashBreak = (float) $closedRegisters->sum('cash_difference');
 
         $movementQuery = CashMovement::query()->whereBetween('created_at', [$from->utc(), $to->utc()])
-            ->when($data['unit_id'] ?? null, fn ($query, $id) => $query->whereHas('cashRegister', fn ($register) => $register->where('unit_id', $id)));
+            ->when($data['unit_id'] ?? null, fn ($query, $id) => $query->whereHas('register', fn ($register) => $register->where('unit_id', $id)));
         $sangrias = (float) (clone $movementQuery)->where('type', 'SANGRIA')->sum('gross_amount');
         $payoutsPaid = (float) (clone $movementQuery)->where('type', 'REPASSE')->sum('gross_amount');
 
@@ -108,12 +109,12 @@ class AnalyticsController extends Controller
         $aging = ['a_vencer' => 0.0, 'vencida_30' => 0.0, 'vencida_60' => 0.0, 'vencida_90' => 0.0, 'vencida_90_mais' => 0.0];
         foreach ($openInvoices as $invoice) {
             $open = (float) $invoice->subtotal_gross - (float) $invoice->settled_amount;
-            $due = CarbonImmutable::parse($invoice->due_at);
+            $due = CarbonImmutable::parse($invoice->due_at, $timezone);
             $bucket = match (true) {
                 $due->greaterThanOrEqualTo($today) => 'a_vencer',
-                $today->diffInDays($due) <= 30 => 'vencida_30',
-                $today->diffInDays($due) <= 60 => 'vencida_60',
-                $today->diffInDays($due) <= 90 => 'vencida_90',
+                $due->diffInDays($today) <= 30 => 'vencida_30',
+                $due->diffInDays($today) <= 60 => 'vencida_60',
+                $due->diffInDays($today) <= 90 => 'vencida_90',
                 default => 'vencida_90_mais',
             };
             $aging[$bucket] = round($aging[$bucket] + $open, 2);
@@ -128,7 +129,7 @@ class AnalyticsController extends Controller
 
         $dueLimit = CarbonImmutable::today($timezone)->addDays((int) config('sistema_dez.mt_due_warning_days'));
         $asosDue = MtAso::query()->where('type', AsoType::Periodico)
-            ->whereNot('status', 'CANCELLED')
+            ->whereNot('status', AsoStatus::Cancelado->value)
             ->whereDate('expires_at', '<=', $dueLimit)
             ->when($data['agreement_id'] ?? null, fn ($query, $id) => $query->where('agreement_id', $id))
             ->count();
@@ -172,14 +173,19 @@ class AnalyticsController extends Controller
             'from' => ['nullable', 'date'],
             'to' => ['nullable', 'date'],
             'agreement_id' => ['nullable', 'uuid', 'exists:agreements,id'],
+            'unit_id' => ['nullable', 'uuid', 'exists:units,id'],
+            'doctor_id' => ['nullable', 'uuid', 'exists:professionals,id'],
         ]);
 
         $timezone = config('sistema_dez.timezone');
-        $to = isset($data['to']) ? CarbonImmutable::parse($data['to'])->endOfDay() : CarbonImmutable::today($timezone)->endOfDay();
-        $from = isset($data['from']) ? CarbonImmutable::parse($data['from'])->startOfDay() : $to->subDays(29)->startOfDay();
+        $to = isset($data['to']) ? CarbonImmutable::parse($data['to'], $timezone)->endOfDay() : CarbonImmutable::today($timezone)->endOfDay();
+        $from = isset($data['from']) ? CarbonImmutable::parse($data['from'], $timezone)->startOfDay() : $to->subDays(29)->startOfDay();
 
         $rows = match ($data['type']) {
             'production' => Appointment::query()
+                ->when($data['agreement_id'] ?? null, fn ($query, $id) => $query->whereHas('serviceOffering', fn ($offering) => $offering->where('agreement_id', $id)))
+                ->when($data['unit_id'] ?? null, fn ($query, $id) => $query->whereHas('serviceOffering', fn ($offering) => $offering->where('unit_id', $id)))
+                ->when($data['doctor_id'] ?? null, fn ($query, $id) => $query->whereHas('serviceOffering', fn ($offering) => $offering->where('professional_id', $id)))
                 ->whereBetween('scheduled_at', [$from->utc(), $to->utc()])
                 ->where('status', 'DONE')
                 ->join('service_offerings', 'service_offerings.id', '=', 'appointments.service_offering_id')
@@ -189,6 +195,9 @@ class AnalyticsController extends Controller
                 ->get()
                 ->map(fn ($row): array => [$row->name, $row->appointments, $row->revenue]),
             'revenue' => Appointment::query()
+                ->when($data['agreement_id'] ?? null, fn ($query, $id) => $query->whereHas('serviceOffering', fn ($offering) => $offering->where('agreement_id', $id)))
+                ->when($data['unit_id'] ?? null, fn ($query, $id) => $query->whereHas('serviceOffering', fn ($offering) => $offering->where('unit_id', $id)))
+                ->when($data['doctor_id'] ?? null, fn ($query, $id) => $query->whereHas('serviceOffering', fn ($offering) => $offering->where('professional_id', $id)))
                 ->whereBetween('paid_at', [$from->utc(), $to->utc()])
                 ->where('payment_status', 'PAID')
                 ->join('service_offerings', 'service_offerings.id', '=', 'appointments.service_offering_id')
@@ -208,8 +217,9 @@ class AnalyticsController extends Controller
                     $invoice->due_at, (float) $invoice->subtotal_gross - (float) $invoice->settled_amount,
                 ]),
             'asos_due' => MtAso::query()
+                ->when($data['agreement_id'] ?? null, fn ($query, $id) => $query->where('agreement_id', $id))
                 ->where('type', AsoType::Periodico)
-                ->whereNot('status', 'CANCELLED')
+                ->whereNot('status', AsoStatus::Cancelado->value)
                 ->whereDate('expires_at', '<=', CarbonImmutable::today($timezone)->addDays((int) config('sistema_dez.mt_due_warning_days')))
                 ->with(['patient:id,name', 'agreement:id,name', 'sector:id,name', 'function:id,name'])
                 ->get()

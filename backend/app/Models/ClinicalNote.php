@@ -3,9 +3,11 @@
 namespace App\Models;
 
 use App\Services\ClinicalHtml;
+use Database\Factories\ClinicalNoteFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
+use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -13,7 +15,8 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 #[Fillable(['appointment_id', 'patient_id', 'professional_id', 'kind', 'content_html', 'created_by', 'updated_by', 'retention_until'])]
 class ClinicalNote extends Model
 {
-    use HasUuids;
+    /** @use HasFactory<ClinicalNoteFactory> */
+    use HasFactory, HasUuids;
 
     public const KIND_EVOLUCAO = 'EVOLUCAO';
 

@@ -3,8 +3,10 @@
 namespace App\Models;
 
 use Carbon\CarbonImmutable;
+use Database\Factories\B2bInvoiceFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
+use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -12,7 +14,8 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 #[Fillable(['agreement_id', 'competence', 'status', 'subtotal_gross', 'settled_amount', 'issued_at', 'due_at', 'sent_at', 'settled_at', 'proof_reference', 'created_by'])]
 class B2bInvoice extends Model
 {
-    use HasUuids;
+    /** @use HasFactory<B2bInvoiceFactory> */
+    use HasFactory, HasUuids;
 
     protected function casts(): array
     {

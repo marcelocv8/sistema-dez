@@ -3,8 +3,10 @@
 namespace App\Models;
 
 use Carbon\CarbonImmutable;
+use Database\Factories\AttendanceEventFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
+use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
@@ -14,7 +16,8 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 #[Fillable(['user_id', 'service_date', 'logged_in_at'])]
 class AttendanceEvent extends Model
 {
-    use HasUuids;
+    /** @use HasFactory<AttendanceEventFactory> */
+    use HasFactory, HasUuids;
 
     public const UPDATED_AT = null;
 

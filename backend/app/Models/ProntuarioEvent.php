@@ -2,15 +2,18 @@
 
 namespace App\Models;
 
+use Database\Factories\ProntuarioEventFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
+use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 #[Fillable(['patient_id', 'appointment_id', 'subject_id', 'event', 'by_user_id', 'payload'])]
 class ProntuarioEvent extends Model
 {
-    use HasUuids;
+    /** @use HasFactory<ProntuarioEventFactory> */
+    use HasFactory, HasUuids;
 
     public const VIEWED = 'VISUALIZADO';
 

@@ -2,15 +2,18 @@
 
 namespace App\Models;
 
+use Database\Factories\ChatMessageFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
+use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 #[Fillable(['chat_conversation_id', 'user_id', 'body', 'patient_id', 'appointment_id', 'created_at'])]
 class ChatMessage extends Model
 {
-    use HasUuids;
+    /** @use HasFactory<ChatMessageFactory> */
+    use HasFactory, HasUuids;
 
     public const UPDATED_AT = null;
 

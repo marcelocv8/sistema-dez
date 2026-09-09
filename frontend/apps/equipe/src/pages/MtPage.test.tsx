@@ -83,3 +83,37 @@ test('aba empresas lista setores funções e riscos', async () => {
   expect(document.body.textContent).toContain('Ruído');
   expect(document.body.textContent).not.toContain('Criar setor');
 });
+
+async function changeInput(input: HTMLInputElement, value: string) {
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, value);
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+  });
+}
+
+test('troca de CPF descarta identificação anterior e resposta atrasada', async () => {
+  vi.mocked(api.mtOptions).mockResolvedValue(options as never);
+  vi.mocked(api.mtDue).mockResolvedValue({ days: 30, items: [] } as never);
+  vi.mocked(api.mtAsos).mockResolvedValue({ data: { items: [], page: 1, pages: 1, total: 0 } } as never);
+  let resolveLookup!: (patient: never) => void;
+  vi.mocked(api.lookupPatient).mockImplementationOnce(() => new Promise(resolve => { resolveLookup = resolve; }));
+  const root = await render(<MtPage user={user(['mt.view', 'mt.manage'])} />);
+  await act(async () => ([...document.querySelectorAll('[role="tab"]')].find(el => el.textContent === 'ASOs') as HTMLButtonElement).click());
+  const cpf = [...document.querySelectorAll('input')].find(input => input.closest('label')?.textContent?.includes('CPF do funcionário'))!;
+  await changeInput(cpf, '11144477735');
+  await act(async () => [...document.querySelectorAll('button')].find(button => button.textContent === 'Localizar')!.click());
+  await changeInput(cpf, '16899535009');
+  await act(async () => resolveLookup({ id: 'old-patient', name: 'Paciente anterior' } as never));
+  await act(async () => { await new Promise(resolve => setTimeout(resolve, 40)); });
+  expect(document.body.textContent).not.toContain('Paciente localizado: Paciente anterior');
+  expect([...document.querySelectorAll('button')].find(button => button.textContent === 'Cadastrar ASO')!.disabled).toBe(true);
+  await changeInput(cpf, '11144477735');
+  expect(document.body.textContent).not.toContain('Paciente localizado: Paciente anterior');
+  vi.mocked(api.lookupPatient).mockResolvedValueOnce({ id: 'fresh-patient', name: 'Paciente confirmado' } as never);
+  await act(async () => [...document.querySelectorAll('button')].find(button => button.textContent === 'Localizar')!.click());
+  await waitForText('Paciente localizado: Paciente confirmado');
+  expect(document.body.textContent).toContain('Paciente localizado: Paciente confirmado');
+  await changeInput(cpf, '16899535009');
+  expect(document.body.textContent).not.toContain('Paciente localizado: Paciente confirmado');
+  await act(async () => root.unmount());
+});

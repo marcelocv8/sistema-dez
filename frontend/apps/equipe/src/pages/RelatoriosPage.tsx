@@ -1,17 +1,17 @@
 import { useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery } from '@tanstack/react-query';
 import { api, apiErrorMessage, type AnalyticsSummary } from '@dez/api';
-import { Alert, EmptyState, Panel, SectionTitle, SelectField, TextField } from '@dez/ui';
+import { Alert, Button, EmptyState, Panel, SectionTitle, SelectField, TextField } from '@dez/ui';
 
 function isoDaysAgo(days: number): string {
   const date = new Date();
   date.setDate(date.getDate() - days);
-  return date.toISOString().slice(0, 10);
+  return date.toLocaleDateString('en-CA', { timeZone: 'America/Fortaleza' });
 }
 
 export default function RelatoriosPage() {
   const [from, setFrom] = useState(isoDaysAgo(29));
-  const [to, setTo] = useState(new Date().toISOString().slice(0, 10));
+  const [to, setTo] = useState(isoDaysAgo(0));
   const [agreementId, setAgreementId] = useState('');
 
   const analytics = useQuery({
@@ -19,6 +19,16 @@ export default function RelatoriosPage() {
     queryFn: () => api.analytics({ from, to, agreement_id: agreementId || undefined }),
   });
   const options = useQuery({ queryKey: ['mt-options'], queryFn: api.mtOptions });
+
+  const download = useMutation({
+    mutationFn: async (type: string) => ({ type, blob: await api.analyticsExport(type, { from, to, agreement_id: agreementId || undefined }) }),
+    onSuccess: ({ type, blob }) => {
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement('a'); anchor.href = url; anchor.download = 'dez-' + type + '.csv';
+      document.body.appendChild(anchor); anchor.click(); anchor.remove();
+      window.setTimeout(() => URL.revokeObjectURL(url), 60000);
+    },
+  });
 
   return (
     <div className="page">
@@ -33,12 +43,13 @@ export default function RelatoriosPage() {
           </SelectField>
         </div>
         <div className="export-row">
-          <a className="dez-button dez-button--secondary" href={api.analyticsExportUrl('production', { from, to })} download>CSV produção</a>
-          <a className="dez-button dez-button--secondary" href={api.analyticsExportUrl('revenue', { from, to })} download>CSV receita</a>
-          <a className="dez-button dez-button--secondary" href={api.analyticsExportUrl('b2b_open', {})} download>CSV B2B em aberto</a>
-          <a className="dez-button dez-button--secondary" href={api.analyticsExportUrl('asos_due', {})} download>CSV ASOs a vencer</a>
+          <Button variant="outline" disabled={download.isPending} onClick={() => download.mutate('production')}>CSV produção</Button>
+          <Button variant="outline" disabled={download.isPending} onClick={() => download.mutate('revenue')}>CSV receita</Button>
+          <Button variant="outline" disabled={download.isPending} onClick={() => download.mutate('b2b_open')}>CSV B2B em aberto</Button>
+          <Button variant="outline" disabled={download.isPending} onClick={() => download.mutate('asos_due')}>CSV ASOs a vencer</Button>
         </div>
       </Panel>
+      {download.isError ? <Alert tone="danger" title="Exportação não concluída">{apiErrorMessage(download.error)}</Alert> : null}
       {analytics.isLoading ? <Panel><p>Calculando…</p></Panel> : null}
       {analytics.isError ? <Alert tone="danger" title="Erro">{apiErrorMessage(analytics.error)}</Alert> : null}
       {analytics.data ? <Summary data={analytics.data} /> : null}

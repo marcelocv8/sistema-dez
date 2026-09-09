@@ -2,15 +2,18 @@
 
 namespace App\Models;
 
+use Database\Factories\ReportEventFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
+use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 #[Fillable(['report_id', 'event', 'by_user_id', 'payload'])]
 class ReportEvent extends Model
 {
-    use HasUuids;
+    /** @use HasFactory<ReportEventFactory> */
+    use HasFactory, HasUuids;
 
     public const CREATED = 'CRIADO';
 

@@ -2,15 +2,18 @@
 
 namespace App\Models;
 
+use Database\Factories\RoutineTaskFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
+use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 #[Fillable(['type', 'ref_type', 'ref_id', 'title', 'detail', 'assigned_to', 'due_date', 'status', 'note', 'done_by', 'done_at', 'created_by'])]
 class RoutineTask extends Model
 {
-    use HasUuids;
+    /** @use HasFactory<RoutineTaskFactory> */
+    use HasFactory, HasUuids;
 
     public const CONFIRMACAO = 'CONFIRMACAO';
 

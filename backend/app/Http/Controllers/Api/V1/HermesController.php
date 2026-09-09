@@ -2,10 +2,12 @@
 
 namespace App\Http\Controllers\Api\V1;
 
+use App\Enums\AsoStatus;
 use App\Enums\AsoType;
 use App\Http\Controllers\Controller;
 use App\Models\Appointment;
 use App\Models\B2bInvoice;
+use App\Models\CashMovement;
 use App\Models\CashRegister;
 use App\Models\MtAso;
 use App\Models\Patient;
@@ -28,8 +30,8 @@ class HermesController extends Controller
         ]);
 
         $timezone = config('sistema_dez.timezone');
-        $from = isset($data['from']) ? CarbonImmutable::parse($data['from'])->startOfDay() : CarbonImmutable::today($timezone)->startOfDay();
-        $to = isset($data['to']) ? CarbonImmutable::parse($data['to'])->endOfDay() : $from->addDays(7)->endOfDay();
+        $from = isset($data['from']) ? CarbonImmutable::parse($data['from'], $timezone)->startOfDay() : CarbonImmutable::today($timezone)->startOfDay();
+        $to = isset($data['to']) ? CarbonImmutable::parse($data['to'], $timezone)->endOfDay() : $from->addDays(7)->endOfDay();
         abort_unless($from->diffInDays($to) <= 60, 422, 'Intervalo máximo de 60 dias.');
 
         $appointments = Appointment::query()
@@ -105,10 +107,15 @@ class HermesController extends Controller
     public function cashSummary(Request $request): JsonResponse
     {
         $data = $request->validate(['date' => ['nullable', 'date']]);
-        $date = isset($data['date']) ? CarbonImmutable::parse($data['date']) : CarbonImmutable::today(config('sistema_dez.timezone'));
+        $timezone = config('sistema_dez.timezone');
+        $date = isset($data['date']) ? CarbonImmutable::parse($data['date'], $timezone) : CarbonImmutable::today($timezone);
+        $range = [$date->startOfDay()->utc(), $date->endOfDay()->utc()];
 
-        $registers = CashRegister::query()->where('status', 'FECHADO')->whereDate('closed_at', $date)->get(['id', 'status', 'cash_difference', 'closed_at']);
-        $revenue = (float) Appointment::query()->where('payment_status', 'PAID')->whereDate('paid_at', $date)->sum('price_snapshot');
+        $registers = CashRegister::query()->where('status', 'FECHADO')->whereBetween('closed_at', $range)->get(['id', 'status', 'cash_difference', 'closed_at']);
+        $movements = CashMovement::query()->whereBetween('created_at', $range);
+        $received = (clone $movements)->whereIn('type', ['RECEBIMENTO', 'MENSALIDADE'])->sum('net_amount');
+        $refunded = (clone $movements)->where('type', 'ESTORNO')->sum('net_amount');
+        $revenue = bcsub((string) $received, (string) $refunded, 2);
 
         return response()->json(['data' => [
             'date' => $date->toDateString(),
@@ -148,7 +155,7 @@ class HermesController extends Controller
 
         $asos = MtAso::query()
             ->where('type', AsoType::Periodico)
-            ->whereNot('status', 'CANCELLED')
+            ->whereNot('status', AsoStatus::Cancelado->value)
             ->whereDate('expires_at', '<=', $limit)
             ->when($data['agreement_id'] ?? null, fn ($query, $id) => $query->where('agreement_id', $id))
             ->with(['patient:id,name', 'agreement:id,name', 'sector:id,name', 'function:id,name'])
@@ -177,8 +184,8 @@ class HermesController extends Controller
         ]);
 
         $timezone = config('sistema_dez.timezone');
-        $from = isset($data['from']) ? CarbonImmutable::parse($data['from'])->startOfDay() : CarbonImmutable::today($timezone)->subDays(29)->startOfDay();
-        $to = isset($data['to']) ? CarbonImmutable::parse($data['to'])->endOfDay() : CarbonImmutable::today($timezone)->endOfDay();
+        $from = isset($data['from']) ? CarbonImmutable::parse($data['from'], $timezone)->startOfDay() : CarbonImmutable::today($timezone)->subDays(29)->startOfDay();
+        $to = isset($data['to']) ? CarbonImmutable::parse($data['to'], $timezone)->endOfDay() : CarbonImmutable::today($timezone)->endOfDay();
         abort_unless($from->diffInDays($to) <= 366, 422, 'Intervalo máximo de 366 dias.');
 
         return [$from, $to];

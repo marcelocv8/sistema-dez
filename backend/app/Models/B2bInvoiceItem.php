@@ -2,15 +2,18 @@
 
 namespace App\Models;
 
+use Database\Factories\B2bInvoiceItemFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
+use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 #[Fillable(['b2b_invoice_id', 'appointment_id', 'scheduled_at', 'patient_name', 'procedure_name', 'gross_amount'])]
 class B2bInvoiceItem extends Model
 {
-    use HasUuids;
+    /** @use HasFactory<B2bInvoiceItemFactory> */
+    use HasFactory, HasUuids;
 
     protected function casts(): array
     {

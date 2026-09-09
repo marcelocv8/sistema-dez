@@ -2,15 +2,18 @@
 
 namespace App\Models;
 
+use Database\Factories\PayoutItemFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
+use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 #[Fillable(['payout_id', 'appointment_id', 'gross_amount', 'commission_amount', 'rule'])]
 class PayoutItem extends Model
 {
-    use HasUuids;
+    /** @use HasFactory<PayoutItemFactory> */
+    use HasFactory, HasUuids;
 
     protected function casts(): array
     {

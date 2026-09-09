@@ -2,8 +2,10 @@
 
 namespace App\Models;
 
+use Database\Factories\BudgetFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
+use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -11,7 +13,8 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 #[Fillable(['patient_id', 'unit_id', 'agreement_id', 'status', 'subtotal_gross', 'prescription_path', 'prescription_original_name', 'sent_at', 'resolved_at', 'resolution_note', 'resolved_by', 'created_by'])]
 class Budget extends Model
 {
-    use HasUuids;
+    /** @use HasFactory<BudgetFactory> */
+    use HasFactory, HasUuids;
 
     protected function casts(): array
     {

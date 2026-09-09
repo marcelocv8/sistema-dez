@@ -335,7 +335,7 @@ class StgMtImporter
             $expiresAt = $this->nullableDate($row['data_validade'] ?? null);
             $realizedAt = $this->nullableDate($row['data_realizacao'] ?? null);
 
-            $aso = $legacyId !== null ? MtAso::firstOrNew(['legacy_id' => $legacyId]) : null;
+            $aso = $legacyId !== null ? MtAso::query()->lockForUpdate()->firstOrNew(['legacy_id' => $legacyId]) : null;
 
             if ($aso === null) {
                 $this->issue('MT_ASO_NO_LEGACY_ID', 'mt_aso', null, 'mt_asos.csv', [
@@ -345,6 +345,11 @@ class StgMtImporter
                 continue;
             }
 
+            if ($aso->exists && $aso->events()->exists()) {
+                $this->issue('MT_ASO_LOCAL_CHANGES', 'mt_aso', $legacyId, 'mt_asos.csv', ['message' => 'ASO com ações locais preservado; concilie antes de reimportar.']);
+
+                continue;
+            }
             $wasRecentlyCreated = ! $aso->exists;
             $aso->fill([
                 'patient_id' => $patient->id,
