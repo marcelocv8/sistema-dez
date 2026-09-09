@@ -109,7 +109,7 @@ class AnalyticsController extends Controller
         $aging = ['a_vencer' => 0.0, 'vencida_30' => 0.0, 'vencida_60' => 0.0, 'vencida_90' => 0.0, 'vencida_90_mais' => 0.0];
         foreach ($openInvoices as $invoice) {
             $open = (float) $invoice->subtotal_gross - (float) $invoice->settled_amount;
-            $due = CarbonImmutable::parse($invoice->due_at, $timezone);
+            $due = CarbonImmutable::parse($invoice->getRawOriginal('due_at'), $timezone);
             $bucket = match (true) {
                 $due->greaterThanOrEqualTo($today) => 'a_vencer',
                 $due->diffInDays($today) <= 30 => 'vencida_30',
