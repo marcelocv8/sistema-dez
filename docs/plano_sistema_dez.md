@@ -1,6 +1,17 @@
 # Sistema DEZ — Clínica DEZ
-## Especificação (v0.15)
+## Especificação (v0.16)
 
+> **v0.16** — Banco dev populado com dados mock (`MockDataSeeder` + 20 factories) e
+> **varredura geral via navegador** em 09/09/2026 — §14.22. Login + 17 rotas do app
+> equipe, painel TV, reserva pública e portal do paciente testados de ponta a ponta
+> **clicando ações que gravam**, com 0 erros de console. Correções validadas: reserva
+> pública devolvia 419 em dev (porta do agendamento fora de `SANCTUM_STATEFUL_DOMAINS`),
+> filtro de repasses passou a usar sobreposição de período (repasses do mês corrente
+> visíveis no filtro default) e datas de período exibiam com -1 dia por fuso. Suite
+> backend 170/171 na rodada da varredura (a falha restante, aging analytics, era WIP
+> do dono e foi corrigida/commitada por ele em `fafda1b`), Pint, Vitest e typecheck
+> verdes. Sem commit automático — aguarda autorização do dono.
+>
 > **v0.15** — Bloco WhatsApp (T2 + T3) implementado em 09/09/2026 — §14.21.
 > Integração com o fork AppChat (plugin genérico opcional, 1 instância/banco por
 > empresa — detalhes e decisões em §22.15 do `PLANO_APP_CREDITO_LEVE.md` do
@@ -468,7 +479,7 @@ Solicitação → realização/captura do exame
 
 - **Todos os exames próprios** (não terceirizados): ao liberar o resultado, o sistema gera **credencial temporária** (login/senha, prazo configurável) e a recepção imprime **folha com QR Code/instruções** (mesmo desenho do `laudoportal_model` do STG).
 - **Exames laboratoriais (DB — Diagnósticos do Brasil):** resultados via **integração** ou **acesso ao portal deles** — o cliente sempre sai com o resultado (impressão quando preferir).
-- **Segurança:** credencial com expiração, acesso auditado, documentos fora do webroot com controle de acesso (§7.6, LGPD).
+- **Segurança:** credencial com expiração, acesso auditado, documentos fora do webroot com controle de acesso (§7.6, LGPD). **Convenção (§14.22):** o app gera login em **minúsculas** (`Str::random(8)` em minúsculo) e o login normaliza a entrada com `mb_strtolower` — seeders/imports de credenciais de portal devem seguir minúsculas, senão o acesso falha.
 
 ### 6.20 Consulta de preços (tabela de preços) — **NOVO (decisão do dono 31/08/2026)**
 **Objetivo:** recepção consulta o preço de **consultas e procedimentos** no balcão em segundos — o paciente pergunta "quanto custa?" e a resposta sai da tela, sem adivinhar nem perguntar ao caixa. Essencial no dia-a-dia do atendimento; é a mesma fonte que alimenta orçamentos (§6.16).
@@ -679,7 +690,7 @@ Cada decisão virou tarefa de implementação (BE/FE/QA). **ÚLTIMA** = última 
 
 ---
 
-## 14. Andamento da implementação — ciclos v0.5 a v0.12 (30/08–07/09/2026)
+## 14. Andamento da implementação — ciclos v0.5 a v0.16 (30/08–09/09/2026)
 
 Registro do que foi **implementado e validado** neste ciclo. Não substitui decisões pendentes do §11 — o dono define os rumos a partir daqui.
 
@@ -1328,6 +1339,45 @@ Checklist autocontido — um agente ou o dono executa sem contexto extra. **Regr
 2. Push (commit já autorizado e realizado; push aguarda instrução do dono).
 3. Go-live futuro: instância AppChat da clínica com banco próprio + parear linha + AgentToken `whatsapp.events` na UI + envs nos dois lados — **zero código**.
 4. Evoluções fora do escopo: botões interativos (via Meta oficial), orçamentos por WhatsApp (§6.16 usa o mesmo motor), agendamento automático via WhatsApp (T19, ÚLTIMA).
+
+### 14.22 População de dados mock + varredura geral via navegador (09/09/2026)
+
+**Situação: implementado e validado localmente (banco dev `sistema_dez` + navegadores reais via CDP). Sem commit automático — aguarda autorização do dono.**
+
+Motivação: o dono pediu banco com substância para testar todas as páginas ("sem páginas vazias") e uma **validação geral antes do teste dele**, varrendo botões, tempos de abertura e carregamento de dados.
+
+#### MockDataSeeder (backend)
+
+- **Arquivos:** `database/seeders/MockDataSeeder.php` + registro guardado no `DatabaseSeeder` + **20 factories novas** (`Budget(+Item)`, `B2bInvoice(+Item)`, `CashMovement`, `ChatConversation/Message`, `AttendanceEvent`, `Payout(+Item)`, `Report(+Event)`, `ClinicalNote`, `PatientAlert`, `ProntuarioEvent`, `PortalAccess`, `MtAsoEvent`, `RoutineTask`, `ProfessionalProcedureCommission`, `PaymentMethod`) + trait `HasFactory` nos 20 modelos correspondentes.
+- **Guardas:** roda somente em `local` **e** banco `sistema_dez` (mesmo padrão do `SchedulingE2ESeeder`, que exige `sistema_dez_test`); marcador `app_settings.mock_seed_version` — reexecução sem `REFRESH_MOCK=1` aborta; com `REFRESH_MOCK=1` descarta e refaz os dados **operacionais**, preservando catálogo STG importado (998 procedimentos/40+ convênios/87 profissionais/2.313 preços), o **exemplo validado** de oferta/escala do dono (§14.8) e o usuário `marcelo@appcredito.com.br`.
+- **Dados criados (base 09/09):** 80 pacientes fictícios (CPF válido com hash+pepper, consentimento `MOCK`), 693 agendamentos (passado 45–60 d com pagamentos/caixa, hoje com fila, futuro 21 d), 17 entradas de fila (prioridades legais), 23 caixas + ~155 movimentos (RECEBIMENTO com recibo sequencial por caixa, SANGRIA, MENSALIDADE), 26 orçamentos + 58 itens, B2B (empresa + 3 faturas/45 itens + baixa), 4 repasses + itens + comissões, 36 laudos sobre templates STG reais + 84 eventos + 3 acessos de portal, prontuário (41 notas, 15 alertas, 77 eventos), Sou DEZ (2 planos/18 assinaturas/6 dependentes/72 mensalidades), MT (empresa + 4 riscos/3 setores/5 funções/26 ASOs + 38 eventos), 5 conversas de chat + 48 mensagens, 96 eventos de ponto, 22+ rotinas, 81 logs de auditoria, 8 ofertas/escalas + ~1.230 ocorrências (FIXED_SLOT e ARRIVAL_BLOCK).
+- **Credenciais mock (para o dono testar):** `mock-admin@dez.local` (e `mock-recepcao@`, `mock-caixa@`, `mock-gerente@`, `mock-supervisor@`, `mock-medico1/2/3@dez.local`) — senha `MockDez#2026`. Portal do paciente: `mock001001`/`mock001002`/`mock001003` — senha `Portal#2026`.
+- **Correção no seeder:** logins do portal gerados em **minúsculas** (convenção do app: `Str::random(8)` minúsculo + `mb_strtolower` no login — registros anteriores em maiúsculas foram normalizados no banco; convenção anotada em §6.19).
+
+#### Varredura de navegador (CDP — browser-use)
+
+- **Equipe (`:5175`):** login medido + 17 rotas (`/visao-geral`, `/agenda`, `/recepcao`, `/prontuario`, `/laudos`, `/precos`, `/cadastros`, `/caixa`, `/faturamento-b2b`, `/repasses`, `/ponto`, `/batepapo`, `/orcamentos`, `/rotinas`, `/sou-dez`, `/medicina-trabalho`, `/relatorios`) — transições client-side **0,2–0,9 s** até dados estáveis; **0 erros de console** em todas. Bate-papo: 13,5 s na 1ª visita (chunk lazy + primeira carga de API) — único ponto de atenção.
+- **Ações que gravam — todas aprovadas com verificação no banco:** agendamento interno (busca por CPF preenche dados; confirma cria origem RECEPTION), check-in + chamar próxima (A003), cobrança no caixa (recibo 15) + sangria (cofre 215→115) + cobrança de ficha de data antiga, mensalidade Sou DEZ no caixa, geração/tick de rotinas (fluxo de 2 etapas "Tick → Confirmar feito"), horário de saída do ponto, confirmação de repasse (OPEN→CONFIRMED), fatura B2B (ver itens → encaminhar → baixa com comprovante → PAGA), criação e envio de orçamento, criação de laudo a partir de modelo (finalizar bloqueado por regra correta — ver correção 3), nota + alerta no prontuário, cadastro de ASO (empresa/setor/função), relatórios/BI com números reais (receita R$ 1.938,00 · 318→209 · no-show 13,3%) e exportação CSV.
+- **Outros apps:** painel TV (fila ao vivo: "CHAMANDO AGORA A003 · Mariana" + próximas senhas), **reserva pública completa em 1,6 s** (protocolo gerado + link privado + gerenciamento), portal do paciente (login + laudo publicado com conteúdo).
+- **Ambientes auxiliares:** apps fora de `FRONTEND_URLS`/`SANCTUM` do dev bloqueiam por CORS/CSRF — a varredura usou API `:8002` (override de env) + agendamento `:4176`, painel-tv `:5180` e paciente `:5181` (instâncias descartáveis; derrubar quando quiser).
+
+#### Correções decorrentes (validadas no navegador e por testes)
+
+1. **Reserva pública devolvia 419 em dev** — `SANCTUM_STATEFUL_DOMAINS` no `.env` local incluía a porta do agendamento (5174); POST anônimo caía no `VerifyCsrfToken` (armadilha já documentada no `AGENTS.md` para E2E). **Corrigido** removendo 5174/127.0.0.1:5174 das stateful domains (equipe 5175 mantida). Reserva pública revalidada na 5174 com a API :8000 (protocolo gerado em 1,6 s).
+2. **Repasses invisíveis no mês corrente + datas com -1 dia** — `PayoutController::index` filtrava por **contenção** (`period_from >= from && period_to <= to`); com o filtro default (De = 1º do mês, Até = hoje) o repasse do mês corrente (period_to = fim do mês) nunca aparecia. **Corrigido para sobreposição** (`period_to >= from && period_from <= to`) — semântica "repasses do período" (PayoutTest 7/7; nenhum teste acoplado à semântica anterior). Em `RepassesPage`, `formatDay` parseava `2026-09-01T00:00:00Z` com o fuso local (-3) e exibia **31/08**; normalizado para a parte da data (meio-dia UTC) — exibe 01/09 a 30/09. Vitest da página 2/2; typecheck ok.
+3. **Finalizar laudo exige atendimento iniciado e pago/autorizado** — 422 com mensagem clara na UI (regra do `ReportEligibility`, comportamento **correto**, não é bug): a varredura criou laudo sobre atendimento não pago e a tela apresentou a crítica corretamente.
+
+#### Validação do ciclo
+
+- Suite backend **170/171** (Pint ok) na rodada da varredura — a única falha era `RemainingBlocksRegressionTest::test_aging_respects_calendar_day_boundaries`, **WIP paralelo do dono** (arquivo untracked; falha também sem o diff dele, confirmado via stash). **O dono corrigiu e commitou em seguida** (`fafda1b`, parse de `due_at` da string crua) e o teste passou a ficar verde (revalidado neste ciclo).
+- Vitest `RepassesPage` 2/2; typecheck `@dez/equipe` ok.
+- Nada commitado neste ciclo — o dono já tinha commitado em paralelo (`b3b6fc7`, incluindo as factories de blocos) os itens anteriores; os **4 arquivos deste ciclo ficaram pendentes de commit** (PayoutController, RepassesPage, MockDataSeeder, docs).
+
+#### Pendente
+
+1. Commit/push das factories + seeder + correções (autorização do dono).
+2. Bate-papo: pré-carga do chunk/API da 1ª visita (13,5 s) — avaliar.
+3. Avaliar replicar a correção de `formatDay` (datas date-only via fuso) em outras páginas que exibem datas puras.
 
 ---
 
