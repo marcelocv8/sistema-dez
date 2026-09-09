@@ -153,7 +153,7 @@ class ImplementedBlocksRegressionTest extends TestCase
     {
         $this->actingAs(User::factory()->create());
         $price = ProcedurePrice::factory()->create(['amount' => '130.00']);
-        foreach ([['valid_until' => now()->subDay()], ['valid_from' => now()->addDay()], ['unit_id' => Unit::factory()->create()->id]] as $override) {
+        foreach ([['valid_until' => CarbonImmutable::today((string) config('sistema_dez.timezone'))->subDay()->toDateString()], ['valid_from' => CarbonImmutable::today((string) config('sistema_dez.timezone'))->addDay()->toDateString()], ['unit_id' => Unit::factory()->create()->id]] as $override) {
             ProcedurePrice::factory()->create(['procedure_id' => $price->procedure_id, 'agreement_id' => $price->agreement_id, 'unit_id' => $price->unit_id, ...$override]);
         }
         $options = $this->getJson('/api/v1/team/budgets/price-options?agreement_id='.$price->agreement_id.'&unit_id='.$price->unit_id)->assertOk()->json('data');
@@ -167,7 +167,7 @@ class ImplementedBlocksRegressionTest extends TestCase
         $this->assertDatabaseHas('budget_items', ['procedure_price_id' => $price->id, 'amount' => '130.00']);
         $input['agreement_id'] = Agreement::factory()->create()->id;
         $this->postJson('/api/v1/team/budgets', $input)->assertUnprocessable();
-        $price->update(['valid_until' => now()->subDay()]);
+        $price->update(['valid_until' => CarbonImmutable::today((string) config('sistema_dez.timezone'))->subDay()->toDateString()]);
         $input['agreement_id'] = $price->agreement_id;
         $this->postJson('/api/v1/team/budgets', $input)->assertUnprocessable();
     }
@@ -176,7 +176,7 @@ class ImplementedBlocksRegressionTest extends TestCase
     {
         $report = $this->report();
         $this->postJson('/api/v1/team/reports/'.$report->id.'/finalize')->assertOk();
-        $report->refresh()->update(['retention_until' => now()->subDay()]);
+        $report->refresh()->update(['retention_until' => CarbonImmutable::today((string) config('sistema_dez.timezone'))->subDay()->toDateString()]);
         $audit = AuditLog::query()->where('entity_key', $report->id)->firstOrFail();
         $audit->update(['before' => ['content_html' => 'old secret'], 'after' => ['content_backup' => 'old backup', 'adendo' => 'old adendo']]);
         $this->artisan('reports:purge-expired --dry-run')->assertSuccessful();

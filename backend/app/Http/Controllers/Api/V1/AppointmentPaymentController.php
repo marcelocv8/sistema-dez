@@ -12,6 +12,7 @@ use App\Models\Payout;
 use App\Models\PayoutItem;
 use App\Models\QueueEntry;
 use App\Services\AuditRecorder;
+use App\Services\LoyaltyEligibility;
 use Carbon\CarbonImmutable;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -20,14 +21,14 @@ use Illuminate\Validation\ValidationException;
 
 class AppointmentPaymentController extends Controller
 {
-    public function __construct(private readonly AuditRecorder $audit) {}
+    public function __construct(private readonly AuditRecorder $audit, private readonly LoyaltyEligibility $loyalty) {}
 
     public function checkout(Request $request, Appointment $appointment): JsonResponse
     {
         $data = $request->validate(['payment_method_code' => ['required', 'string', 'max:20']]);
 
         $result = DB::transaction(function () use ($request, $appointment, $data): array {
-            $appointment = Appointment::query()->with(['serviceOffering.unit', 'serviceOffering.procedure'])->lockForUpdate()->findOrFail($appointment->id);
+            $appointment = Appointment::query()->with(['patient', 'serviceOffering.unit', 'serviceOffering.procedure'])->lockForUpdate()->findOrFail($appointment->id);
             if (! in_array($appointment->status, ['CONFIRMED', 'CHECKED_IN'], true)) {
                 throw ValidationException::withMessages(['appointment' => 'Somente fichas confirmadas ou com check-in podem ser cobradas.']);
             }
@@ -37,6 +38,13 @@ class AppointmentPaymentController extends Controller
             $offering = $appointment->serviceOffering;
             if (! $offering->active || ! $offering->unit->active || ! $offering->unit->operational_enabled) {
                 throw ValidationException::withMessages(['appointment' => 'A oferta não está habilitada para a operação.']);
+            }
+            $loyaltyPlan = $this->loyalty->planForAgreement($offering->agreement_id);
+            if ($loyaltyPlan && $appointment->patient) {
+                $eligibility = $this->loyalty->check($loyaltyPlan, $appointment->patient);
+                if (! $eligibility['eligible']) {
+                    throw ValidationException::withMessages(['appointment' => (string) $eligibility['reason']]);
+                }
             }
             $register = CashRegister::query()->where('unit_id', $offering->unit_id)->where('status', 'ABERTO')->lockForUpdate()->first();
             if (! $register) {

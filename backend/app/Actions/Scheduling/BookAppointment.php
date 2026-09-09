@@ -9,13 +9,14 @@ use App\Models\Professional;
 use App\Models\ScheduleOccurrence;
 use App\Models\ServiceOffering;
 use App\Models\User;
+use App\Services\LoyaltyEligibility;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
 class BookAppointment
 {
-    public function __construct(private readonly BuildAvailability $availability, private readonly MaterializeScheduleOccurrences $materialize) {}
+    public function __construct(private readonly BuildAvailability $availability, private readonly MaterializeScheduleOccurrences $materialize, private readonly LoyaltyEligibility $loyalty) {}
 
     /** @param array<string, mixed> $data */
     public function handle(array $data, ?User $actor = null): Appointment
@@ -46,6 +47,8 @@ class BookAppointment
                 || ! $offering->catalogLink?->active)) {
                 throw ValidationException::withMessages(['offering_id' => 'A oferta não está habilitada para a operação.']);
             }
+            $this->assertLoyalty($offering, $data);
+            $patient = $this->resolvePatient($data, $actor);
             $existing = Appointment::query()->where('idempotency_key', $data['idempotency_key'])->first();
             if ($existing) {
                 return $this->existingOrFail($existing, $data, $startsAt, $actor);
@@ -73,20 +76,6 @@ class BookAppointment
                 throw ValidationException::withMessages(['starts_at' => 'Este horário não está mais disponível.']);
             }
 
-            $cpf = $data['patient']['cpf'];
-            $cpfHash = hash_hmac('sha256', $cpf, (string) config('sistema_dez.identity_pepper'));
-            $patient = Patient::query()->firstOrCreate(
-                ['cpf_hash' => $cpfHash],
-                [
-                    'name' => $data['patient']['name'],
-                    'cpf_last_four' => substr($cpf, -4),
-                    'birth_date' => $data['patient']['birth_date'] ?? null,
-                    'phone' => $data['patient']['phone'],
-                    'email' => $data['patient']['email'] ?? null,
-                    'privacy_consent_at' => now(),
-                    'privacy_consent_source' => $actor ? 'RECEPTION' : 'PUBLIC_BOOKING',
-                ],
-            );
             $managementToken = hash_hmac('sha256', $data['idempotency_key'], (string) config('sistema_dez.management_token_secret'));
             $appointment = Appointment::query()->create([
                 'patient_id' => $patient->id,
@@ -123,6 +112,49 @@ class BookAppointment
         $appointment->setAttribute('management_token', hash_hmac('sha256', $idempotencyKey, (string) config('sistema_dez.management_token_secret')));
 
         return $appointment->loadMissing('serviceOffering.procedure');
+    }
+
+    /**
+     * Funcionários MT chegam por `patient_id` (paciente já cadastrado); o resto
+     * do sistema continua resolvendo/criando por CPF.
+     *
+     * @param  array<string, mixed>  $data
+     */
+    private function resolvePatient(array $data, ?User $actor): Patient
+    {
+        if (! empty($data['patient_id'])) {
+            return Patient::query()->whereKey($data['patient_id'])->firstOrFail();
+        }
+
+        $cpf = $data['patient']['cpf'];
+        $cpfHash = hash_hmac('sha256', $cpf, (string) config('sistema_dez.identity_pepper'));
+
+        return Patient::query()->firstOrCreate(
+            ['cpf_hash' => $cpfHash],
+            [
+                'name' => $data['patient']['name'],
+                'cpf_last_four' => substr($cpf, -4),
+                'birth_date' => $data['patient']['birth_date'] ?? null,
+                'phone' => $data['patient']['phone'],
+                'email' => $data['patient']['email'] ?? null,
+                'privacy_consent_at' => now(),
+                'privacy_consent_source' => $actor ? 'RECEPTION' : 'PUBLIC_BOOKING',
+            ],
+        );
+    }
+
+    /** @param array<string, mixed> $data */
+    private function assertLoyalty(ServiceOffering $offering, array $data): void
+    {
+        $plan = $this->loyalty->planForAgreement($offering->agreement_id);
+        if (! $plan) {
+            return;
+        }
+        $patient = $this->resolvePatient($data, null);
+        $eligibility = $this->loyalty->check($plan, $patient);
+        if ($eligibility === null || ! $eligibility['eligible']) {
+            throw ValidationException::withMessages(['patient' => $eligibility['reason'] ?? 'O paciente não possui assinatura Sou DEZ ativa para este plano. Cadastre a assinatura no módulo Sou DEZ ou use o convênio Particular.']);
+        }
     }
 
     /** @param array<string, mixed> $data */

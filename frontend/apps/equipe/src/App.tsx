@@ -20,6 +20,7 @@ const ProntuarioPage = lazy(() => import('./pages/ProntuarioPage'));
 const BudgetsPage = lazy(() => import('./pages/BudgetsPage'));
 const RoutinesPage = lazy(() => import('./pages/RoutinesPage'));
 const RepassesPage = lazy(() => import('./pages/RepassesPage'));
+const SouDezPage = lazy(() => import('./pages/SouDezPage'));
 
 export function App() {
   const queryClient = useQueryClient();
@@ -43,6 +44,7 @@ export function App() {
     <Route path="/batepapo" element={<ChatPage />} />
     <Route path="/orcamentos" element={<BudgetsPage user={currentUser.data} />} />
     <Route path="/rotinas" element={<RoutinesPage user={currentUser.data} />} />
+    <Route path="/sou-dez" element={<SouDezPage user={currentUser.data} />} />
     <Route path="*" element={<Navigate to="/visao-geral" replace />} />
   </Routes></Suspense></AppShell></BrowserRouter>;
 }

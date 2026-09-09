@@ -289,6 +289,44 @@ export type B2bInvoice = {
   items: B2bInvoiceItem[];
 };
 
+export type LoyaltyPlan = {
+  id: UUID;
+  name: string;
+  monthly_fee: string;
+  due_day: number;
+  active: boolean;
+  agreement: { id: UUID; name: string | null; is_default: boolean };
+  active_subscriptions_count: number;
+};
+export type LoyaltyDue = {
+  id: UUID;
+  competence: string;
+  amount: string;
+  due_date: string;
+  status: 'PENDENTE' | 'PAGA' | 'CANCELADA';
+  overdue: boolean;
+  paid_at: string | null;
+  subscription: { id: UUID; plan_name: string | null; patient: { id: UUID; name: string; cpf_last_four: string } | null } | null;
+};
+export type LoyaltySubscription = {
+  id: UUID;
+  status: 'ACTIVE' | 'CANCELED' | 'BLOCKED';
+  started_at: string;
+  ended_at: string | null;
+  notes: string | null;
+  plan: { id: UUID; name: string; monthly_fee: string; due_day: number; agreement: { id: UUID; name: string | null } } | null;
+  patient: { id: UUID; name: string; cpf_last_four: string } | null;
+  dependents: { id: UUID; active: boolean; patient: { id: UUID | null; name: string | null; cpf_last_four: string | null } }[];
+  dues: { id: UUID; competence: string; amount: string; due_date: string; status: 'PENDENTE' | 'PAGA' | 'CANCELADA'; overdue: boolean; paid_at: string | null }[];
+  overdue_count: number;
+};
+export type LoyaltyEligibility = {
+  eligible: boolean;
+  reason: string | null;
+  plan: { id: UUID; name: string } | null;
+  subscription: { id: UUID; status: string } | null;
+};
+
 export type AttendanceDay = {
   user_id: number;
   user_name: string | null;
@@ -667,6 +705,28 @@ export const api = {
     (await request<ApiData<B2bInvoice>>('/api/v1/team/b2b-invoices/generate', { method: 'POST', body: JSON.stringify(input) })).data,
   sendB2bInvoice: async (id: string) => (await request<ApiData<B2bInvoice>>(`/api/v1/team/b2b-invoices/${id}/send`, { method: 'POST' })).data,
   settleB2bInvoice: async (id: string, input: { amount: string; proof_reference: string }) =>
+  loyaltyPlans: async () => (await request<ApiData<LoyaltyPlan[]>>('/api/v1/team/loyalty/plans')).data,
+  createLoyaltyPlan: async (input: { name: string; agreement_id: string; monthly_fee: string; due_day: number; active?: boolean }) =>
+    (await request<ApiData<LoyaltyPlan>>('/api/v1/team/loyalty/plans', { method: 'POST', body: JSON.stringify(input) })).data,
+  updateLoyaltyPlan: async (id: string, input: { name?: string; monthly_fee?: string; due_day?: number; active?: boolean }) =>
+    (await request<ApiData<LoyaltyPlan>>(`/api/v1/team/loyalty/plans/${id}`, { method: 'PATCH', body: JSON.stringify(input) })).data,
+  loyaltySubscriptions: async (filters: { status?: string; search?: string } = {}) =>
+    (await request<ApiData<LoyaltySubscription[]>>(`/api/v1/team/loyalty/subscriptions?${queryString(filters)}`)).data,
+  loyaltySubscription: async (id: string) => (await request<ApiData<LoyaltySubscription>>(`/api/v1/team/loyalty/subscriptions/${id}`)).data,
+  createLoyaltySubscription: async (input: {
+    plan_id: string;
+    patient: { cpf: string; name?: string; birth_date?: string; phone?: string };
+    dependents?: { cpf: string; name?: string }[];
+    notes?: string;
+  }) => (await request<ApiData<LoyaltySubscription>>('/api/v1/team/loyalty/subscriptions', { method: 'POST', body: JSON.stringify(input) })).data,
+  updateLoyaltySubscription: async (id: string, input: { status?: 'ACTIVE' | 'CANCELED' | 'BLOCKED'; notes?: string; dependents?: { cpf: string; name?: string }[] }) =>
+    (await request<ApiData<LoyaltySubscription>>(`/api/v1/team/loyalty/subscriptions/${id}`, { method: 'PATCH', body: JSON.stringify(input) })).data,
+  loyaltyDues: async (filters: { status?: 'PENDENTE' | 'PAGA'; overdue?: boolean } = {}) =>
+    (await request<ApiData<LoyaltyDue[]>>(`/api/v1/team/loyalty/dues?${queryString({ status: filters.status, overdue: filters.overdue === true ? '1' : undefined })}`)).data,
+  collectLoyaltyDue: async (id: string, input: { payment_method_code: string; unit_id: string }) =>
+    (await request<ApiData<LoyaltyDue>>(`/api/v1/team/loyalty/dues/${id}/collect`, { method: 'POST', body: JSON.stringify(input) })).data,
+  loyaltyEligibility: async (agreement_id: string, patient_id: string) =>
+    (await request<ApiData<LoyaltyEligibility>>(`/api/v1/team/loyalty/eligibility?${queryString({ agreement_id, patient_id })}`)).data,
     (await request<ApiData<B2bInvoice>>(`/api/v1/team/b2b-invoices/${id}/settle`, { method: 'POST', body: JSON.stringify(input) })).data,
   attendanceReport: async (filters: { from: string; to: string; user_id?: string }) =>
     (await request<ApiData<AttendanceReport>>(`/api/v1/team/attendance?${queryString(filters)}`)).data,

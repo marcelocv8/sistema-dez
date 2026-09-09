@@ -1,6 +1,11 @@
 # Sistema DEZ — Clínica DEZ
-## Especificação (v0.12)
+## Especificação (v0.13)
 
+> **v0.13** — Bloco 6 (Sou DEZ/fidelidade, T20) implementado em 08/09/2026,
+> executado **antes** do Bloco 5 (MT + BI + Hermes) por pedido do dono — §14.19.
+> Gestão nativa do programa de fidelidade: planos, assinaturas com dependentes,
+> mensalidades no caixa e bloqueio de não-assinante/inadimplente.
+>
 > **v0.12** — Fase 3D + parte da Fase 4 commitadas em `fa80073` (07/09/2026):
 > B2B manual (fatura/baixa com filtro de adimplência, sem Inter), fila/chamada
 > da recepção, painel TV funcional e detecção de conflitos de escala (§14.13).
@@ -630,7 +635,7 @@ Cada decisão virou tarefa de implementação (BE/FE/QA). **ÚLTIMA** = última 
 | T17 | **Integração Inter (PIX/extrato)** — opcional | 6.5/8 | ÚLTIMA |
 | T18 | **Auxílio de diagnóstico com IA** no prontuário — opcional | 6.18 | ÚLTIMA |
 | T19 | **Agendamento automático via WhatsApp** com opção de falar com atendente — opcional | 6.12.1 | ÚLTIMA |
-| T20 | **Gestão Sou DEZ** (cadastro, pagamentos, planos ativos, uso de benefícios) — opcional | — | ÚLTIMA |
+| T20 | **Gestão Sou DEZ** (cadastro, pagamentos, planos ativos, uso de benefícios) — **ENTREGUE no Bloco 6 (§14.19, 08/09)** | — | ~~ÚLTIMA~~ feito |
 | T21 | **Consulta de preços (tabela)**: página com busca por código TUSS/nome a partir de 3 caracteres; consultas e exames agrupados por tipo; preço por convênio (Particular padrão); Recepção vê preços de tabela | 6.20 | 1 |
 
 > **Fora do escopo (ainda):** toda a parte financeira além do fechamento de caixa e dos boletos B2B — DRE, fluxo de caixa, contas a pagar/receber gerais e automatização do pagamento de repasses no Inter (futuro, não prioridade).
@@ -1158,6 +1163,40 @@ acima. Lições de ambiente também viraram §15.
 
 ---
 
+### 14.19 Bloco 6 — Sou DEZ (fidelidade): gestão nativa do programa (T20) (08/09/2026)
+
+**Situação: implementada e validada localmente. Aguardando autorização de commit. Executado antes do "Bloco 5" (MT + BI + Hermes) por pedido do dono; numeração "Bloco 6" do dono = T20 do §12.**
+
+#### Contexto e decisão de desenho
+
+- No STG o Sou DEZ era um **sistema externo** (app "fidelidade" separado, integrado por HTTP/DB direto) — **o código não existe no disco**; só sobraram os contratos HTTP (`autorizaratendimentoweb`, `mensalidadesAPI`, `impressaoCarteiraWeb`, etc.). A gestão foi reimplementada **nativa no Laravel**, espelhando as regras observáveis: bloqueio por pendência (`pending`), por inexistência (`no_exists`) e por esgotamento; titular/dependente; cobrança da assinatura fora do caixa do STG.
+- **Decisões do dono (08/09/2026):** assinante paga a **tabela Sou DEZ no caixa** (o plano é desconto via convênio, não cobertura R$ 0); **mensalidade cobrada no caixa do DEZ** (entra no fechamento consolidado); **sem carência** nesta fase; **com dependentes**.
+- Convênios 70/72 (SOU DEZ GERAL/CONSULTAS) ficaram de fora — legacy sem uso em 24m; o Admin pode criar planos novos na tela (um plano por convênio).
+
+#### Entregue
+
+- **Migração `create_loyalty_tables`:** `loyalty_plans` (nome, convênio vinculado, `monthly_fee`, `due_day`, ativo), `loyalty_subscriptions` (titular, status ACTIVE/CANCELED/BLOCKED, `started_at`), `loyalty_dependents` (ativo, 1 dependência ativa por paciente), `loyalty_dues` (competência única por assinatura, status PENDENTE/PAGA/CANCELADA, `cash_movement_id`); `cash_movements.loyalty_due_id` novo. Atraso calculado na leitura (`PENDENTE` com vencimento < hoje) — sem comando agendado.
+- **`LoyaltyEligibility`:** convênio com plano ativo exige assinatura ativa (titular **ou** dependente) e **nenhuma mensalidade em atraso**. Acoplado em `BookAppointment` (bloqueia na criação da ficha, online e interno) e no **checkout** do caixa (defesa em profundidade). Mensagens no estilo do legado ("O paciente não possui assinatura Sou DEZ ativa…", "…possui mensalidade em atraso no programa Sou DEZ.").
+- **Mensalidade no caixa:** `POST /team/loyalty/dues/{id}/collect` cria `CashMovement` tipo **`MENSALIDADE`** (recibo sequencial do caixa) — entra automaticamente no fechamento consolidado por forma de pagamento (`summary` já soma tipos não-SANGRIA/REPASSE/ESTORNO). Ao pagar, gera a mensalidade do mês seguinte (rolling, com clamp de dia no mês). Recepção cadastra assinaturas mas **não recebe** dinheiro (exige `cash.operate`).
+- **Endpoints (RBAC `soudez.view`/`soudez.manage`):** planos (lista/cria/edita; Particular padrão recusado; 1 plano por convênio), assinaturas (busca por nome/CPF; cria com titular por CPF — paciente novo cadastrado LGPD — e dependentes; status com regra de reativação contra dupla participação), mensalidades (pendentes/atrasadas/pagas), `eligibility` para hint da recepção. OpenAPI `v0.16.0` + schema regenerado.
+- **Frontend:** página **Sou DEZ** (`/sou-dez`, nav "Gestão", ícone Sparkles) com abas Assinantes / Mensalidades (pendentes com flag de atraso + recebimento no caixa com unidade/forma) / Planos; client `@dez/api` + handlers MSW; permissão `soudez.view/manage` adicionada ao domínio.
+- **Seed E2E:** `SchedulingE2ESeeder.seedLoyalty()` — plano **SOU DEZ COMPLETO E2E** (convênio próprio, R$ 65,00 na tabela) com oferta/escala semanal 08:00–10:00 materializada + pacientes "Assinante Sou DEZ E2E" (CPF 168.995.350-09) e "Dependente Sou DEZ E2E" (CPF 351.722.676-97), **sem** assinatura (a E2E cria via UI).
+
+#### Validação
+
+- **Backend:** `LoyaltyTest` **10 testes / 98 asserções** verde (planos, assinatura com dependentes e 1ª mensalidade, bloqueio de agendamento sem assinatura, bloqueio por atraso liberado após receber no caixa, fechamento/caixa com `MENSALIDADE`, RBAC, dependente usa e cancelamento tira o benefício, elegibilidade, busca/sincronização de dependentes, listagem de mensalidades). Suíte completa no banco isolado `sistema_dez_test_bloco6`: **148/149 testes (1.317 asserções)** — a única falha é `MtTest::test_emit…` (sessão Medicina do Trabalho em andamento pelo dono, fora do Bloco 6).
+- **E2E `soudez.spec.ts` + `playwright.bloco6.config.ts`: 2/2 (desktop+mobile)** — reseed por teste (`beforeEach`) no banco isolado; fluxo: assinatura com dependente → agendamento do assinante em 08:00 → agendamento do não-assinante bloqueado ("não possui assinatura Sou DEZ ativa") → abrir caixa → receber mensalidade → competência seguinte gerada + status `Paga`.
+- **Frontend:** Vitest **34** (2 novos em `SouDezPage.test.tsx`); typecheck 7 projetos; builds ok; schema OpenAPI regenerado.
+- **Isolamento para sessões paralelas:** override seguro `E2E_DB_NAME` (só nomes iniciando em `sistema_dez_test`) em `SchedulingE2ESeeder`, `tests/TestCase.php` e `ScheduleConcurrencyTest` — sem override, comportamento idêntico ao de antes; permite rodar E2E/suíte em banco próprio enquanto o Bloco 5 (MT/Hermes) usa o `sistema_dez_test`.
+- **Fix pontual (flake pré-existente):** `ImplementedBlocksRegressionTest` usava `now()->subDay()` (UTC) contra `$today` de Fortaleza — nas janelas 21h–24h (Fortaleza) os testes de orçamento e expurgo falhavam por virada de dia no UTC. Corrigido para `CarbonImmutable::today(tz)->subDay()` (verificado com teste scratch determinístico).
+- **Pint:** rodado com `--dirty` (árvore compartilhada) — além dos arquivos do Bloco 6, reformatou (só estilo) arquivos WIP da sessão MT do dono: `AsoType.php`, `HermesController.php`, `MtController.php`, `EnsureAgentScope.php`, `AgentToken.php`, `MtTest.php` e `docs/extracao_mt/extract_mt.php`.
+
+#### Não incluído
+
+Carência (decisão do dono), boleto Inter para mensalidade (última tarefa do plano), carteirinha virtual/impressa com QR, app do paciente, estorno de mensalidade paga (fica para necessidade real), integração com orçamentos (a tabela Sou DEZ já sai do catálogo/preços).
+
+---
+
 ## 15. Ambiente em outro PC (só teste, sem prod)
 
 > **Premissa do dono (04/09/2026):** pode usar **bancos diferentes em cada PC**
@@ -1264,4 +1303,4 @@ cada fluxo (slots de uso único conflitam entre runs).
 
 ---
 
-*Documento vivo — a cada decisão, uma nova versão. Próximo passo: apurar a validação da 3D (§14.13), E2E do repasse até o verde e validação manual acumulada (3A-1→3D); depois o restante da Fase 4 (bate-papo, ponto, rotinas, orçamentos). Inter segue adiada para pós-3D.*
+*Documento vivo — a cada decisão, uma nova versão. Próximo passo: E2E e suíte final do Bloco 6 (Sou DEZ) numa janela livre do `sistema_dez_test` (a sessão de MT/Bloco 5 do dono estava usando o banco), depois "Bloco 5" — Medicina do Trabalho (em andamento pelo dono) + Relatórios/BI + API Hermes — e validação manual acumulada (3A-1→3D + Blocos 1-6).*

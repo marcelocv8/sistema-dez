@@ -41,7 +41,9 @@ export type Permission =
   | 'reports.sign'
   | 'prontuario.view'
   | 'prontuario.write'
-  | 'ai.use';
+  | 'ai.use'
+  | 'soudez.view'
+  | 'soudez.manage';
 
 export const clinicTimeZone = 'America/Fortaleza';
 

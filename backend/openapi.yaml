@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Sistema DEZ API
-  version: 0.15.0
+  version: 0.16.0
 servers:
   - url: http://localhost:8000/api/v1
 paths:
@@ -1310,6 +1310,132 @@ paths:
         '200': { description: Dados mínimos do paciente ou data nulo }
         '403': { description: Requer appointments.manage }
         '422': { $ref: '#/components/responses/ValidationError' }
+  /team/loyalty/plans:
+    get:
+      summary: Lista planos Sou DEZ (programa de fidelidade)
+      description: Requer soudez.view. Plano vincula um convênio (ex. SOU DEZ COMPLETO), mensalidade e dia de vencimento; assinante ativo/adimplente usa a tabela do convênio.
+      security: [{ cookieAuth: [] }]
+      responses:
+        '200': { description: Planos com contagem de assinaturas ativas }
+        '403': { description: Requer soudez.view }
+    post:
+      summary: Cria plano Sou DEZ vinculado a um convênio
+      description: Requer soudez.manage. Um convênio aceita apenas um plano; Particular padrão não é permitido. Auditado.
+      security: [{ cookieAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/LoyaltyPlanInput' }
+      responses:
+        '201': { description: Plano criado }
+        '403': { description: Requer soudez.manage }
+        '422': { $ref: '#/components/responses/ValidationError' }
+  /team/loyalty/plans/{id}:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+    patch:
+      summary: Atualiza mensalidade, dia de vencimento, nome ou situação do plano
+      description: Requer soudez.manage. Auditado.
+      security: [{ cookieAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/LoyaltyPlanInput' }
+      responses:
+        '200': { description: Plano atualizado }
+        '403': { description: Requer soudez.manage }
+        '422': { $ref: '#/components/responses/ValidationError' }
+  /team/loyalty/subscriptions:
+    get:
+      summary: Lista assinaturas Sou DEZ (titular + dependentes + mensalidades)
+      description: Requer soudez.view. Busca por nome (ilike) ou CPF (11 dígitos) do titular ou dependente.
+      security: [{ cookieAuth: [] }]
+      parameters:
+        - { name: status, in: query, schema: { type: string, enum: [ACTIVE, CANCELED, BLOCKED] } }
+        - { name: search, in: query, schema: { type: string, maxLength: 120 } }
+      responses:
+        '200': { description: Assinaturas }
+        '403': { description: Requer soudez.view }
+    post:
+      summary: Cria assinatura (titular por CPF + dependentes) e gera a mensalidade do mês
+      description: Requer soudez.manage. Paciente novo é cadastrado (LGPD, CPF hash+pepper). Um paciente não pode ter duas assinaturas ativas. Auditado.
+      security: [{ cookieAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/LoyaltySubscriptionInput' }
+      responses:
+        '201': { description: Assinatura criada }
+        '403': { description: Requer soudez.manage }
+        '422': { $ref: '#/components/responses/ValidationError' }
+  /team/loyalty/subscriptions/{id}:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+    get:
+      summary: Detalhe da assinatura com dependentes e mensalidades
+      security: [{ cookieAuth: [] }]
+      responses:
+        '200': { description: Assinatura }
+        '403': { description: Requer soudez.view }
+    patch:
+      summary: Altera status (reativar/cancelar/bloquear), notas e sincroniza dependentes
+      description: Requer soudez.manage. Reativação falha se o paciente estiver em outra assinatura ativa. Dependentes sincronizados por lista completa; omitir o campo mantém os atuais. Auditado.
+      security: [{ cookieAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/LoyaltySubscriptionUpdate' }
+      responses:
+        '200': { description: Assinatura atualizada }
+        '403': { description: Requer soudez.manage }
+        '422': { $ref: '#/components/responses/ValidationError' }
+  /team/loyalty/dues:
+    get:
+      summary: Lista mensalidades (pendentes, pagas ou atrasadas)
+      description: Requer soudez.view. Atraso = PENDENTE com vencimento anterior a hoje.
+      security: [{ cookieAuth: [] }]
+      parameters:
+        - { name: status, in: query, schema: { type: string, enum: [PENDENTE, PAGA] } }
+        - { name: overdue, in: query, schema: { type: boolean } }
+      responses:
+        '200': { description: Mensalidades }
+        '403': { description: Requer soudez.view }
+  /team/loyalty/dues/{id}/collect:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      summary: Recebe a mensalidade no caixa (movimento tipo MENSALIDADE)
+      description: Requer soudez.view + cash.operate. Exige caixa ABERTO na unidade; entra no fechamento consolidado por forma de pagamento; gera a mensalidade do mês seguinte. Auditado.
+      security: [{ cookieAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [payment_method_code, unit_id]
+              properties:
+                payment_method_code: { type: string, maxLength: 20 }
+                unit_id: { type: string, format: uuid }
+      responses:
+        '201': { description: Mensalidade paga }
+        '403': { description: Requer cash.operate }
+        '422': { $ref: '#/components/responses/ValidationError' }
+  /team/loyalty/eligibility:
+    get:
+      summary: Verifica elegibilidade Sou DEZ do paciente para um convênio
+      description: Requer soudez.view. Avalia assinatura ativa (titular/dependente) e ausência de mensalidade em atraso; convênio sem plano é sempre elegível.
+      security: [{ cookieAuth: [] }]
+      parameters:
+        - { name: agreement_id, in: query, required: true, schema: { type: string, format: uuid } }
+        - { name: patient_id, in: query, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200': { description: Elegibilidade e motivo }
+        '403': { description: Requer soudez.view }
 components:
   securitySchemes:
     managementToken:
@@ -1572,6 +1698,54 @@ components:
         professional_id: { type: string, format: uuid }
         agreement_id: { type: string, format: uuid }
         active: { type: boolean }
+    LoyaltyPlanInput:
+      type: object
+      required: [name, agreement_id, monthly_fee, due_day]
+      properties:
+        name: { type: string, minLength: 3, maxLength: 120 }
+        agreement_id: { type: string, format: uuid }
+        monthly_fee: { type: number, minimum: 1 }
+        due_day: { type: integer, minimum: 1, maximum: 28 }
+        active: { type: boolean }
+    LoyaltySubscriptionInput:
+      type: object
+      required: [plan_id, patient]
+      properties:
+        plan_id: { type: string, format: uuid }
+        patient:
+          type: object
+          required: [cpf]
+          properties:
+            cpf: { type: string }
+            name: { type: string, maxLength: 150 }
+            birth_date: { type: [string, 'null'], format: date }
+            phone: { type: [string, 'null'], maxLength: 30 }
+        notes: { type: [string, 'null'], maxLength: 2000 }
+        dependents:
+          type: array
+          maxItems: 10
+          items:
+            type: object
+            required: [cpf]
+            properties:
+              cpf: { type: string }
+              name: { type: string, maxLength: 150 }
+              birth_date: { type: [string, 'null'], format: date }
+              phone: { type: [string, 'null'], maxLength: 30 }
+    LoyaltySubscriptionUpdate:
+      type: object
+      properties:
+        status: { type: string, enum: [ACTIVE, CANCELED, BLOCKED] }
+        notes: { type: [string, 'null'], maxLength: 2000 }
+        dependents:
+          type: array
+          maxItems: 10
+          items:
+            type: object
+            required: [cpf]
+            properties:
+              cpf: { type: string }
+              name: { type: string, maxLength: 150 }
     TeamUserInput:
       type: object
       required: [name, email, role, active, password]

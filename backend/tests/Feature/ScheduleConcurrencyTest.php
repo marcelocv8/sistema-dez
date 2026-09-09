@@ -30,7 +30,12 @@ class ScheduleConcurrencyTest extends TestCase
 
     private function assertLastSlotRace(bool $public): void
     {
-        $this->assertSame('sistema_dez_test', config('database.connections.pgsql.database'));
+        $allowed = ['sistema_dez_test'];
+        $override = getenv('E2E_DB_NAME');
+        if (is_string($override) && str_starts_with($override, 'sistema_dez_test')) {
+            $allowed[] = $override;
+        }
+        $this->assertContains(config('database.connections.pgsql.database'), $allowed);
         $offering = $public ? ServiceOffering::factory()->published()->create() : ServiceOffering::factory()->create(['online_enabled' => false]);
         $link = $offering->catalogLink ?? CatalogLink::create(['unit_id' => $offering->unit_id, 'procedure_id' => $offering->procedure_id, 'professional_id' => $offering->professional_id, 'agreement_id' => $offering->agreement_id, 'active' => true]);
         $offering->update(['catalog_link_id' => $link->id]);

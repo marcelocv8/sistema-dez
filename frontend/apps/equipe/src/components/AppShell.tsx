@@ -2,7 +2,7 @@ import type { ReactNode } from 'react';
 import { useState } from 'react';
 import { NavLink } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
-import { Activity, Banknote, Bell, CalendarDays, ChevronLeft, ClipboardList, FileHeart, FileText, LayoutDashboard, LogOut, Menu, MessageCircle, Search, Settings, Tags, Users, WalletCards, X } from 'lucide-react';
+import { Activity, Banknote, Bell, CalendarDays, ChevronLeft, ClipboardList, FileHeart, FileText, LayoutDashboard, LogOut, Menu, MessageCircle, Search, Settings, Sparkles, Tags, Users, WalletCards, X } from 'lucide-react';
 import { api, type CurrentUser } from '@dez/api';
 import { BrandLogo, IconButton } from '@dez/ui';
 
@@ -25,6 +25,7 @@ const sections = [
     { to: '/laudos', label: 'Laudos', icon: FileText, permission: 'reports.view' },
   ] },
   { label: 'Gestão', items: [
+    { to: '/sou-dez', label: 'Sou DEZ', icon: Sparkles, permission: 'soudez.view' },
     { to: '/cadastros', label: 'Cadastros e acessos', icon: Settings, permission: 'catalog.view' },
     { to: '/repasses', label: 'Repasses médicos', icon: WalletCards, permission: 'payouts.view' },
     { to: '/visao-geral?financeiro=1', label: 'Financeiro', icon: WalletCards },

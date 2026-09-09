@@ -13,6 +13,7 @@ use App\Http\Controllers\Api\V1\ChatController;
 use App\Http\Controllers\Api\V1\DashboardController;
 use App\Http\Controllers\Api\V1\DisplayController;
 use App\Http\Controllers\Api\V1\ImportIssueController;
+use App\Http\Controllers\Api\V1\LoyaltyController;
 use App\Http\Controllers\Api\V1\OfferingVisibilityController;
 use App\Http\Controllers\Api\V1\PatientAppointmentController;
 use App\Http\Controllers\Api\V1\PayoutController;
@@ -192,5 +193,17 @@ Route::prefix('v1')->middleware(['auth:sanctum', 'throttle:team-api'])->group(fu
         Route::get('import-issues', [ImportIssueController::class, 'index'])->middleware('permission:imports.view')->name('api.v1.team.import-issues.index');
         Route::put('import-issues/{importIssue}', [ImportIssueController::class, 'update'])->middleware('permission:imports.resolve')->name('api.v1.team.import-issues.update');
         Route::get('audit-logs', AuditLogController::class)->middleware('permission:audit.view')->name('api.v1.team.audit-logs.index');
+        Route::prefix('loyalty')->middleware('permission:soudez.view')->group(function (): void {
+            Route::get('plans', [LoyaltyController::class, 'plans'])->name('api.v1.team.loyalty.plans.index');
+            Route::post('plans', [LoyaltyController::class, 'storePlan'])->middleware('permission:soudez.manage')->name('api.v1.team.loyalty.plans.store');
+            Route::patch('plans/{loyaltyPlan}', [LoyaltyController::class, 'updatePlan'])->middleware('permission:soudez.manage')->name('api.v1.team.loyalty.plans.update');
+            Route::get('subscriptions', [LoyaltyController::class, 'subscriptions'])->name('api.v1.team.loyalty.subscriptions.index');
+            Route::post('subscriptions', [LoyaltyController::class, 'storeSubscription'])->middleware('permission:soudez.manage')->name('api.v1.team.loyalty.subscriptions.store');
+            Route::get('subscriptions/{loyaltySubscription}', [LoyaltyController::class, 'showSubscription'])->name('api.v1.team.loyalty.subscriptions.show');
+            Route::patch('subscriptions/{loyaltySubscription}', [LoyaltyController::class, 'updateSubscription'])->middleware('permission:soudez.manage')->name('api.v1.team.loyalty.subscriptions.update');
+            Route::get('dues', [LoyaltyController::class, 'dues'])->name('api.v1.team.loyalty.dues.index');
+            Route::post('dues/{loyaltyDue}/collect', [LoyaltyController::class, 'collect'])->name('api.v1.team.loyalty.dues.collect');
+            Route::get('eligibility', [LoyaltyController::class, 'eligibility'])->name('api.v1.team.loyalty.eligibility');
+        });
     });
 });

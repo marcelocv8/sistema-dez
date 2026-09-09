@@ -144,4 +144,34 @@ export const handlers = [
   }),
   http.post('/api/v1/queue/:id/call', async () => { await delay(300); return HttpResponse.json({ ok: true }); }),
   http.post('/api/v1/reports/:id/publish', async () => { await delay(400); return HttpResponse.json({ publishedAt: new Date().toISOString() }); }),
+  http.get('/api/v1/team/loyalty/plans', () => HttpResponse.json({ data: [{
+    id: 'plan-1', name: 'SOU DEZ COMPLETO', monthly_fee: '89.90', due_day: 10, active: true,
+    agreement: { id: 'agreement-71', name: 'SOU DEZ COMPLETO', is_default: false }, active_subscriptions_count: 1,
+  }] })),
+  http.get('/api/v1/team/loyalty/subscriptions', () => HttpResponse.json({ data: [loyaltySubscriptionMock] })),
+  http.get('/api/v1/team/loyalty/subscriptions/:id', ({ params }) => HttpResponse.json({ data: { ...loyaltySubscriptionMock, id: params.id } })),
+  http.post('/api/v1/team/loyalty/subscriptions', async () => HttpResponse.json({ data: loyaltySubscriptionMock }, { status: 201 })),
+  http.patch('/api/v1/team/loyalty/subscriptions/:id', async ({ params, request }) => HttpResponse.json({ data: { ...loyaltySubscriptionMock, id: params.id, ...(await request.json() as object) } })),
+  http.get('/api/v1/team/loyalty/dues', ({ request }) => {
+    const url = new URL(request.url);
+    const overdue = url.searchParams.get('overdue') === '1';
+    const due = { ...loyaltyDueMock, overdue };
+    return HttpResponse.json({ data: overdue ? [due] : [due, { ...loyaltyDueMock, id: 'due-2', status: 'PAGA', overdue: false, paid_at: new Date().toISOString() }] });
+  }),
+  http.post('/api/v1/team/loyalty/dues/:id/collect', async ({ params }) => HttpResponse.json({ data: { ...loyaltyDueMock, id: params.id, status: 'PAGA', overdue: false, paid_at: new Date().toISOString() } }, { status: 201 })),
 ];
+
+const loyaltySubscriptionMock = {
+  id: 'sub-1', status: 'ACTIVE', started_at: new Date().toISOString().slice(0, 10), ended_at: null, notes: null,
+  plan: { id: 'plan-1', name: 'SOU DEZ COMPLETO', monthly_fee: '89.90', due_day: 10, agreement: { id: 'agreement-71', name: 'SOU DEZ COMPLETO' } },
+  patient: { id: 'patient-1', name: 'Maria Sou DEZ', cpf_last_four: '5009' },
+  dependents: [{ id: 'dep-1', active: true, patient: { id: 'patient-2', name: 'João Sou DEZ', cpf_last_four: '7697' } }],
+  dues: [{ id: 'due-1', competence: new Date().toISOString().slice(0, 8) + '01', amount: '89.90', due_date: new Date().toISOString().slice(0, 10), status: 'PENDENTE', overdue: false, paid_at: null }],
+  overdue_count: 0,
+};
+
+const loyaltyDueMock = {
+  id: 'due-1', competence: new Date().toISOString().slice(0, 8) + '01', amount: '89.90', due_date: new Date().toISOString().slice(0, 10),
+  status: 'PENDENTE', overdue: false, paid_at: null,
+  subscription: { id: 'sub-1', plan_name: 'SOU DEZ COMPLETO', patient: { id: 'patient-1', name: 'Maria Sou DEZ', cpf_last_four: '5009' } },
+};

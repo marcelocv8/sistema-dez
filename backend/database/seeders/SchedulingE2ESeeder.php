@@ -2,12 +2,14 @@
 
 namespace Database\Seeders;
 
+use App\Actions\Scheduling\MaterializeScheduleOccurrences;
 use App\Enums\BookingMode;
 use App\Enums\Modality;
 use App\Enums\UserRole;
 use App\Models\Agreement;
 use App\Models\Appointment;
 use App\Models\CatalogLink;
+use App\Models\LoyaltyPlan;
 use App\Models\Patient;
 use App\Models\ProcedurePrice;
 use App\Models\Professional;
@@ -20,7 +22,13 @@ class SchedulingE2ESeeder extends Seeder
 {
     public function run(): void
     {
-        if (! app()->environment('testing') || config('database.connections.pgsql.database') !== 'sistema_dez_test') {
+        $database = (string) config('database.connections.pgsql.database');
+        $allowed = ['sistema_dez_test'];
+        $override = getenv('E2E_DB_NAME');
+        if (is_string($override) && str_starts_with($override, 'sistema_dez_test')) {
+            $allowed[] = $override;
+        }
+        if (! app()->environment('testing') || ! in_array($database, $allowed, true)) {
             throw new \RuntimeException('Fixture permitida apenas no banco isolado de testes.');
         }
         $password = getenv('E2E_PASSWORD');
@@ -42,6 +50,7 @@ class SchedulingE2ESeeder extends Seeder
             if ($link !== null) {
                 $this->seedReportTemplates($link->procedure_id, $link->professional_id);
                 $this->seedPilotAppointment($link);
+                $this->seedLoyalty($link);
             }
 
             return;
@@ -56,8 +65,47 @@ class SchedulingE2ESeeder extends Seeder
         $this->seedPilotPatient();
         $this->seedReportTemplates($price->procedure_id, $professional->id);
         $this->seedPilotAppointment($link);
+        $this->seedLoyalty($link);
     }
 
+    private function seedLoyalty(CatalogLink $base): void
+    {
+        foreach ([
+            ['cpf' => '16899535009', 'name' => 'Assinante Sou DEZ E2E', 'last_four' => '5009'],
+            ['cpf' => '35172267697', 'name' => 'Dependente Sou DEZ E2E', 'last_four' => '7697'],
+        ] as $subscriber) {
+            $hash = hash_hmac('sha256', $subscriber['cpf'], (string) config('sistema_dez.identity_pepper'));
+            Patient::query()->updateOrCreate(
+                ['cpf_hash' => $hash],
+                ['name' => $subscriber['name'], 'cpf_last_four' => $subscriber['last_four'], 'phone' => '85999990000',
+                    'birth_date' => '1985-06-15', 'privacy_consent_at' => now(), 'privacy_consent_source' => 'E2E'],
+            );
+        }
+        if (Agreement::query()->where('name', 'SOU DEZ PILOTO E2E')->doesntExist()) {
+            $agreement = Agreement::factory()->create(['name' => 'SOU DEZ PILOTO E2E', 'type' => 'PLAN', 'is_default' => false, 'requires_authorization' => false, 'active' => true]);
+            $price = ProcedurePrice::factory()->create(['procedure_id' => $base->procedure_id, 'agreement_id' => $agreement->id, 'unit_id' => $base->unit_id, 'amount' => '65.00']);
+            $link = CatalogLink::create(['unit_id' => $base->unit_id, 'procedure_id' => $base->procedure_id,
+                'professional_id' => $base->professional_id, 'agreement_id' => $agreement->id, 'active' => true]);
+            $offering = ServiceOffering::query()->updateOrCreate(
+                ['procedure_id' => $base->procedure_id, 'professional_id' => $base->professional_id, 'agreement_id' => $agreement->id],
+                ['unit_id' => $base->unit_id, 'catalog_link_id' => $link->id, 'procedure_price_id' => $price->id,
+                    'booking_mode' => BookingMode::FixedSlot, 'modality' => Modality::Presential,
+                    'price' => '65.00', 'arrival_block_minutes' => 60, 'arrival_block_capacity' => 3,
+                    'online_enabled' => false, 'active' => true],
+            );
+            foreach ([1, 2, 3, 4, 5, 6, 0] as $weekday) {
+                $offering->scheduleWindows()->updateOrCreate(
+                    ['weekday' => $weekday, 'starts_at' => '08:00:00'],
+                    ['effective_from' => now()->toDateString(), 'effective_to' => null, 'ends_at' => '10:00:00',
+                        'slot_minutes' => 30, 'daily_capacity_override' => null, 'active' => true],
+                );
+            }
+            app(MaterializeScheduleOccurrences::class)->handle($offering);
+            LoyaltyPlan::query()->updateOrCreate(['agreement_id' => $agreement->id], [
+                'name' => 'SOU DEZ COMPLETO E2E', 'monthly_fee' => '89.90', 'due_day' => 10, 'active' => true,
+            ]);
+        }
+    }
     private function seedPilotAppointment(CatalogLink $link): void
     {
         $patient = Patient::query()->where('name', 'Paciente Piloto E2E')->firstOrFail();
