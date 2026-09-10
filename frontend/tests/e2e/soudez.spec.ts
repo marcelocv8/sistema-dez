@@ -70,6 +70,7 @@ test('Sou DEZ: assinatura com dependente, bloqueio de não-assinante e mensalida
   await page.getByLabel('Horário disponível').selectOption({ label: '08:30 · 1 vaga(s)' });
   await page.getByLabel('CPF do paciente').fill('111.444.777-35');
   await page.getByRole('button', { name: 'Localizar paciente' }).click();
+  await expect(page.getByRole('status')).toContainText('Paciente encontrado');
   await page.getByLabel('Nome do paciente').fill('Paciente Comun E2E');
   await page.getByLabel('Telefone do paciente').fill('85999999999');
   await page.getByLabel('Paciente informado sobre o uso dos dados para o agendamento.').check();
