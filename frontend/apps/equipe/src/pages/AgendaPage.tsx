@@ -13,6 +13,8 @@ const statusLabel: Record<Appointment['status'], { label: string; tone: 'success
   CANCELLED: { label: 'Cancelado', tone: 'danger' },
 };
 const allStatuses = Object.entries(statusLabel) as [Appointment['status'], { label: string; tone: 'success' | 'warning' | 'purple' | 'danger' }][];
+const monthTitleFormatter = new Intl.DateTimeFormat('pt-BR', { month: 'long', year: 'numeric' });
+const weekDayFormatter = new Intl.DateTimeFormat('pt-BR', { weekday: 'short', day: '2-digit', month: '2-digit' });
 
 function todayIso(): string {
   const now = new Date();
@@ -110,7 +112,7 @@ export default function AgendaPage({ user }: { user: CurrentUser }) {
     <div className="agenda-layout">
       <aside>
         <Panel className="mini-calendar">
-          <div className="calendar-header"><b>{new Intl.DateTimeFormat('pt-BR', { month: 'long', year: 'numeric' }).format(new Date(`${date}T12:00:00`))}</b>
+          <div className="calendar-header"><b>{monthTitleFormatter.format(new Date(`${date}T12:00:00`))}</b>
             <span>
               <IconButton label="Mês anterior" onClick={() => setDate((current) => { const next = new Date(`${current.slice(0, 7)}-01T12:00:00`); next.setMonth(next.getMonth() - 1); return next.toISOString().slice(0, 10); })}><ChevronLeft size={16} /></IconButton>
               <IconButton label="Próximo mês" onClick={() => setDate((current) => { const next = new Date(`${current.slice(0, 7)}-01T12:00:00`); next.setMonth(next.getMonth() + 1); return next.toISOString().slice(0, 10); })}><ChevronRight size={16} /></IconButton>
@@ -165,7 +167,7 @@ function AgendaRangeView({ view, date, byDay, onPickDay }: { view: 'Semana' | 'M
     return <div className="agenda-week">{days.map((day) => {
       const items = byDay.get(day) ?? [];
       return <button key={day} className="agenda-day" onClick={() => onPickDay(day)}>
-        <b>{new Intl.DateTimeFormat('pt-BR', { weekday: 'short', day: '2-digit', month: '2-digit' }).format(new Date(`${day}T12:00:00`))}</b>
+        <b>{weekDayFormatter.format(new Date(`${day}T12:00:00`))}</b>
         <span>{items.length === 0 ? 'Sem fichas' : `${items.length} ficha(s)`}</span>
         {items.slice(0, 4).map((item) => <small key={item.id}>{item.scheduled_at.slice(11, 16)} · {item.patient_name ?? item.procedure.name}</small>)}
       </button>;

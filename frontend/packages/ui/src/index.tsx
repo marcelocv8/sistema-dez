@@ -1,9 +1,19 @@
-import type { ButtonHTMLAttributes, HTMLAttributes, InputHTMLAttributes, ReactNode, SelectHTMLAttributes } from 'react';
+import { useEffect, useState, type ButtonHTMLAttributes, type HTMLAttributes, type InputHTMLAttributes, type ReactNode, type SelectHTMLAttributes } from 'react';
 import { AlertTriangle, LoaderCircle } from 'lucide-react';
 import logoUrl from './assets/logo-clinica-dez.png';
 
 export function BrandLogo({ className = '', inverted = false }: { className?: string; inverted?: boolean }) {
-  return <img className={`dez-brand ${inverted ? 'dez-brand--inverted' : ''} ${className}`} src={logoUrl} alt="Clínica DEZ" />;
+  return <img className={`dez-brand ${inverted ? 'dez-brand--inverted' : ''} ${className}`} src={logoUrl} alt="Clínica DEZ" width={323} height={117} decoding="async" />;
+}
+
+/** Debounces a fast-changing value (e.g. a search input) to avoid a request per keystroke. */
+export function useDebouncedValue<T>(value: T, delay = 350): T {
+  const [debounced, setDebounced] = useState(value);
+  useEffect(() => {
+    const timer = window.setTimeout(() => setDebounced(value), delay);
+    return () => window.clearTimeout(timer);
+  }, [value, delay]);
+  return debounced;
 }
 
 type ButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & { variant?: 'primary' | 'navy' | 'success' | 'warning' | 'danger' | 'purple' | 'outline'; icon?: ReactNode };

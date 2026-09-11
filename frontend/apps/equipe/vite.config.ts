@@ -1,4 +1,15 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 
-export default defineConfig({ plugins: [react()], build: { sourcemap: true, target: 'es2022' } });
+const manualChunks = (id: string) => {
+  if (!id.includes('node_modules')) return undefined;
+  if (id.includes('@tanstack')) return 'query';
+  if (id.includes('react-router') || id.includes('@remix-run')) return 'router';
+  if (id.includes('react') || id.includes('scheduler')) return 'react';
+  return 'vendor';
+};
+
+export default defineConfig({
+  plugins: [react()],
+  build: { sourcemap: false, target: 'es2022', rollupOptions: { output: { manualChunks } } },
+});

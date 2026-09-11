@@ -3,6 +3,7 @@
 namespace App\Actions\Scheduling;
 
 use App\Enums\PriceStatus;
+use App\Models\ScheduleOccurrence;
 use App\Models\ServiceOffering;
 use App\Services\AuditRecorder;
 use Carbon\CarbonImmutable;
@@ -17,12 +18,12 @@ use Illuminate\Support\Facades\DB;
  */
 class RefreshOfferingVisibility
 {
-    public function __construct(private readonly BuildAvailability $availability, private readonly AuditRecorder $audit) {}
+    public function __construct(private readonly AuditRecorder $audit) {}
 
     public function handle(ServiceOffering $offering): ServiceOffering
     {
         return DB::transaction(function () use ($offering): ServiceOffering {
-            $offering = ServiceOffering::query()->lockForUpdate()->findOrFail($offering->id);
+            $offering = ServiceOffering::query()->with('procedurePrice')->lockForUpdate()->findOrFail($offering->id);
             $before = $offering->attributesToArray();
 
             $origin = $offering->procedurePrice;
@@ -43,6 +44,12 @@ class RefreshOfferingVisibility
         }, 3);
     }
 
+    /**
+     * Oferta publicável precisa de ao menos uma ocorrência aberta dentro do
+     * horizonte online. A checagem por ocorrência substitui a construção da
+     * disponibilidade completa (mesma janela) — chamada a cada mutação de
+     * escala — por uma única consulta indexada.
+     */
     private function hasPublicAvailability(ServiceOffering $offering): bool
     {
         if (! $offering->active) {
@@ -50,11 +57,14 @@ class RefreshOfferingVisibility
         }
         $timezone = config('sistema_dez.timezone');
         $today = CarbonImmutable::today($timezone);
-        $rows = $this->availability->handle(['internal' => true, 'offering_id' => $offering->id,
-            'procedure_id' => $offering->procedure_id, 'unit_id' => $offering->unit_id,
-            'agreement_id' => $offering->agreement_id, 'modality' => $offering->modality->value,
-            'from' => $today->toDateString(), 'to' => $today->addDays(config('sistema_dez.public_booking_horizon_days') - 1)->toDateString()]);
 
-        return count($rows) > 0;
+        return ScheduleOccurrence::query()
+            ->where('service_offering_id', $offering->id)
+            ->where('status', 'OPEN')
+            ->whereBetween('date', [
+                $today->toDateString(),
+                $today->addDays(config('sistema_dez.public_booking_horizon_days') - 1)->toDateString(),
+            ])
+            ->exists();
     }
 }

@@ -35,12 +35,37 @@ class ChatConversation extends Model
 
     public function unreadCountFor(int $userId): int
     {
-        $pivot = $this->participants()->whereKey($userId)->first()?->pivot;
-        $lastRead = $pivot?->last_read_at;
+        return self::unreadCountsFor($userId, [$this->id])[$this->id] ?? 0;
+    }
 
-        return $this->messages()
-            ->where('user_id', '!=', $userId)
-            ->when($lastRead, fn ($query) => $query->where('created_at', '>', $lastRead))
-            ->count();
+    /**
+     * Unread counts for several conversations in a single grouped query,
+     * keyed by conversation id. Replaces the previous per-conversation
+     * (one pivot lookup + one count) round-trip.
+     *
+     * @param  iterable<int, string>  $conversationIds
+     * @return array<string, int>
+     */
+    public static function unreadCountsFor(int $userId, iterable $conversationIds): array
+    {
+        $ids = collect($conversationIds)->all();
+        if ($ids === []) {
+            return [];
+        }
+
+        return ChatMessage::query()
+            ->join('chat_participants', function ($join) use ($userId): void {
+                $join->on('chat_participants.chat_conversation_id', '=', 'chat_messages.chat_conversation_id')
+                    ->where('chat_participants.user_id', '=', $userId);
+            })
+            ->whereIn('chat_messages.chat_conversation_id', $ids)
+            ->where('chat_messages.user_id', '!=', $userId)
+            ->where(fn ($query) => $query->whereNull('chat_participants.last_read_at')
+                ->orWhereColumn('chat_messages.created_at', '>', 'chat_participants.last_read_at'))
+            ->groupBy('chat_messages.chat_conversation_id')
+            ->selectRaw('chat_messages.chat_conversation_id as conversation_id, count(*) as aggregate')
+            ->pluck('aggregate', 'conversation_id')
+            ->map(fn ($count): int => (int) $count)
+            ->all();
     }
 }

@@ -11,7 +11,7 @@ import {
   type ImportIssue,
   type TeamUser,
 } from '@dez/api';
-import { Alert, Button, EmptyState, LoadingState, Panel, SelectField, StatusPill, TextField } from '@dez/ui';
+import { Alert, Button, EmptyState, LoadingState, Panel, SelectField, StatusPill, TextField, useDebouncedValue } from '@dez/ui';
 import { SchedulingSection } from './SchedulingSection';
 
 type Section = 'catalog' | 'links' | 'issues' | 'users' | 'audit' | 'scheduling';
@@ -94,10 +94,11 @@ function CatalogSection({ canManage }: { canManage: boolean }) {
   const queryClient = useQueryClient();
   const [resource, setResource] = useState<CatalogResource>('procedures');
   const [query, setQuery] = useState('');
+  const debouncedQuery = useDebouncedValue(query);
   const [active, setActive] = useState('1');
   const [editing, setEditing] = useState<CatalogItem | null>(null);
   const [form, setForm] = useState<Record<string, unknown>>(defaults.procedures);
-  const list = useQuery({ queryKey: ['catalog', resource, query, active], queryFn: () => api.catalog(resource, { q: query || undefined, active: active || undefined }) });
+  const list = useQuery({ queryKey: ['catalog', resource, debouncedQuery, active], queryFn: () => api.catalog(resource, { q: debouncedQuery || undefined, active: active || undefined }) });
   const save = useMutation({
     mutationFn: () => api.saveCatalog(resource, normalizeForm(form), editing?.id),
     onSuccess: async () => { setEditing(null); setForm(defaults[resource]); await queryClient.invalidateQueries({ queryKey: ['catalog', resource] }); },
@@ -193,8 +194,9 @@ function CatalogField({ field, value, onChange }: { field: Field; value: unknown
 function LinksSection({ canManage }: { canManage: boolean }) {
   const queryClient = useQueryClient();
   const [query, setQuery] = useState('');
+  const debouncedQuery = useDebouncedValue(query);
   const options = useQuery({ queryKey: ['catalog-link-options'], queryFn: api.catalogLinkOptions });
-  const links = useQuery({ queryKey: ['catalog-links', query], queryFn: () => api.catalogLinks({ q: query || undefined }) });
+  const links = useQuery({ queryKey: ['catalog-links', debouncedQuery], queryFn: () => api.catalogLinks({ q: debouncedQuery || undefined }) });
   const [form, setForm] = useState<CatalogLinkInput>({ unit_id: '', procedure_id: '', professional_id: '', agreement_id: '', active: true });
   const save = useMutation({ mutationFn: () => api.saveCatalogLink(form), onSuccess: async () => { setForm({ unit_id: '', procedure_id: '', professional_id: '', agreement_id: '', active: true }); await queryClient.invalidateQueries({ queryKey: ['catalog-links'] }); } });
   const deactivate = useMutation({ mutationFn: api.deactivateCatalogLink, onSuccess: () => queryClient.invalidateQueries({ queryKey: ['catalog-links'] }) });

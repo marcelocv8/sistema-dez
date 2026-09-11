@@ -27,6 +27,7 @@ class ChatController extends Controller
             ->whereHas('participants', fn ($query) => $query->whereKey($userId))
             ->with(['participants:id,name,role'])
             ->orderByDesc('updated_at')->limit(100)->get();
+        $unread = ChatConversation::unreadCountsFor($userId, $conversations->modelKeys());
 
         return response()->json(['data' => $conversations->map(fn (ChatConversation $conversation): array => [
             'id' => $conversation->id,
@@ -36,7 +37,7 @@ class ChatController extends Controller
                 'id' => (int) $user->id, 'name' => $user->name, 'role' => $user->role?->value,
             ])->all(),
             'last_message_at' => $conversation->updated_at?->toIso8601String(),
-            'unread' => $conversation->unreadCountFor($userId),
+            'unread' => $unread[$conversation->id] ?? 0,
         ])->all()]);
     }
 
@@ -158,11 +159,10 @@ class ChatController extends Controller
     public function unread(Request $request): JsonResponse
     {
         $userId = (int) $request->user()->id;
-        $total = ChatConversation::query()
+        $conversationIds = ChatConversation::query()
             ->whereHas('participants', fn ($query) => $query->whereKey($userId))
-            ->with('messages:id,chat_conversation_id,user_id,created_at')
-            ->get()
-            ->sum(fn (ChatConversation $conversation): int => $conversation->unreadCountFor($userId));
+            ->pluck('id');
+        $total = array_sum(ChatConversation::unreadCountsFor($userId, $conversationIds));
 
         return response()->json(['data' => ['unread' => (int) $total]]);
     }

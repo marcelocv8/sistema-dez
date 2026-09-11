@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api, apiErrorMessage, type CurrentUser, type LoyaltyDue, type LoyaltySubscription } from '@dez/api';
 import { formatMoney } from '@dez/domain';
-import { Alert, Button, EmptyState, LoadingState, Panel, SelectField, StatusPill, TextField } from '@dez/ui';
+import { Alert, Button, EmptyState, LoadingState, Panel, SelectField, StatusPill, TextField, useDebouncedValue } from '@dez/ui';
 
 const methods = [
   { code: 'ESPECIE', label: 'Espécie' },
@@ -23,6 +23,7 @@ export default function SouDezPage({ user }: { user: CurrentUser }) {
   const client = useQueryClient();
   const [tab, setTab] = useState<Tab>('assinantes');
   const [search, setSearch] = useState('');
+  const debouncedSearch = useDebouncedValue(search);
   const [form, setForm] = useState({ plan_id: '', cpf: '', name: '', dependent_cpf: '', dependent_name: '' });
   const [collect, setCollect] = useState<Record<string, { unit_id: string; method: string }>>({});
   const [planForm, setPlanForm] = useState({ name: '', agreement_id: '', monthly_fee: '', due_day: '10' });
@@ -33,8 +34,8 @@ export default function SouDezPage({ user }: { user: CurrentUser }) {
   const plans = useQuery({ queryKey: ['loyalty', 'plans'], queryFn: () => api.loyaltyPlans() });
   const activePlans = (plans.data ?? []).filter((item) => item.active);
   const subscriptions = useQuery({
-    queryKey: ['loyalty', 'subscriptions', search],
-    queryFn: () => api.loyaltySubscriptions({ search: search || undefined }),
+    queryKey: ['loyalty', 'subscriptions', debouncedSearch],
+    queryFn: () => api.loyaltySubscriptions({ search: debouncedSearch || undefined }),
   });
   const dues = useQuery({ queryKey: ['loyalty', 'dues'], queryFn: () => api.loyaltyDues({ status: 'PENDENTE' }), enabled: tab === 'mensalidades' });
   const paidDues = useQuery({ queryKey: ['loyalty', 'dues-paid'], queryFn: () => api.loyaltyDues({ status: 'PAGA' }), enabled: tab === 'mensalidades' });

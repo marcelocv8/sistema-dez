@@ -6,7 +6,7 @@ import '@dez/ui/styles.css';
 import './styles.css';
 import { App } from './App';
 
-const queryClient = new QueryClient({ defaultOptions: { queries: { staleTime: 30_000, retry: 1 } } });
+const queryClient = new QueryClient({ defaultOptions: { queries: { staleTime: 30_000, retry: 1, refetchOnWindowFocus: false, refetchOnReconnect: false } } });
 
 enableMocking().finally(() => {
   createRoot(document.getElementById('root')!).render(

@@ -1379,7 +1379,48 @@ Motivação: o dono pediu banco com substância para testar todas as páginas ("
 2. Bate-papo: pré-carga do chunk/API da 1ª visita (13,5 s) — avaliar.
 3. Avaliar replicar a correção de `formatDay` (datas date-only via fuso) em outras páginas que exibem datas puras.
 
+### 14.23 Otimizações de desempenho (11/09/2026)
+
+**Situação: implementado e validado localmente. Sem commit automático — aguarda autorização do dono.**
+
+Motivação: o dono relatou lentidão geral de carregamento (páginas e dados). Auditoria de código + infra e pacote de otimizações.
+
+#### Ambiente (fora do repo)
+
+- **OPcache habilitado** no `php.ini` nativo (`zend_extension=opcache`, `opcache.enable=1`, `opcache.enable_cli=1`, `memory_consumption=256M`, `interned_strings_buffer=16`, `max_accelerated_files=20000`). Antes, cada request recompilava todo o framework. A extensão `redis` **não** está instalada no PHP nativo, então cache/session/queue seguem no PostgreSQL (Redis do compose fica ocioso).
+- **Servidor embutido single-thread**: o `php artisan serve` processa 1 request por vez e serializa as chamadas paralelas do SPA. Definir `$env:PHP_CLI_SERVER_WORKERS=4` (ou mais) **no shell** antes de subir a API — a variável é lida pelo servidor embutido do PHP via `getenv`, não pelo `.env`. Alternativa estrutural: FrankenPHP/Octane.
+
+#### Backend (código)
+
+- **Migration `2026_09_11_000000_add_performance_indexes`** (aplicada no dev): índices para FKs e colunas de filtro/ordem que o PostgreSQL não indexa sozinho (fila por `service_date`, `appointments.paid_at`, `payout_items.payout_id`, caixa, chat, prontuário, laudos, MT etc.).
+- **`MaterializeScheduleOccurrences`**: reescrito de `firstOrNew/save` por slot (~milhares de queries) para **upsert em lote** (chunks de 500) + contagem de bookings em uma query agregada. Mesma semântica, ~ordem de magnitude menos round-trips.
+- **`BuildAvailability`**: bookings agrupados por offering/profissional em O(n) em vez de refilter por offering; resultado concatenado sem cópias O(n²).
+- **`RefreshOfferingVisibility`**: checagem de disponibilidade online agora é uma consulta indexada por ocorrência aberta no horizonte, em vez de construir a disponibilidade completa a cada mutação de escala.
+- **Chat**: contagem de não-lidas em **uma query agregada** por listagem (`ChatConversation::unreadCountsFor`), no lugar de 2 queries por conversa (~200 numa listagem).
+- **Caixa/Repasses**: `summary` agrega em SQL (`GROUP BY`); relatório diário busca recibos em uma query; `PayoutController::generate` troca o `pluck` da tabela inteira de itens por subquery e faz insert em lote.
+- **WhatsApp**: mensagem do agendamento enviada via `terminating` (após a resposta), tirando o timeout do AppChat da latência do booking.
+
+#### Frontend (código)
+
+- **Busca com debounce** (hook `useDebouncedValue` em `@dez/ui`) em Cadastros, Vínculos, Sou DEZ, Orçamentos e agendamento público.
+- **`Intl` memoizado** em `@dez/domain` e nos formatters inline de Agenda/Agendamento (não recria mais formatador por linha).
+- **React Query**: `refetchOnWindowFocus/Reconnect` desligados; `/me` com `staleTime: Infinity`.
+- **Build**: `manualChunks` (react/query/router/vendor), **sem sourcemap** em produção; `ManageAppointment` do agendamento virou chunk lazy.
+- **Fontes**: `@import` do Google Fonts removido do CSS e movido para `<link rel="preconnect">` + `<link>` nos 4 `index.html` (deixa de bloquear o render).
+- **Logo** com dimensões intrínsecas (323×117) + `decoding="async"` (evita CLS).
+
+#### Descartado (com motivo)
+
+- **Cache HTTP de disponibilidade/catálogo**: quebraria `OnlineVisibilityTest` (store `array` nos testes não expira) e o backend de cache nativo não tem Redis; exigiria invalidação por mutação — avaliar quando houver Redis nativo.
+- **Remover `ClinicalHtml::clean` da leitura**: `ImplementedBlocksRegressionTest` exige saneamento **na leitura** para dados gravados fora dos mutators (importação/raw) — é defesa em profundidade, mantida.
+
+#### Validação
+
+- Backend: suite **183/183** (Pint ok); Frontend: typecheck 7/7 e Vitest **42/42**; build de `equipe` e `agendamento` com chunks e sem sourcemap.
+
 ---
+
+
 
 ## 15. Ambiente em outro PC (só teste, sem prod)
 

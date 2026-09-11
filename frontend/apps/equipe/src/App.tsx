@@ -27,7 +27,7 @@ const WhatsAppPage = lazy(() => import('./pages/WhatsAppPage'));
 
 export function App() {
   const queryClient = useQueryClient();
-  const currentUser = useQuery({ queryKey: ['current-user'], queryFn: api.currentUser, retry: false });
+  const currentUser = useQuery({ queryKey: ['current-user'], queryFn: api.currentUser, retry: false, staleTime: Infinity, refetchOnWindowFocus: false });
 
   if (currentUser.isLoading) return <LoadingState label="Validando acesso" />;
   if (!currentUser.data) return <LoginPage onAuthenticated={(user: CurrentUser) => queryClient.setQueryData(['current-user'], user)} />;

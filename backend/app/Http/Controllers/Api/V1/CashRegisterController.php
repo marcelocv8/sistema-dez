@@ -99,6 +99,13 @@ class CashRegisterController extends Controller
             ->whereBetween('opened_at', [$start->utc(), $end->utc()])
             ->orderBy('opened_at')->get();
 
+        $receiptNumbers = [];
+        CashMovement::query()->whereIn('cash_register_id', $registers->modelKeys())
+            ->orderBy('receipt_number')->get(['cash_register_id', 'receipt_number'])
+            ->each(function (CashMovement $movement) use (&$receiptNumbers): void {
+                $receiptNumbers[$movement->cash_register_id][] = (int) $movement->receipt_number;
+            });
+
         $rows = [];
         $totalExpected = '0.00';
         $totalCounted = '0.00';
@@ -117,13 +124,13 @@ class CashRegisterController extends Controller
                 $totalCounted = bcadd($totalCounted, (string) ($register->counted_cash ?? '0.00'), 2);
                 $totalDifference = bcadd($totalDifference, (string) ($register->cash_difference ?? '0.00'), 2);
             }
-            $numbers = CashMovement::query()->where('cash_register_id', $register->id)
-                ->orderBy('receipt_number')->pluck('receipt_number')->all();
+            $numbers = $receiptNumbers[$register->id] ?? [];
             $missing = [];
             if ($numbers !== []) {
                 $max = max($numbers);
+                $seen = array_flip($numbers);
                 for ($i = 1; $i <= $max; $i++) {
-                    if (! in_array($i, $numbers, true)) {
+                    if (! isset($seen[$i])) {
                         $missing[] = $i;
                     }
                 }
@@ -271,46 +278,54 @@ class CashRegisterController extends Controller
     /** @return array<string, mixed> */
     private function summary(CashRegister $register): array
     {
-        $rows = CashMovement::query()->with('paymentMethod:id,code,name')
-            ->where('cash_register_id', $register->id)->get();
+        $rows = CashMovement::query()
+            ->join('payment_methods', 'payment_methods.id', '=', 'cash_movements.payment_method_id')
+            ->where('cash_movements.cash_register_id', $register->id)
+            ->groupBy('cash_movements.type', 'payment_methods.id', 'payment_methods.code', 'payment_methods.name')
+            ->selectRaw('cash_movements.type as type, payment_methods.code as code, payment_methods.name as name, '
+                .'count(*) as movement_count, coalesce(sum(cash_movements.gross_amount), 0) as gross, '
+                .'coalesce(sum(cash_movements.fee_amount), 0) as fee, coalesce(sum(cash_movements.net_amount), 0) as net')
+            ->get();
+
+        $receiptCount = 0;
         $byMethod = [];
         $especieIn = '0.00';
         $sangriaTotal = '0.00';
         $voidTotal = '0.00';
         $repasseTotal = '0.00';
-        foreach ($rows as $movement) {
-            if ($movement->type === 'SANGRIA' || $movement->type === 'REPASSE') {
-                $sangriaTotal = $movement->type === 'SANGRIA'
-                    ? bcadd($sangriaTotal, (string) $movement->net_amount, 2)
-                    : $sangriaTotal;
-                $repasseTotal = $movement->type === 'REPASSE'
-                    ? bcadd($repasseTotal, (string) $movement->net_amount, 2)
-                    : $repasseTotal;
-
-                continue;
-            }
-            if ($movement->type === 'ESTORNO') {
-                $voidTotal = bcadd($voidTotal, (string) $movement->net_amount, 2);
-                if ($movement->paymentMethod->code === 'ESPECIE') {
-                    $especieIn = bcsub($especieIn, (string) $movement->net_amount, 2);
+        foreach ($rows as $row) {
+            $receiptCount += (int) $row->movement_count;
+            if ($row->type === 'SANGRIA' || $row->type === 'REPASSE') {
+                if ($row->type === 'SANGRIA') {
+                    $sangriaTotal = bcadd($sangriaTotal, (string) $row->net, 2);
+                } else {
+                    $repasseTotal = bcadd($repasseTotal, (string) $row->net, 2);
                 }
 
                 continue;
             }
-            $code = $movement->paymentMethod->code;
-            $byMethod[$code] ??= ['method' => $code, 'name' => $movement->paymentMethod->name, 'count' => 0, 'gross' => '0.00', 'fee' => '0.00', 'net' => '0.00'];
-            $byMethod[$code]['count']++;
-            $byMethod[$code]['gross'] = bcadd($byMethod[$code]['gross'], (string) $movement->gross_amount, 2);
-            $byMethod[$code]['fee'] = bcadd($byMethod[$code]['fee'], (string) $movement->fee_amount, 2);
-            $byMethod[$code]['net'] = bcadd($byMethod[$code]['net'], (string) $movement->net_amount, 2);
+            if ($row->type === 'ESTORNO') {
+                $voidTotal = bcadd($voidTotal, (string) $row->net, 2);
+                if ($row->code === 'ESPECIE') {
+                    $especieIn = bcsub($especieIn, (string) $row->net, 2);
+                }
+
+                continue;
+            }
+            $code = $row->code;
+            $byMethod[$code] ??= ['method' => $code, 'name' => $row->name, 'count' => 0, 'gross' => '0.00', 'fee' => '0.00', 'net' => '0.00'];
+            $byMethod[$code]['count'] += (int) $row->movement_count;
+            $byMethod[$code]['gross'] = bcadd($byMethod[$code]['gross'], (string) $row->gross, 2);
+            $byMethod[$code]['fee'] = bcadd($byMethod[$code]['fee'], (string) $row->fee, 2);
+            $byMethod[$code]['net'] = bcadd($byMethod[$code]['net'], (string) $row->net, 2);
             if ($code === 'ESPECIE') {
-                $especieIn = bcadd($especieIn, (string) $movement->net_amount, 2);
+                $especieIn = bcadd($especieIn, (string) $row->net, 2);
             }
         }
         $expected = bcsub(bcsub(bcadd((string) $register->float_amount, $especieIn, 2), $sangriaTotal, 2), $repasseTotal, 2);
 
         return [
-            'receipt_count' => $rows->count(),
+            'receipt_count' => $receiptCount,
             'by_method' => array_values($byMethod),
             'float_amount' => (string) $register->float_amount,
             'especie_in' => $especieIn,

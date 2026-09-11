@@ -18,6 +18,7 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 
@@ -85,13 +86,12 @@ class PayoutController extends Controller
             if ($start->diffInDays($end) > 92) {
                 throw ValidationException::withMessages(['to' => 'Gere repasses de no máximo 93 dias por vez.']);
             }
-            $used = PayoutItem::query()->pluck('appointment_id')->all();
             $appointments = Appointment::query()->with(['serviceOffering.procedure'])
                 ->whereHas('serviceOffering', fn ($query) => $query->where('professional_id', $professional->id))
                 ->where('status', '!=', 'CANCELLED')
                 ->whereIn('payment_status', ['PAID', 'AUTHORIZED'])
                 ->whereBetween('scheduled_at', [$start->utc(), $end->utc()])
-                ->whereNotIn('id', $used)
+                ->whereNotIn('id', fn ($query) => $query->select('appointment_id')->from('payout_items'))
                 ->orderBy('scheduled_at')->lockForUpdate()->get();
             if ($appointments->isEmpty()) {
                 throw ValidationException::withMessages(['period' => 'Nenhuma ficha paga ou autorizada no período para este profissional.']);
@@ -109,6 +109,8 @@ class PayoutController extends Controller
             ]);
             $subtotal = '0.00';
             $total = '0.00';
+            $rows = [];
+            $now = now();
             foreach ($appointments as $appointment) {
                 $gross = (string) $appointment->price_snapshot;
                 $override = $overrides->get($appointment->serviceOffering->procedure_id);
@@ -118,16 +120,20 @@ class PayoutController extends Controller
                     ? bcdiv(bcmul($gross, $value, 4), '100', 2)
                     : bcadd($value, '0', 2);
                 $rule = ($override ? 'OVERRIDE_' : 'DEFAULT_').$type;
-                PayoutItem::query()->create([
+                $rows[] = [
+                    'id' => (string) Str::uuid(),
                     'payout_id' => $payout->id,
                     'appointment_id' => $appointment->id,
                     'gross_amount' => $gross,
                     'commission_amount' => $commission,
                     'rule' => $rule,
-                ]);
+                    'created_at' => $now,
+                    'updated_at' => $now,
+                ];
                 $subtotal = bcadd($subtotal, $gross, 2);
                 $total = bcadd($total, $commission, 2);
             }
+            PayoutItem::query()->insert($rows);
             $payout->forceFill(['subtotal_gross' => $subtotal, 'total_commission' => $total])->save();
             $this->audit->record($request, $payout, 'payout.generated', null, $payout->attributesToArray());
 

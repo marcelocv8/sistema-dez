@@ -47,20 +47,34 @@ class BuildAvailability
             ->whereBetween('scheduled_at', [$from->utc(), $to->endOfDay()->utc()])
             ->whereHas('serviceOffering', fn ($query) => $query->whereIn('id', $offerings->modelKeys())
                 ->orWhereIn('professional_id', $offerings->pluck('professional_id')->filter()->unique()))->get();
+
+        $bookingsByOffering = [];
+        $bookingsByProfessional = [];
+        foreach ($bookings as $booking) {
+            $bookingsByOffering[$booking->service_offering_id][] = $booking;
+            $professionalId = $booking->serviceOffering?->professional_id;
+            if ($professionalId) {
+                $bookingsByProfessional[$professionalId][] = $booking;
+            }
+        }
         foreach ($offerings as $offering) {
-            $offering->setRelation('appointments', $bookings->filter(fn ($booking) => $offering->professional_id
-                ? $booking->serviceOffering->professional_id === $offering->professional_id
-                : $booking->service_offering_id === $offering->id));
+            $offering->setRelation('appointments', collect($offering->professional_id
+                ? ($bookingsByProfessional[$offering->professional_id] ?? [])
+                : ($bookingsByOffering[$offering->id] ?? [])));
         }
 
         $result = [];
+        $public = ! ($filters['internal'] ?? false);
+        $today = CarbonImmutable::today($timezone);
+        $horizonEnd = $today->addDays(config('sistema_dez.public_booking_horizon_days') - 1);
         for ($date = $from; $date->lessThanOrEqualTo($to); $date = $date->addDay()) {
+            if ($public && ($date->lessThan($today) || $date->greaterThan($horizonEnd))) {
+                continue;
+            }
             foreach ($offerings as $offering) {
-                if (! ($filters['internal'] ?? false) && ($date->lessThan(CarbonImmutable::today($timezone))
-                    || $date->greaterThan(CarbonImmutable::today($timezone)->addDays(config('sistema_dez.public_booking_horizon_days') - 1)))) {
-                    continue;
+                foreach ($this->forDate($offering, $date, $timezone, $public) as $row) {
+                    $result[] = $row;
                 }
-                $result = [...$result, ...$this->forDate($offering, $date, $timezone, ! ($filters['internal'] ?? false))];
             }
         }
 

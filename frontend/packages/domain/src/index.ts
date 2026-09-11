@@ -47,17 +47,26 @@ export type Permission =
 
 export const clinicTimeZone = 'America/Fortaleza';
 
+const moneyFormatter = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' });
+const clinicDateFormatters = new Map<string, Intl.DateTimeFormat>();
+
 export function formatMoney(value: Money | string | number): string {
   const amount = typeof value === 'object' ? Number(value.amount) : Number(value);
-  return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(amount);
+  return moneyFormatter.format(amount);
 }
 
 export function formatClinicDate(value: string | Date, options?: Intl.DateTimeFormatOptions): string {
-  return new Intl.DateTimeFormat('pt-BR', {
-    timeZone: clinicTimeZone,
-    day: '2-digit',
-    month: 'long',
-    year: 'numeric',
-    ...options,
-  }).format(new Date(value));
+  const key = options ? JSON.stringify(options) : '';
+  let formatter = clinicDateFormatters.get(key);
+  if (!formatter) {
+    formatter = new Intl.DateTimeFormat('pt-BR', {
+      timeZone: clinicTimeZone,
+      day: '2-digit',
+      month: 'long',
+      year: 'numeric',
+      ...options,
+    });
+    clinicDateFormatters.set(key, formatter);
+  }
+  return formatter.format(new Date(value));
 }

@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api, apiErrorMessage, type Budget, type BudgetItemInput, type BudgetStatus, type CurrentUser } from '@dez/api';
 import { formatMoney } from '@dez/domain';
-import { Alert, Button, EmptyState, LoadingState, Panel, SectionTitle, SelectField, StatusPill, TextField } from '@dez/ui';
+import { Alert, Button, EmptyState, LoadingState, Panel, SectionTitle, SelectField, StatusPill, TextField, useDebouncedValue } from '@dez/ui';
 
 const statusTone: Record<BudgetStatus, 'warning' | 'info' | 'success' | 'danger' | 'neutral'> = {
   RASCUNHO: 'warning', ENVIADO: 'info', ACEITO: 'success', RECUSADO: 'danger', PERDIDO: 'neutral',
@@ -17,6 +17,7 @@ export default function BudgetsPage({ user }: { user: CurrentUser }) {
   const [agreementId, setAgreementId] = useState('');
   const [unitId, setUnitId] = useState('');
   const [search, setSearch] = useState('');
+  const debouncedSearch = useDebouncedValue(search);
   const [items, setItems] = useState<Array<{ procedure_price_id: string; procedure_id: string; name: string; amount: string; quantity: number }>>([]);
   const [prescription, setPrescription] = useState<File | undefined>();
   const [resolveFor, setResolveFor] = useState('');
@@ -28,9 +29,9 @@ export default function BudgetsPage({ user }: { user: CurrentUser }) {
   const units = useQuery({ queryKey: ['budget-units'], queryFn: () => api.catalog('units', { active: '1' }) });
   const budgets = useQuery({ queryKey: ['budgets', statusFilter], queryFn: () => api.budgets({ status: statusFilter || undefined }) });
   const options = useQuery({
-    queryKey: ['budget-options', agreementId, unitId, search],
-    queryFn: () => api.budgetPriceOptions(agreementId, search || undefined, unitId),
-    enabled: Boolean(agreementId && unitId) && search.length >= 3,
+    queryKey: ['budget-options', agreementId, unitId, debouncedSearch],
+    queryFn: () => api.budgetPriceOptions(agreementId, debouncedSearch || undefined, unitId),
+    enabled: Boolean(agreementId && unitId) && debouncedSearch.length >= 3,
   });
   const rows = budgets.data ?? [];
   const total = items.reduce((sum, item) => sum + Number(item.amount) * item.quantity, 0);

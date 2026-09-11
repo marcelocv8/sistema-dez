@@ -108,14 +108,23 @@ class BookAppointment
             return $this->withManagementToken($appointment->load('serviceOffering.procedure'), $data['idempotency_key']);
         }, 3);
 
-        // T2 (§6.2.4): mensagem automática no ato do agendamento — fora da
-        // transação e fail-open: falha de envio nunca derruba a reserva.
-        try {
-            $this->whatsapp->bookingMessage($appointment);
-        } catch (Throwable) {
-        }
+        // T2 (§6.2.4): mensagem automática no ato do agendamento — enviada
+        // depois da resposta para não somar o timeout do AppChat à latência
+        // do agendamento (fail-open: falha de envio nunca derruba a reserva).
+        $this->dispatchBookingMessage($appointment);
 
         return $appointment;
+    }
+
+    private function dispatchBookingMessage(Appointment $appointment): void
+    {
+        $whatsapp = $this->whatsapp;
+        app()->terminating(function () use ($whatsapp, $appointment): void {
+            try {
+                $whatsapp->bookingMessage($appointment);
+            } catch (Throwable) {
+            }
+        });
     }
 
     private function withManagementToken(Appointment $appointment, string $idempotencyKey): Appointment
