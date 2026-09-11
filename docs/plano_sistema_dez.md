@@ -1,6 +1,17 @@
 # Sistema DEZ — Clínica DEZ
-## Especificação (v0.16)
+## Especificação (v0.17)
 
+> **v0.17** — Otimização de desempenho (11/09/2026) — §14.23 e §14.24.
+> Auditoria de código + infra com foco em lentidão: materialização de agenda em
+> upsert de lote, disponibilidade O(n), não-lidas do chat em query agregada,
+> caixa/repasses agregados em SQL, WhatsApp após a resposta, migration de
+> índices; no frontend, debounce de busca, `Intl` memoizado, code-splitting e
+> fontes sem bloquear render. Ambiente: OPcache ligado e API passou a ser
+> servida pelo **FrankenPHP nativo no Windows** (32 threads) — 10 requisições
+> simultâneas caíram de ~1572 ms para ~210 ms. Validação: backend 183/183,
+> Vitest 42/42, typecheck 7/7. Commits sob autorização do dono (`dea9336`,
+> `5a140ff`).
+>
 > **v0.16** — Banco dev populado com dados mock (`MockDataSeeder` + 20 factories) e
 > **varredura geral via navegador** em 09/09/2026 — §14.22. Login + 17 rotas do app
 > equipe, painel TV, reserva pública e portal do paciente testados de ponta a ponta
@@ -159,6 +170,7 @@ O catálogo reconciliado contém 998 procedimentos (51 classificados como `ATIVO
 | Camada | Recomendação | Alternativa | Justificativa |
 |---|---|---|---|
 | **Backend** | **Laravel 13** (PHP 8.4) — confirmado | — | PHP maduro, filas/queues nativas, migra lógica SQL do STG com familiaridade |
+| **Servidor de aplicação** | **FrankenPHP** (nativo no Windows em dev, PHP 8.5 embutido) | `php artisan serve` | Concorrência real e OPcache; medido em §14.24 |
 | **Banco** | **PostgreSQL** (manter) | — | O STG já usa Postgres; reaproveitar a modelagem, não o schema bagunçado |
 | **Frontend web (equipe)** | **React + Vite + TypeScript** — confirmado | — | Monorepo compartilhado já implementado para equipe, agendamento, painel e paciente |
 | **Agendamento online (site)** | Widget/API pública no site existente | — | Integração simples |
@@ -1396,6 +1408,7 @@ Motivação: o dono relatou lentidão geral de carregamento (páginas e dados). 
 - **`MaterializeScheduleOccurrences`**: reescrito de `firstOrNew/save` por slot (~milhares de queries) para **upsert em lote** (chunks de 500) + contagem de bookings em uma query agregada. Mesma semântica, ~ordem de magnitude menos round-trips.
 - **`BuildAvailability`**: bookings agrupados por offering/profissional em O(n) em vez de refilter por offering; resultado concatenado sem cópias O(n²).
 - **`RefreshOfferingVisibility`**: checagem de disponibilidade online agora é uma consulta indexada por ocorrência aberta no horizonte, em vez de construir a disponibilidade completa a cada mutação de escala.
+- **Bug pré-existente corrigido**: `schedule:materialize` quebrava em dev com `LazyLoadingViolation` (`$offering->unit`); resolvido com `loadMissing('unit')`, e `RefreshOfferingVisibility` passou a carregar `procedurePrice`.
 - **Chat**: contagem de não-lidas em **uma query agregada** por listagem (`ChatConversation::unreadCountsFor`), no lugar de 2 queries por conversa (~200 numa listagem).
 - **Caixa/Repasses**: `summary` agrega em SQL (`GROUP BY`); relatório diário busca recibos em uma query; `PayoutController::generate` troca o `pluck` da tabela inteira de itens por subquery e faz insert em lote.
 - **WhatsApp**: mensagem do agendamento enviada via `terminating` (após a resposta), tirando o timeout do AppChat da latência do booking.

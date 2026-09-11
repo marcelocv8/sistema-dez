@@ -39,7 +39,8 @@
 
 ## 4. Mapa do repo (para agentes novos)
 
-- `backend/` — API Laravel 13. Contrato em `backend/openapi.yaml`.
+- `backend/` — API Laravel 13. Contrato em `backend/openapi.yaml`. Servida em
+  dev pelo FrankenPHP via `backend/Caddyfile` (ver §5).
   Importação do legado lê `STG_IMPORT_PATH` (`/data/stg` no Docker); as fontes
   físicas do STG estão em `C:\Projects\STG\dezstg2\_extracoes_stg` (fora do repo).
 - `frontend/` — pnpm monorepo (`apps/`, `packages/`). Mock MSW só com `VITE_USE_MSW=true`.
@@ -56,6 +57,20 @@
   serve` dentro de containers (`docker run composer`, `compose exec api`, etc.):
   o bind-mount do Docker Desktop no Windows trava o PC inteiro. Docker serve
   **só** para `postgres` + `redis`.
+- **API/HTTP (dev):** a API local roda no **FrankenPHP nativo no Windows**, não
+  no `php artisan serve`. Binário em
+  `%LOCALAPPDATA%\frankenphp\frankenphp.exe` (PHP 8.5 embutido, ~32 threads) com
+  `php.ini` próprio ao lado, habilitando as mesmas extensões do PHP nativo
+  (`pdo_pgsql`, `mbstring`, `openssl`, `curl`, `fileinfo`, `intl`, `zip`).
+  Dentro de `backend/`:
+  - subir: `& "$env:LOCALAPPDATA\frankenphp\frankenphp.exe" run --config Caddyfile`
+  - parar: `Get-CimInstance Win32_Process -Filter "Name='frankenphp.exe'" | ForEach-Object { Stop-Process -Id $_.ProcessId -Force }`
+  - fallback single-thread: `php artisan serve --port=8000`.
+  `PHP_CLI_SERVER_WORKERS` **não funciona no Windows** (o servidor embutido
+  depende de `fork`) — não perca tempo com ele. Detalhes e medições em
+  `docs/plano_sistema_dez.md` §14.24.
+- **OPcache** já está habilitado no `php.ini` nativo (`opcache.enable=1`,
+  `opcache.enable_cli=1`) — o fallback `php artisan serve` também se beneficia.
 - Comandos padrão (sempre com caminho completo do PHP, pois cada chamada de
   shell nasce sem o PATH recarregado):
   - `& "$env:LOCALAPPDATA\php\php.exe" "$env:LOCALAPPDATA\php\composer.phar" install`
