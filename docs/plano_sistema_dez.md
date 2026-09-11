@@ -1388,7 +1388,7 @@ Motivação: o dono relatou lentidão geral de carregamento (páginas e dados). 
 #### Ambiente (fora do repo)
 
 - **OPcache habilitado** no `php.ini` nativo (`zend_extension=opcache`, `opcache.enable=1`, `opcache.enable_cli=1`, `memory_consumption=256M`, `interned_strings_buffer=16`, `max_accelerated_files=20000`). Antes, cada request recompilava todo o framework. A extensão `redis` **não** está instalada no PHP nativo, então cache/session/queue seguem no PostgreSQL (Redis do compose fica ocioso).
-- **Servidor embutido single-thread**: o `php artisan serve` processa 1 request por vez e serializa as chamadas paralelas do SPA. Definir `$env:PHP_CLI_SERVER_WORKERS=4` (ou mais) **no shell** antes de subir a API — a variável é lida pelo servidor embutido do PHP via `getenv`, não pelo `.env`. Alternativa estrutural: FrankenPHP/Octane.
+- **Servidor embutido single-thread**: o `php artisan serve` processa 1 request por vez e serializa as chamadas paralelas do SPA. `PHP_CLI_SERVER_WORKERS` **não funciona no Windows** (o servidor embutido depende de `fork`; medido: 2 requisições de 2s levam ~4s tanto com 1 quanto com 4 workers). A solução adotada foi o FrankenPHP nativo (ver §14.24).
 
 #### Backend (código)
 
@@ -1417,6 +1417,43 @@ Motivação: o dono relatou lentidão geral de carregamento (páginas e dados). 
 #### Validação
 
 - Backend: suite **183/183** (Pint ok); Frontend: typecheck 7/7 e Vitest **42/42**; build de `equipe` e `agendamento` com chunks e sem sourcemap.
+
+### 14.24 Servidor de aplicação: FrankenPHP nativo no Windows (11/09/2026)
+
+**Situação: implementado e validado localmente. Arquivo novo `backend/Caddyfile` — sem commit automático, aguarda autorização.**
+
+Substitui o `php artisan serve` (single-thread) pelo **FrankenPHP 1.12.7** (PHP 8.5.10 embutido, 32 threads), mantendo a porta **8000** e sem mudar código nem dependências do app.
+
+**Instalação (fora do repo):**
+- Binário em `%LOCALAPPDATA%\frankenphp` (release oficial `frankenphp-windows-x86_64`).
+- `%LOCALAPPDATA%\frankenphp\php.ini` habilita as mesmas extensões do PHP nativo: `pdo_pgsql`, `pgsql`, `mbstring`, `openssl`, `curl`, `fileinfo`, `intl`, `zip` (o resto é embutido), mais OPcache.
+
+**Uso:**
+```powershell
+cd C:\Projects\sistema-dez\backend
+& "$env:LOCALAPPDATA\frankenphp\frankenphp.exe" run --config Caddyfile
+# parar:
+Get-CimInstance Win32_Process -Filter "Name='frankenphp.exe'" | ForEach-Object { Stop-Process -Id $_.ProcessId -Force }
+```
+
+**Medições (banco dev, mesmas telas):**
+
+| Métrica | artisan serve | FrankenPHP | Ganho |
+|---|---|---|---|
+| API — 1 requisição (média) | 150 ms | 108 ms | 1,4× |
+| API — 10 requisições simultâneas | 1572 ms | 210 ms | **7,5×** |
+| Visão geral (dados prontos) | 1703 ms | 1128 ms | 1,5× |
+| Agenda | 1857 ms | 958 ms | 1,9× |
+| Recepção | 1983 ms | 765 ms | 2,6× |
+| Caixa | 3053 ms | 1037 ms | 2,9× |
+| Bate-papo | 1927 ms | 1635 ms | 1,2× |
+
+- Soma das chamadas da Recepção caiu de 5852 ms para 759 ms. Login stateful do zero (CSRF/sessão) validado no navegador, sem erros.
+- Ainda resta o custo do **Vite em dev** (ESM não empacotado), notável no Bate-papo; mitigável rodando o frontend buildado.
+
+**Observações / rollback:**
+- HTTP/2 e HTTP/3 aparecem como "skipped" por não haver TLS em `:8000` (segue HTTP/1.1, como hoje).
+- Rollback trivial: parar o FrankenPHP e voltar `php artisan serve --port=8000`; nenhuma alteração de código/dependência foi feita.
 
 ---
 
