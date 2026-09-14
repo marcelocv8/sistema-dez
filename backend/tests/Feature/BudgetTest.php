@@ -71,7 +71,7 @@ class BudgetTest extends TestCase
         $this->getJson("/api/v1/team/budgets/price-options?agreement_id={$price->agreement_id}&unit_id={$price->unit_id}&q=exa")->assertForbidden();
 
         $this->actingAs(User::factory()->create(['role' => UserRole::Reception]));
-        $options = $this->getJson("/api/v1/team/budgets/price-options?agreement_id={$price->agreement_id}&unit_id={$price->unit_id}&q=".substr((string) $price->procedure->name, 0, 5))
+        $options = $this->getJson('/api/v1/team/budgets/price-options?'.http_build_query(['agreement_id' => $price->agreement_id, 'unit_id' => $price->unit_id, 'q' => substr((string) $price->procedure->name, 0, 5)]))
             ->assertOk()->json('data');
         $this->assertNotEmpty($options);
         $this->assertSame('80.00', $options[0]['amount']);
