@@ -27,12 +27,13 @@ const WhatsAppPage = lazy(() => import('./pages/WhatsAppPage'));
 
 export function App() {
   const queryClient = useQueryClient();
+  const basename = import.meta.env.BASE_URL.replace(/\/$/, '');
   const currentUser = useQuery({ queryKey: ['current-user'], queryFn: api.currentUser, retry: false, staleTime: Infinity, refetchOnWindowFocus: false });
 
   if (currentUser.isLoading) return <LoadingState label="Validando acesso" />;
   if (!currentUser.data) return <LoginPage onAuthenticated={(user: CurrentUser) => queryClient.setQueryData(['current-user'], user)} />;
 
-  return <BrowserRouter><AppShell user={currentUser.data} onLogout={async () => { await api.logout(); queryClient.setQueryData(['current-user'], null); }}><Suspense fallback={<LoadingState label="Carregando módulo" />}><Routes>
+  return <BrowserRouter basename={basename}><AppShell user={currentUser.data} onLogout={async () => { await api.logout(); queryClient.setQueryData(['current-user'], null); }}><Suspense fallback={<LoadingState label="Carregando módulo" />}><Routes>
     <Route path="/visao-geral" element={<DashboardPage />} />
     <Route path="/agenda" element={<AgendaPage user={currentUser.data} />} />
     <Route path="/recepcao" element={<ReceptionPage user={currentUser.data} />} />

@@ -1,0 +1,11 @@
+[Unit]
+Description=Sistema DEZ - dispara o scheduler do Laravel a cada minuto
+Documentation=file:/opt/dez/app/docs/plano_deploy.md
+
+[Timer]
+OnCalendar=*-*-* *:*:00
+Persistent=true
+AccuracySec=1s
+
+[Install]
+WantedBy=timers.target

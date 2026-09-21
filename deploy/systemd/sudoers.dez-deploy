@@ -1,0 +1,10 @@
+# Sudoers do usuario de deploy do Sistema DEZ.
+# Instalar em /etc/sudoers.d/dez-deploy com modo 0440 e validar com `visudo -c`.
+#
+# Por que tao restrito: o usuario `dez` escreve no repositorio (git pull), entao
+# nao pode ter sudo generico. Os units do systemd sao arquivos root-owned, logo
+# um commit malicioso nao consegue mudar o que estes comandos executam.
+
+dez ALL=(root) NOPASSWD: /usr/bin/systemctl restart dez-web.service
+dez ALL=(root) NOPASSWD: /usr/bin/systemctl restart dez-schedule.timer
+dez ALL=(root) NOPASSWD: /usr/bin/systemctl daemon-reload

@@ -1,0 +1,25 @@
+[Unit]
+Description=Sistema DEZ - FrankenPHP (borda + app) na 127.0.0.1:8002
+Documentation=file:/opt/dez/app/docs/plano_deploy.md
+After=network-online.target postgresql@16-main.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=dez
+Group=dez
+WorkingDirectory=/opt/dez/app/backend
+Environment=PHPRC=/opt/dez/bin
+ExecStart=/opt/dez/bin/frankenphp run --config /opt/dez/Caddyfile
+Restart=always
+RestartSec=3
+# Teto de memória: em pressão de OOM o kernel mata este serviço, nunca o STG.
+MemoryMax=512M
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=true
+ReadWritePaths=/opt/dez/app/backend/storage /opt/dez/app/backend/bootstrap/cache
+
+[Install]
+WantedBy=multi-user.target

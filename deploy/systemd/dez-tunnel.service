@@ -1,0 +1,23 @@
+[Unit]
+Description=Sistema DEZ - Cloudflare Tunnel proprio (hostname dez.clinicadez.com.br)
+Documentation=file:/opt/dez/app/docs/plano_deploy.md
+# IMPORTANTE: este e um tunel NOVO e independente. O tunel do STG
+# (cloudflared.service / /etc/cloudflared/config.yml) nao deve ser alterado:
+# reinicia-lo derruba a producao.
+After=network-online.target dez-web.service
+Wants=network-online.target
+BindsTo=dez-web.service
+
+[Service]
+Type=simple
+User=dez
+Group=dez
+ExecStart=/usr/bin/cloudflared --no-autoupdate --config /opt/dez/cloudflared/config.yml tunnel run
+Restart=always
+RestartSec=5
+MemoryMax=96M
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

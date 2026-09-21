@@ -9,4 +9,4 @@ const manualChunks = (id: string) => {
   return 'vendor';
 };
 
-export default defineConfig({ plugins: [react()], build: { target: 'es2022', rollupOptions: { output: { manualChunks } } } });
+export default defineConfig({ base: '/painel/', plugins: [react()], build: { target: 'es2022', rollupOptions: { output: { manualChunks } } } });

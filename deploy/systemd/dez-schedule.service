@@ -1,0 +1,11 @@
+[Unit]
+Description=Sistema DEZ - execucao do scheduler do Laravel
+Documentation=file:/opt/dez/app/docs/plano_deploy.md
+
+[Service]
+Type=oneshot
+User=dez
+Group=dez
+WorkingDirectory=/opt/dez/app/backend
+ExecStart=/opt/dez/bin/artisan schedule:run
+MemoryMax=128M

@@ -1,0 +1,10 @@
+[Unit]
+Description=Sistema DEZ - backup diario as 03:00
+Documentation=file:/opt/dez/app/docs/plano_deploy.md
+
+[Timer]
+OnCalendar=*-*-* 03:00:00
+Persistent=true
+
+[Install]
+WantedBy=timers.target

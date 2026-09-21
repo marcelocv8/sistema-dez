@@ -10,6 +10,7 @@ const manualChunks = (id: string) => {
 };
 
 export default defineConfig({
+  base: '/agendar/',
   plugins: [react()],
   build: { sourcemap: false, target: 'es2022', rollupOptions: { output: { manualChunks } } },
 });

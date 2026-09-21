@@ -187,7 +187,7 @@ export default function ProntuarioPage({ user }: { user: CurrentUser }) {
               <small>{dateLabel(report.created_at)} · {report.doctor?.name ?? '—'} · {report.print_count} impressão(ões){report.signed_manual ? ' · assinado' : ''}</small>
             </span>
             <StatusPill tone={report.status === 'FINALIZADO' ? 'success' : 'warning'}>{report.status}{report.portal_published ? ' · portal' : ''}</StatusPill>
-            <div className="catalog-actions"><Button variant="outline" onClick={() => { window.location.href = '/laudos'; }}>Abrir em Laudos</Button></div>
+            <div className="catalog-actions"><Button variant="outline" onClick={() => { window.location.href = `${import.meta.env.BASE_URL}laudos`; }}>Abrir em Laudos</Button></div>
           </div>)}
         </div>
       </Panel>

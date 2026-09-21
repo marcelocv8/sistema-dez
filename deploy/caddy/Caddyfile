@@ -1,0 +1,66 @@
+# Borda do Sistema DEZ em produção.
+#
+# Um único processo (FrankenPHP static) serve os 4 SPAs por prefixo e delega
+# todo o resto para o Laravel. Não há autenticação de borda: a única porta de
+# entrada é o login do app (decisão do dono — um usuário por pessoa, com RBAC).
+#
+# Raízes configuráveis por variável de ambiente; os defaults são o layout do
+# servidor da clínica (ver docs/plano_deploy.md):
+#   DEZ_FRONTEND_ROOT  (default /opt/dez/frontend)
+#   DEZ_BACKEND_ROOT   (default /opt/dez/app/backend)
+#
+# Os prefixos daqui precisam casar com o `base` de cada app em vite.config.ts:
+#   /app/ -> @dez/equipe | /agendar/ -> @dez/agendamento
+#   /resultados/ -> @dez/paciente | /painel/ -> @dez/painel-tv
+{
+	frankenphp {
+		num_threads 4
+	}
+	admin off
+}
+
+:8002 {
+	encode zstd br gzip
+
+	# URL crua cai no app da equipe
+	redir / /app/ 302
+
+	# Prefixo sem a barra final não casa com `/app/*` no handle_path e cairia
+	# no 404 do Laravel — normaliza para a forma com barra. O `{query}` é
+	# necessário porque o `redir` do Caddy NÃO preserva a query string sozinho
+	# (ex.: /painel?unit_id=abc, lido pelo painel-tv).
+	redir /app /app/?{query} 302
+	redir /agendar /agendar/?{query} 302
+	redir /resultados /resultados/?{query} 302
+	redir /painel /painel/?{query} 302
+
+	handle_path /app/* {
+		root * {$DEZ_FRONTEND_ROOT:/opt/dez/frontend}/equipe
+		try_files {path} /index.html
+		file_server
+	}
+
+	handle_path /agendar/* {
+		root * {$DEZ_FRONTEND_ROOT:/opt/dez/frontend}/agendamento
+		try_files {path} /index.html
+		file_server
+	}
+
+	handle_path /resultados/* {
+		root * {$DEZ_FRONTEND_ROOT:/opt/dez/frontend}/paciente
+		try_files {path} /index.html
+		file_server
+	}
+
+	handle_path /painel/* {
+		root * {$DEZ_FRONTEND_ROOT:/opt/dez/frontend}/painel-tv
+		try_files {path} /index.html
+		file_server
+	}
+
+	# Tudo o mais é Laravel (/api/v1, /sanctum, /up, /storage)
+	handle {
+		root * {$DEZ_BACKEND_ROOT:/opt/dez/app/backend}/public
+		php_server
+	}
+}

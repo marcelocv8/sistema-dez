@@ -1,6 +1,20 @@
 # Sistema DEZ — Clínica DEZ
-## Especificação (v0.17)
+## Especificação (v0.18)
 
+> **v0.18** — Deploy no servidor da clínica definido e preparado (21/09/2026) — §16.
+> O Sistema DEZ passa a poder rodar em **fase de teste na mesma máquina física
+> do STG de produção**: URL pública estável (`dez.clinicadez.com.br` via
+> Cloudflare Tunnel **novo e independente** do túnel que serve o STG),
+> PostgreSQL 16 **compartilhado** com role isolado por limites de sessão (a
+> máquina tem 2 vCPU / ~1,9 GB livres e `systemd-oomd` ativo), FrankenPHP static
+> em `127.0.0.1:8002` (**sem Docker e sem PHP no host**), build dos 4 frontends
+> no GitHub Actions e deploy por self-hosted runner com rollback automático.
+> Login **apenas pelo app** (um usuário por pessoa, com RBAC) — sem camada extra
+> de autenticação. Ajustes de código: `trustProxies` restrito ao loopback,
+> isenção de CSRF em `api/v1/public/*` (agora tudo está na mesma origem) e
+> `base`/`basename` nos 4 apps para montagem por prefixo (`/app`, `/agendar`,
+> `/resultados`, `/painel`). Plano completo e anexos em `docs/plano_deploy.md`.
+>
 > **v0.17** — Otimização de desempenho (11/09/2026) — §14.23 e §14.24.
 > Auditoria de código + infra com foco em lentidão: materialização de agenda em
 > upsert de lote, disponibilidade O(n), não-lidas do chat em query agregada,
@@ -1578,4 +1592,68 @@ cada fluxo (slots de uso único conflitam entre runs).
 
 ---
 
-*Documento vivo — a cada decisão, uma nova versão. Próximo passo: E2E e suíte final do Bloco 6 (Sou DEZ) numa janela livre do `sistema_dez_test` (a sessão de MT/Bloco 5 do dono estava usando o banco), depois "Bloco 5" — Medicina do Trabalho (em andamento pelo dono) + Relatórios/BI + API Hermes — e validação manual acumulada (3A-1→3D + Blocos 1-6).*
+## 16. Deploy no servidor da clínica (fase de teste, paralelo ao STG)
+
+> **Documento completo:** `docs/plano_deploy.md` (inventário, decisões,
+> anexos com todos os arquivos, riscos e checklist por fase). Esta seção é
+> só o resumo do que mudou no sistema para isso funcionar.
+
+**Contexto:** o Sistema DEZ vai rodar **em teste** na **mesma máquina** que
+serve o **STG de produção** (Ubuntu 24.04, 2 vCPU, 3,7 GB de RAM com ~1,9 GB
+livres, `systemd-oomd` ativo, disco com 81 GB livres). O STG permanece a
+produção principal e **não é alterado** — nem Apache, nem o vhost
+`stg8080.conf`, nem o banco legado, nem o túnel `cloudflared` que serve
+`sistema.clinicadez.com.br`.
+
+### 16.1 Arquitetura
+
+| Camada | Escolha | Motivo |
+|---|---|---|
+| URL | `https://dez.clinicadez.com.br` — **Cloudflare Tunnel novo e independente** | O domínio já está no Cloudflare e o túnel atual serve o STG: reiniciá-lo derrubaria a produção. URL estável sem abrir portas nem mexer no DNS |
+| Runtime | **FrankenPHP static** (PHP 8.5 embutido) em `127.0.0.1:8002` | Ubuntu 24.04 traz PHP 8.3, mas `endroid/qr-code` exige `^8.4`; e mexer no PHP do host pode afetar o STG. Sem Docker |
+| Banco | **PostgreSQL 16 existente** (`127.0.0.1:5432`), database `sistema_dez` + role com `statement_timeout`/`CONNECTION LIMIT` | Um 2º cluster custaria ~150–250 MB numa máquina que já tem o OOM killer ativo |
+| Frontends | 4 SPAs sob `/app/`, `/agendar/`, `/resultados/`, `/painel/` | Um único host, sem CORS (as chamadas ficam relativas: `VITE_API_URL` vazio no build) |
+| Build | **GitHub Actions** (runner do GitHub) | `vite build` dos 4 apps pica 600 MB–1,2 GB; no servidor mataria o STG |
+| Deploy | workflow → **self-hosted runner** → `deploy.sh` | Botão único remoto, sem expor endpoint privilegiado; `sudo` restrito a 3 comandos `systemctl` |
+| Login | **apenas o login do app** (um usuário por pessoa, RBAC) | Decisão do dono: sem Basic Auth nem Cloudflare Access |
+
+### 16.2 Ajustes de código feitos (v0.18)
+
+| Arquivo | Mudança | Por quê |
+|---|---|---|
+| `backend/bootstrap/app.php` | `trustProxies(at: ['127.0.0.1','::1'])` | O TLS termina na Cloudflare e o `cloudflared` entrega pelo loopback; sem isso o Laravel trataria tudo como HTTP e os cookies `Secure`/URLs geradas quebrariam |
+| `backend/bootstrap/app.php` | `validateCsrfTokens(except: ['api/v1/public/*'])` | Com tudo na mesma origem, o `statefulApi()` aplicaria CSRF aos POST públicos anônimos (agendamento/portal) e eles cairiam em **419** — bug já visto em §14.22 |
+| 4× `frontend/apps/*/vite.config.ts` | `base: '/app/' \| '/agendar/' \| '/resultados/' \| '/painel/'` | Sem isso o HTML pede `/assets/...` na raiz e a requisição cai no app errado |
+| `frontend/apps/equipe/src/App.tsx` | `basename={import.meta.env.BASE_URL.replace(/\/$/, '')}` | Rotas do SPA passam a resolver sob `/app` |
+| `frontend/apps/equipe/src/pages/ProntuarioPage.tsx` | link absoluto `/laudos` → `${import.meta.env.BASE_URL}laudos` | Havia um `window.location.href` absoluto que quebraria sob prefixo |
+| `frontend/apps/paciente/src/main.tsx` | detecção do portal tolerante a barra final | `/resultados` e `/resultados/` precisam abrir o portal |
+
+### 16.3 Artefatos de deploy criados
+
+`deploy/` (Caddyfile da borda, `php.ini`, `env.production.example`,
+`sql/provision.sql`, 6 units/timers do systemd, `sudoers.dez-deploy`,
+`install.sh`, `bootstrap.sh`, `deploy.sh`, `backup.sh`, `tunnel.sh`,
+`README.md`) e `.github/workflows/deploy.yml`.
+
+### 16.4 Operação
+
+- **Publicar melhoria:** `git push` (com autorização do dono) → GitHub
+  **Actions → deploy → Run workflow** → o servidor baixa o artefato, faz
+  `git pull --ff-only`, `migrate --force`, caches, restart e health check,
+  com **rollback automático** em qualquer falha.
+- **Rollback manual:** `deploy.sh --rollback <commit>` (restaura também
+  `vendor/` e os `dist/` guardados em `/opt/dez/releases/`).
+- **Backup:** diário às 03:00 (`pg_dump -Fc` + `storage/app` + `.env`,
+  verificado com `pg_restore --list`), 14 diários + 4 semanais.
+- **Emergência:** `systemctl stop dez-web dez-tunnel` — o STG continua no ar.
+
+### 16.5 Pendências
+
+1. Acesso de superusuário ao PostgreSQL (senha do `postgres` desconhecida) —
+   procedimento no Anexo E do `plano_deploy.md`.
+2. Importadores de pacientes e atendimentos do legado (`stg:import-patients`,
+   `stg:import-appointments`, 24 meses) — desenvolvimento novo, sem financeiro.
+
+---
+
+*Documento vivo — a cada decisão, uma nova versão. Próximo passo: validar localmente a borda (§16.2) e executar as fases F1–F7 de `docs/plano_deploy.md` no servidor da clínica.*

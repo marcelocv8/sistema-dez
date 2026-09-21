@@ -16,7 +16,18 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware): void {
+        // Em produção o TLS termina na Cloudflare e o cloudflared entrega a
+        // requisição pelo loopback: sem confiar nele, o Laravel trataria tudo
+        // como HTTP e os cookies Secure / URLs geradas quebrariam.
+        $middleware->trustProxies(at: ['127.0.0.1', '::1']);
+
         $middleware->statefulApi();
+
+        // Tudo é servido na MESMA origem, então o statefulApi() aplicaria CSRF
+        // aos POST públicos anônimos (agendamento/portal) e eles cairiam em 419.
+        // A isenção fica restrita ao prefixo público, que não usa sessão.
+        $middleware->validateCsrfTokens(except: ['api/v1/public/*']);
+
         $middleware->redirectGuestsTo(
             fn (Request $request): ?string => $request->is('api/*') ? null : '/',
         );

@@ -28,6 +28,10 @@ frontend/playwright-report/
 frontend/test-results/
 frontend/.env.local
 
+# Deploy (o .env de produção vive só no servidor)
+deploy/.env.production
+deploy/**/*.local
+
 # OS / editores
 .DS_Store
 Thumbs.db

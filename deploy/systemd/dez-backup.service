@@ -1,0 +1,10 @@
+[Unit]
+Description=Sistema DEZ - backup diario (pg_dump + storage + .env)
+Documentation=file:/opt/dez/app/docs/plano_deploy.md
+
+[Service]
+Type=oneshot
+User=dez
+Group=dez
+ExecStart=/opt/dez/app/deploy/scripts/backup.sh
+MemoryMax=256M

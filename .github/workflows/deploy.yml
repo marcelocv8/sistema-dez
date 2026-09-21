@@ -1,0 +1,135 @@
+name: deploy
+
+# Publicação no servidor da Clínica DEZ.
+#
+# O build (Vite dos 4 apps + composer) roda nos runners DO GITHUB, porque o
+# servidor tem só 2 vCPU / ~1,9 GB livres e roda o STG de produção. O servidor
+# apenas baixa o artefato pronto e o aplica (deploy/scripts/deploy.sh).
+#
+# Ver docs/plano_deploy.md §12.
+
+on:
+  workflow_dispatch:
+  # Depois de estável, descomente para publicar a cada push na main:
+  # push:
+  #   branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-dez
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    name: Testes
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_DB: sistema_dez_test
+          POSTGRES_USER: sistema_dez
+          POSTGRES_PASSWORD: sistema_dez
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U sistema_dez -d sistema_dez_test"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.4'
+          extensions: dom, curl, libxml, mbstring, zip, pcntl, pdo, pgsql, pdo_pgsql
+          coverage: none
+      - name: Composer
+        working-directory: backend
+        run: composer install --prefer-dist --no-interaction --no-progress
+      - name: Preparar .env
+        working-directory: backend
+        run: cp .env.example .env && php artisan key:generate
+      - name: Testes do backend
+        working-directory: backend
+        env:
+          DB_CONNECTION: pgsql
+          DB_HOST: localhost
+          DB_PORT: 5432
+          DB_DATABASE: sistema_dez_test
+          DB_USERNAME: sistema_dez
+          DB_PASSWORD: sistema_dez
+          CACHE_STORE: array
+          QUEUE_CONNECTION: sync
+          SESSION_DRIVER: array
+        run: php artisan test --compact
+      - uses: pnpm/action-setup@v4
+        with: { version: 11 }
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
+      - name: Dependências do frontend
+        working-directory: frontend
+        run: pnpm install --frozen-lockfile
+      - name: Typecheck
+        working-directory: frontend
+        run: pnpm typecheck
+      - name: Testes do frontend
+        working-directory: frontend
+        run: pnpm test
+
+  build:
+    name: Build do artefato
+    needs: verify
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.4'
+          extensions: dom, curl, libxml, mbstring, zip, pdo, pgsql, pdo_pgsql
+          coverage: none
+      - name: Composer (produção)
+        working-directory: backend
+        run: composer install --no-dev --no-interaction --prefer-dist --optimize-autoloader
+      - uses: pnpm/action-setup@v4
+        with: { version: 11 }
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
+      - name: Dependências do frontend
+        working-directory: frontend
+        run: pnpm install --frozen-lockfile
+      - name: Build dos 4 apps
+        working-directory: frontend
+        # VITE_API_URL fica VAZIO de propósito: o frontend chama a mesma origem
+        # (/api/v1/...), então não há CORS e a URL do túnel pode mudar sem rebuild.
+        run: pnpm build
+      - name: Empacotar (vendor + dist)
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/out/dist
+          cp -r backend/vendor /tmp/out/vendor
+          for app in equipe agendamento paciente painel-tv; do
+            cp -r "frontend/apps/$app/dist" "/tmp/out/dist/$app"
+          done
+          tar -czf dez-build.tgz -C /tmp/out .
+          du -h dez-build.tgz
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dez-build
+          path: dez-build.tgz
+          retention-days: 7
+
+  deploy:
+    name: Publicar no servidor
+    needs: build
+    runs-on: [self-hosted, dez]
+    steps:
+      - uses: actions/download-artifact@v4
+        with: { name: dez-build, path: . }
+      - name: deploy.sh
+        run: sudo /opt/dez/app/deploy/scripts/deploy.sh "$GITHUB_WORKSPACE/dez-build.tgz"
