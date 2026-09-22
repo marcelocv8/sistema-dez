@@ -78,7 +78,7 @@ migrations. Ordem correta a partir daqui:
 
   1) criar a URL pública:  /opt/dez/app/deploy/scripts/tunnel.sh dez.clinicadez.com.br
   2) instalar o runner e rodar o workflow "deploy" (F6) — o próprio deploy.sh
-     publica vendor/ + dist/ e roda `artisan migrate --force`
+     publica vendor/ + dist/ e roda "artisan migrate --force"
   3) depois do deploy, criar os usuários:
        sudo -u dez $ARTISAN team:user <email> --name="<Nome>" --role=ADMIN
      perfis: ADMIN | SUPERVISOR | RECEPTION | CASHIER | MANAGER | DOCTOR
