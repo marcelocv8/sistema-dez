@@ -940,6 +940,44 @@ apache2=active  postgresql@16-main=active  cloudflared=active  painel=active
 
 
 
+### 20.5 F5 — importação dos dados (andamento em 22/09/2026)
+
+**Catálogo — ✅ commitado** (`stg:import-catalog --commit`). Saída **idêntica** ao
+baseline do §3.3:
+
+| | |
+|---|---|
+| Fontes lidas | 998 procedimentos · 40 convênios · 87 profissionais · 2.032 preços Particular · 317 SOU DEZ |
+| Gravado | 998 procedimentos (51 ativos) · 40 convênios (17 ativos) · 87 profissionais (29 ativos) · 2 unidades |
+| Preços | **2.303 válidos**, 10 candidatos em quarentena, 36 linhas idênticas colapsadas, 2.313 armazenados |
+| Checksum | `6aa1c45724afe7b4a9dc6403eeb08b6fc2057be0c363fb04654bc6cfb1507107` |
+| Pendências | 85 (comando `stg:resolve-issues` disponível) |
+
+> Dica de ordem: **o catálogo precisa ser gravado antes dos templates** — o
+> vínculo template→médico/procedimento é por `legacy_id`, e sem o catálogo no
+> banco o dry-run dos templates reporta tudo como `unmatched`.
+
+**Modelos de laudo — dry-run** (`stg:import-report-templates --dry-run`):
+
+| | |
+|---|---|
+| created / skipped | **80 / 1** (= 81 arquivos: 72 modelos + 9 linhas, como no baseline) |
+| linked_doctors / unmatched | **40 / 40** |
+| linked_procedures / unmatched | **55 / 25** |
+
+> Os `unmatched` são `legacy_id` que **não existem** no catálogo importado
+> (87 profissionais, sendo 29 ativos) — característica da extração do legado,
+> não erro do importador. Os templates são criados de qualquer forma e o
+> vínculo pode ser ajustado na tela de cadastros.
+
+**Medicina do Trabalho — tabelas vazias.** Existem `ponto.tb_aso_risco`,
+`tb_aso_setor`, `tb_aso_funcao`, `tb_caso_*`/`tb_cadastro_aso` no schema
+**`ponto`** (o `dbprefix="ponto."` do CodeIgniter é o **schema** no Postgres),
+mas com **0 linhas**; há também o schema `@ponto` (537 tabelas, provavelmente
+backup) ainda não conferido.
+
+
+
 ---
 
 ## 21. Sequência remota da F1 (copiar e colar no AnyDesk)
