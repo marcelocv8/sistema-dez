@@ -109,6 +109,7 @@ class ImportStgAppointments extends Command
         $patients = Patient::query()->withTrashed()->whereNotNull('legacy_id')->pluck('id', 'legacy_id');
         $defaultAgreement = Agreement::query()->where('is_default', true)->value('id');
         $prices = $this->priceMap();
+        $bridges = $this->procedureBridges();
 
         $since = now()->subMonths((int) ($this->option('months') ?: 24))->toDateString();
         $skipCancelled = (bool) $this->option('skip-cancelled');
@@ -131,7 +132,7 @@ class ImportStgAppointments extends Command
         }
 
         $query->chunk(500, function (Collection $rows) use (
-            $unit, $professionals, $procedures, $agreements, $patients, $defaultAgreement, $prices,
+            $unit, $professionals, $procedures, $agreements, $patients, $defaultAgreement, $prices, $bridges,
             &$created, &$updated, &$processed, $limit
         ): bool {
             foreach ($rows as $row) {
@@ -143,7 +144,7 @@ class ImportStgAppointments extends Command
 
                 $patientId = $patients[(string) $row->paciente_id] ?? null;
                 $professionalId = $professionals[(string) $row->medico_agenda] ?? null;
-                $procedureId = $procedures[(string) $row->procedimento_tuss_id] ?? null;
+                $procedureId = $this->resolveProcedure($row->procedimento_tuss_id, $procedures, $bridges);
                 $agreementId = $agreements[(string) $row->convenio_id] ?? $defaultAgreement;
 
                 if ($patientId === null) {
@@ -159,8 +160,7 @@ class ImportStgAppointments extends Command
                 }
 
                 if ($procedureId === null) {
-                    $this->issue('procedimento_nao_importado');
-
+                    // o contador já foi registrado dentro de resolveProcedure()
                     continue;
                 }
 
@@ -256,6 +256,69 @@ class ImportStgAppointments extends Command
         }
 
         return $this->offeringCache[$cacheKey] = $offering;
+    }
+
+    /**
+     * O `tb_agenda_exames.procedimento_tuss_id` NÃO é id de `tb_procedimento_tuss`
+     * (aquela tabela vai de 1 a 1.961) — na prática ele aponta para o
+     * procedimento *precificado por convênio*. Montamos as pontes possíveis de
+     * uma vez (poucas dezenas de milhares de linhas) e resolvemos por tentativa,
+     * contando qual caminho funcionou.
+     *
+     * @return array{convenio: Collection<string, string>, tuss: Collection<string, string>}
+     */
+    private function procedureBridges(): array
+    {
+        $convenio = DB::connection('stg')->table('tb_procedimento_convenio as pc')
+            ->join('tb_procedimento_tuss as pt', 'pt.procedimento_tuss_id', '=', 'pc.procedimento_tuss_id')
+            ->whereNotNull('pt.codigo')
+            ->where('pt.codigo', '<>', '')
+            ->select(['pc.procedimento_convenio_id as ponte_id', 'pt.codigo as codigo'])
+            ->distinct()
+            ->pluck('codigo', 'ponte_id');
+
+        $tuss = DB::connection('stg')->table('tb_procedimento_tuss')
+            ->whereNotNull('codigo')
+            ->where('codigo', '<>', '')
+            ->pluck('codigo', 'procedimento_tuss_id');
+
+        return ['convenio' => $convenio, 'tuss' => $tuss];
+    }
+
+    /** @param Collection<string, string> $procedures @param array{convenio: Collection<string, string>, tuss: Collection<string, string>} $bridges */
+    private function resolveProcedure(mixed $legacyProcedureId, Collection $procedures, array $bridges): ?string
+    {
+        $key = (string) $legacyProcedureId;
+
+        if ($key === '' || $key === '0') {
+            return null;
+        }
+
+        $candidates = [
+            'direto' => $key,
+            'convenio' => $bridges['convenio'][$key] ?? null,
+            'tuss' => $bridges['tuss'][$key] ?? null,
+        ];
+
+        foreach ($candidates as $path => $code) {
+            if ($code === null || $code === '') {
+                continue;
+            }
+
+            $procedureId = $procedures[(string) $code] ?? null;
+
+            if ($procedureId !== null) {
+                if ($path !== 'direto') {
+                    $this->issue('procedimento_via_'.$path);
+                }
+
+                return $procedureId;
+            }
+        }
+
+        $this->issue('procedimento_nao_importado');
+
+        return null;
     }
 
     /** @return Collection<string, float> */
