@@ -132,4 +132,7 @@ jobs:
       - uses: actions/download-artifact@v4
         with: { name: dez-build, path: . }
       - name: deploy.sh
-        run: sudo /opt/dez/app/deploy/scripts/deploy.sh "$GITHUB_WORKSPACE/dez-build.tgz"
+        # SEM sudo na frente: o sudoers do usuario `dez` libera apenas 3
+        # comandos systemctl (o deploy.sh ja chama `sudo systemctl` internamente).
+        # Com `sudo` aqui, o runner travaria pedindo senha.
+        run: /opt/dez/app/deploy/scripts/deploy.sh "$GITHUB_WORKSPACE/dez-build.tgz"

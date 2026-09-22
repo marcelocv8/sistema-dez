@@ -96,9 +96,9 @@ sudo -u dez /opt/dez/bin/artisan stg:import-catalog --dry-run
    `git pull --ff-only`, migrations, caches, restart e health check — com
    rollback automático se falhar.
 
-Alternativa por SSH: `ssh dez@192.168.0.170 'sudo /opt/dez/app/deploy/scripts/deploy.sh <artefato>'`.
+Alternativa por SSH (**sem `sudo` na frente** — o `deploy.sh` chama `sudo systemctl` internamente): `ssh dez@192.168.0.170 '/opt/dez/app/deploy/scripts/deploy.sh <artefato>'`.
 
-Rollback manual: `sudo /opt/dez/app/deploy/scripts/deploy.sh --rollback <commit>`.
+Rollback manual: `/opt/dez/app/deploy/scripts/deploy.sh --rollback <commit>` (como `dez`).
 
 ## Operação
 

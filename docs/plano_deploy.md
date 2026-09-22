@@ -617,7 +617,9 @@ workflow_dispatch  ──►  build (ubuntu-latest)  ──►  deploy (self-hos
 
 - **`build`** (runner do GitHub): `shivammathur/setup-php` 8.4, `composer install --no-dev --optimize-autoloader`, `corepack enable` + `pnpm install --frozen-lockfile`, `pnpm build`, empacota `vendor/` + os 4 `dist/` em `dez-build.tgz` e publica como artefato.
 - **`deploy`** (`runs-on: [self-hosted, dez]`): baixa o artefato e roda
-  `sudo /opt/dez/app/deploy/scripts/deploy.sh <caminho-do-tgz>`.
+  `/opt/dez/app/deploy/scripts/deploy.sh <caminho-do-tgz>` — **sem `sudo` na
+  frente**: o sudoers do `dez` libera só 3 comandos `systemctl`, e o próprio
+  `deploy.sh` chama `sudo systemctl` quando precisa.
 - Depois de estável, adicionar gatilho `push: branches: [main]` (opcional).
 
 ### 12.3 `deploy.sh`
@@ -726,7 +728,7 @@ Leitura **read-only** do banco legado, com lotes e log de reconciliação.
 
 | Situação | Comando |
 |---|---|
-| **Publicar uma melhoria** | no GitHub: **Actions → deploy → Run workflow** (ou `ssh dez@192.168.0.170 'sudo /opt/dez/deploy.sh'` com artefato local) |
+| **Publicar uma melhoria** | no GitHub: **Actions → deploy → Run workflow** (ou, como `dez`, `ssh dez@192.168.0.170 '/opt/dez/app/deploy/scripts/deploy.sh <artefato>'`) |
 | Ver o que subiu | `tail -n 50 /var/log/dez/deploy.log` |
 | Estado dos serviços | `systemctl status dez-web dez-tunnel dez-schedule.timer dez-backup.timer` |
 | Log da aplicação | `tail -f /opt/dez/app/backend/storage/logs/laravel-$(date +%F).log` |
@@ -743,7 +745,7 @@ Leitura **read-only** do banco legado, com lotes e log de reconciliação.
 | Cenário | Ação |
 |---|---|
 | Deploy falhou (health check, migration, teste) | **automático**: `deploy.sh` faz `git reset --hard <commit anterior>` + restart |
-| Deploy passou mas quebrou na prática | `ssh dez@… 'sudo /opt/dez/deploy.sh --rollback <commit-bom>'` |
+| Deploy passou mas quebrou na prática | `ssh dez@… '/opt/dez/app/deploy/scripts/deploy.sh --rollback <commit-bom>'` |
 | Migration ruim | restaurar o dump do dia (`pg_restore`) e voltar o commit |
 | Túnel/URL fora do ar | `sudo systemctl restart dez-tunnel` (não afeta o túnel do STG) |
 | Emergência total | `sudo systemctl stop dez-web dez-tunnel` — o STG continua intacto |
@@ -1143,7 +1145,13 @@ NoNewPrivileges=true
 WantedBy=multi-user.target
 ```
 
-## Anexo C — `deploy/scripts/deploy.sh` (esboço)
+## Anexo C — `deploy/scripts/deploy.sh`
+
+> ⚠️ **A fonte de verdade é o arquivo real:** `deploy/scripts/deploy.sh`
+> (versionado). O bloco abaixo é o esboço original e pode estar desatualizado —
+> em caso de divergência, vale o arquivo.
+
+### Esboço original (histórico)
 
 ```bash
 #!/usr/bin/env bash
@@ -1212,7 +1220,13 @@ rm -rf "$WORK"
 log "deploy ok: $PREV -> $NEW"
 ```
 
-## Anexo D — `.github/workflows/deploy.yml` (esboço)
+## Anexo D — `.github/workflows/deploy.yml`
+
+> ⚠️ **A fonte de verdade é o arquivo real:** `.github/workflows/deploy.yml`
+> (tem 3 jobs: `verify` → `build` → `deploy`). O bloco abaixo é o esboço
+> original (2 jobs) e **não** reflete o atual.
+
+### Esboço original (histórico)
 
 ```yaml
 name: deploy
@@ -1261,7 +1275,7 @@ jobs:
     steps:
       - uses: actions/download-artifact@v4
         with: { name: dez-build, path: . }
-      - run: sudo /opt/dez/app/deploy/scripts/deploy.sh "$GITHUB_WORKSPACE/dez-build.tgz"
+      - run: /opt/dez/app/deploy/scripts/deploy.sh "$GITHUB_WORKSPACE/dez-build.tgz"
 ```
 
 ## Anexo E — comandos pendentes (recuperar acesso ao Postgres)
