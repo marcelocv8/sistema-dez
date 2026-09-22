@@ -658,16 +658,17 @@ health check em `/up`, log append em `/var/log/dez/deploy.log`.
 
 **Restauração** (testada em F6):
 ```bash
-PG_BIN=$(ls -d /usr/lib/postgresql/*/bin | sort -V | tail -1)   # nunca o do PATH
-PGPASSWORD='<senha-do-role>' "$PG_BIN/pg_restore" -h 127.0.0.1 -U sistema_dez -d sistema_dez \
-  --clean --if-exists /var/backups/dez/diario/sistema_dez-<data>.dump
+PG_VER=$(ls -d /etc/postgresql/*/* | sed -E 's#^/etc/postgresql/([0-9]+)/.*#\1#' | sort -n | tail -1)
+PGPASSWORD='<senha-do-role>' "/usr/lib/postgresql/$PG_VER/bin/pg_restore" -h 127.0.0.1 -U sistema_dez \
+  -d sistema_dez --clean --if-exists /var/backups/dez/diario/sistema_dez-<data>.dump
 ```
-> ⚠️ **Sempre use o `pg_restore` versionado** (`/usr/lib/postgresql/<versão>/bin/`).
-> O `pg_restore` do PATH pode ser de uma versão anterior e recusar um dump
-> válido com `unsupported version (1.16) in file header` — foi exatamente o que
-> aconteceu na 1ª execução do backup em 22/09 (o dump estava bom; o verificador
-> é que era velho). O `backup.sh` já resolve o par `pg_dump`/`pg_restore` pelo
-> diretório versionado de maior versão.
+> ⚠️ **A máquina tem DOIS clientes PostgreSQL** — 16 (Ubuntu, o do cluster) e 17
+> (PGDG). O formato de arquivo **1.16 é do PG 17**: um `pg_dump` 17 gera um dump
+> que o `pg_restore` 16 recusa com `unsupported version (1.16) in file header`.
+> Foi o que aconteceu na 1ª execução do backup em 22/09 — **o dump estava bom, o
+> par de ferramentas é que estava misturado**. O `backup.sh` agora escolhe o par
+> `pg_dump`/`pg_restore` pela versão do **cluster** que atende a porta do `.env`,
+> e a restauração deve usar a mesma versão.
 > Rollback de **código** é `git reset --hard <commit>` (via `deploy.sh`).
 > Rollback de **dados** exige o dump — por isso o backup deixa de ser opcional.
 
