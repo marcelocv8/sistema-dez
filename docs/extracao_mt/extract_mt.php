@@ -238,10 +238,12 @@ function normalizeDate(string $value): string
 
 function writeCsv(string $dir, string $name, array $header, array $rows): void
 {
+    // O 5º parâmetro ($escape) é obrigatório a partir do PHP 8.5: sem ele o
+    // fputcsv emite deprecation e o default vai mudar.
     $handle = fopen($dir.'/'.$name, 'wb');
-    fputcsv($handle, $header);
+    fputcsv($handle, $header, ',', '"', '\\');
     foreach ($rows as $row) {
-        fputcsv($handle, array_map(static fn ($value): string => (string) $value, $row));
+        fputcsv($handle, array_map(static fn ($value): string => (string) $value, $row), ',', '"', '\\');
     }
     fclose($handle);
     echo basename($name).': '.count($rows)." linha(s)\n";
