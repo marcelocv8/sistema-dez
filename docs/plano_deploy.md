@@ -1,16 +1,24 @@
 # Plano de Deploy — Sistema DEZ no servidor da Clínica DEZ
 
-> **Versão 1.4 — 22/09/2026**
+> **Versão 1.5 — 22/09/2026**
 > Documento **operacional** (infra/deploy). O plano de **produto** é
 > `docs/plano_sistema_dez.md` (lá está o §16, que aponta para este arquivo).
+>
+> **v1.5:** **F5 concluída** (catálogo, preços e modelos; MT dispensada — sem
+> dados no legado) e **F7 quase inteira**: pacientes importados (**22.844**),
+> médicos reais identificados e importados (a descoberta central: a **grade usa
+> apelidos**, e a fonte confiável de médicos é `tb_agenda_exames.medico_agenda`),
+> agenda provisória no ar (**73 médicos, 16.201 ocorrências**) e o
+> `stg:import-appointments` **pronto** (54.750 atendimentos em 24 meses).
+> Adicionada a **§22 — Mapa do schema do legado STG** (tabelas, contagens,
+> armadilhas e receitas) exatamente para poupar trabalho dos próximos agentes.
 >
 > **v1.4 — SISTEMA NO AR.** Execução no servidor concluída em 22/09/2026:
 > **F1, F2, F3, F4 e F6 (primeiro deploy) fechadas**; `https://dez.clinicadez.com.br`
 > respondendo 200 em `/up`, `/app/`, `/agendar/`, `/resultados/` e `/painel/`,
 > com o **STG intacto** (4 serviços `active`). Deploy #1 verde
 > (Tests → Build → Publicar). Registro da execução em §20.3, evidências em
-> §20.4 e os **12 bugs** encontrados/corrigidos no caminho. Falta **F5**
-> (importar catálogo/preços/modelos/MT) e **F7** (pacientes/atendimentos).
+> §20.4 e os **15 bugs** encontrados/corrigidos no caminho.
 >
 > **v1.3:** correções descobertas na execução real no servidor (§20.3) —
 > quoting do `-v` no `provision.sql`, `bootstrap.sh` sem depender do `vendor/`
@@ -125,6 +133,7 @@ Stone/Inter, WhatsApp (fica `WHATSAPP_ENABLED=false`).
 - GNOME (`gnome-shell` ~206 MB) num servidor → dá para liberar trocando para
   `multi-user.target`, **mas isso quebra a visão de desktop do AnyDesk**.
   Fica como alavanca futura, só a pedido.
+
 ### 3.3 Checagens executadas no servidor (22/09/2026)
 
 Comandos rodados no terminal do servidor (via AnyDesk) e resultados. Servem de
@@ -413,15 +422,21 @@ PGPASSWORD='<senha-do-role>' psql -h 127.0.0.1 -p 5432 -U sistema_dez -d sistema
 ### 8.1 Instalação
 
 ```bash
-# release oficial (linux x86_64). Conferir a versão mais recente em
+# release oficial (linux x86_64). Conferir a versão em
 # https://github.com/php/frankenphp/releases
-curl -fsSL -o /tmp/frankenphp.tar.gz \
-  https://github.com/php/frankenphp/releases/latest/download/frankenphp-linux-x86_64.tar.gz
-sudo tar -xzf /tmp/frankenphp.tar.gz -C /opt/dez/bin
-sudo chmod 755 /opt/dez/bin/frankenphp
-/opt/dez/bin/frankenphp version
-/opt/dez/bin/frankenphp php-cli -v      # confirma o PHP embutido (8.5.x)
+#
+# ⚠️ O asset é o BINÁRIO PURO (~173 MB) — NÃO existe .tar.gz:
+#    …/releases/latest/download/frankenphp-linux-x86_64.tar.gz  → 404
+curl -fL --retry 3 -o /tmp/frankenphp \
+  https://github.com/php/frankenphp/releases/latest/download/frankenphp-linux-x86_64
+sudo install -m 0755 -o root -g root /tmp/frankenphp /opt/dez/bin/frankenphp
+/opt/dez/bin/frankenphp version      # FrankenPHP v1.12.7 PHP 8.5.10 Caddy v2.11.4
+/opt/dez/bin/frankenphp php-cli -v   # confirma o PHP embutido (8.5.x)
 ```
+> **Não use `php-cli -m` para checar extensões:** o `frankenphp php-cli -m` **não
+> repassa o `-m`** ao PHP (sai com código 255 e não imprime a lista). Com
+> `set -o pipefail` isso reprovava o binário sem motivo. Use
+> `php-cli -r 'echo implode(" ", array_filter([...], fn($e) => !extension_loaded($e)));'`.
 O binário estático já inclui `pdo_pgsql`, `pgsql`, `mbstring`, `intl`, `zip`,
 `opcache`, `curl`, `fileinfo`, `openssl` — **nada de `apt install php*`**.
 
@@ -714,7 +729,10 @@ sudo systemctl is-active cloudflared          # túnel do STG continua ativo
 | Catálogo | 998 procedimentos, 40 convênios, 87 profissionais, 2.303 preços, vínculos, 2 unidades | `_extracoes_stg` do PC de dev (20 arq., **0,46 MB**) | `artisan stg:import-catalog --commit` |
 | Modelos de laudo | 72 modelos + 9 linhas | `_extracoes_laudos` (89 arq., **0,45 MB**) | `artisan stg:import-report-templates --commit` |
 | Medicina do Trabalho | riscos, setores, funções, ASOs | **gerado no próprio servidor** (o PG do STG é local!) | `psql -d <legado> -f docs/extracao_mt/extract_mt.sql` → `stg:import-mt --commit` |
-| Pacientes + atendimentos (24 meses) | pacientes, agendamentos | **importador novo (F7)** | `stg:import-patients` / `stg:import-appointments` |
+| Pacientes + atendimentos (24 meses) | **22.844 pacientes** (de 22.873 com atendimento) · **54.750 atendimentos** | **banco do legado** (conexão `stg` somente leitura) | `stg:import-patients` ✅ · `stg:import-doctors --source=appointments` ✅ · `stg:import-appointments --create-offerings` (a rodar) |
+
+> **Mapa do schema do legado, contagens e armadilhas: §22.** Leia antes de
+> explorar o banco `dez`.
 
 ### 15.1 Upload das extrações (PC de dev → servidor)
 
@@ -849,8 +867,11 @@ Leitura **read-only** do banco legado, com lotes e log de reconciliação.
 - [ ] `dez-backup.timer` rodou; dump verificado com `pg_restore --list`; restauração testada
 
 ### F7 — Importadores de pacientes/histórico
-- [ ] `stg:import-patients` e `stg:import-appointments` (24 meses) com reconciliação
-- [ ] Contagens conferidas contra o legado; amostragem validada com o dono
+- [x] `stg:import-patients --commit --only-with-appointments-months=24` — **22.844 pacientes** (base: 22.873 com atendimento em 24 meses; 29 de conflito de CPF pulados; 7.308 sem CPF; 9.835 sem convênio correspondente)
+- [x] `stg:import-doctors --source=appointments` — a fonte confiável de médicos (49 com atendimento, nome completo + CRM)
+- [ ] `stg:import-appointments --create-offerings` (24 meses ≈ 54.750 atendimentos) — **comando pronto, executar na janela 00:00–06:00**
+- [ ] Amostragem validada com o dono (um paciente com histórico abrindo na recepção)
+- [ ] Limpeza: os 59 profissionais criados por **apelido** (via `--source=grade`) ficaram em paralelo aos médicos reais — decidir se desativa/refaz a agenda com os médicos do atendimento
 
 ---
 
@@ -901,6 +922,9 @@ com os prefixos corretos) · **borda real** com FrankenPHP 8.5 e os dists reais
 | P8 | Rollback automático + `dez-backup` testados | ⏳ pendente | resto do F6 |
 | P9 | Executar a F1 no servidor | ✅ **concluído** | ver §20.3/§20.4 |
 | P10 | F5 — catálogo, preços e modelos | ✅ **concluído** | §20.5; MT dispensada (sem dados no legado) |
+| P11 | F7 — rodar `stg:import-appointments --create-offerings` (24 meses) | ⏳ **pronto para rodar** | ~54.750 atendimentos; executar na janela 00:00–06:00 |
+| P12 | Limpar os profissionais criados por **apelido** (grade) vs os médicos reais (atendimento) | ⏳ pendente | ver §22.4 item 4-5 e §20.6 |
+| P13 | Testar o **rollback automático** do deploy e o `dez-backup` | ⏳ pendente | resto do F6 |
 
 ### 20.3 Andamento da execução no servidor (22/09/2026)
 
@@ -1223,6 +1247,132 @@ Esperado: `HTTP/2 200` e `active` nos quatro.
 
 ---
 
+## 22. Mapa do schema do legado STG (conhecimento acumulado em 22/09/2026)
+
+> **Para agentes:** esta seção existe para **poupar trabalho**. Tudo abaixo foi
+> descoberto na prática contra o banco `dez` do servidor, na ordem em que os
+> erros apareceram. Leia antes de explorar de novo.
+
+### 22.1 Como o schema está organizado
+
+- O CodeIgniter do STG usa **`dbprefix = "ponto."`**. No PostgreSQL esse
+  "prefixo com ponto" é o **schema**: as tabelas são `ponto.tb_...`, **não**
+  `public.tb_...`. O schema `public` tem **1 tabela** (`character_entity`) e não
+  serve para nada aqui.
+- Existe também o schema **`@ponto`** (537 tabelas) — aparenta ser **backup**.
+  Conferido nos dois: `tb_cadastro_aso` está **vazio** em ambos (a clínica não
+  usa Medicina do Trabalho no STG).
+- A conexão `stg` do Laravel (`backend/config/database.php`) resolve isso com
+  `search_path = STG_DB_SCHEMA` (padrão `ponto`), então os comandos consultam
+  `tb_operador` sem prefixo.
+
+### 22.2 Como explorar sem sofrer
+
+```bash
+# senha do superusuário (está na config do próprio STG)
+export PGPASS=$(sed -n '40p' /home/server/projetos/dezstg2/application/config/database.php | cut -d'"' -f2)
+
+# 1) descoberta: tabelas + CONTAGEM EXATA + todas as colunas, por padrão ILIKE
+sudo -u dez env STG_DB_PASSWORD="$PGPASS" /opt/dez/bin/frankenphp php-cli \
+  /opt/dez/app/docs/descoberta_stg.php --host=127.0.0.1 --port=5432 --db=dez \
+  --user=postgres --schema=ponto --pattern=tb_agenda_exames
+# (repetir --pattern= quantas vezes quiser; sem nenhum, lista tudo)
+
+# 2) consulta direta
+PGPASSWORD="$PGPASS" psql -h 127.0.0.1 -p 5432 -U postgres -d dez -At -P pager=off \
+  -c "select ..."
+```
+
+**Dicas que evitam retrabalho:**
+- **`-P pager=off`** sempre. Sem isso o `psql` abre o `less` e "trava" (aperte `q`);
+  alternativa: `export PSQL_PAGER=cat`.
+- **Cole com `Ctrl+Shift+V`**, nunca `Ctrl+V`: o bracketed paste junta as linhas de
+  um bloco multilinha e o shell acaba **executando as linhas de saída como
+  comando** (dezenas de `command not found`, sem dano, mas perde-se o comando).
+  Prefira **uma linha por vez** para comandos longos.
+- `descoberta_stg.php` força `SET default_transaction_read_only = on`; qualquer
+  importador novo deve fazer o mesmo (a conexão `stg` é **somente leitura**).
+
+### 22.3 Tabelas relevantes (contagens medidas em 22/09/2026)
+
+| Tabela | Linhas | O que é | Observação |
+|---|---|---|---|
+| `tb_paciente` | **87.551** | pacientes | **não tem coluna `email`**; `cpf` texto livre (32% sem CPF entre quem teve atendimento em 24m); `ativo`/`desativado` |
+| `tb_agenda_exames` | **467.562** | **atendimentos/agendamentos** (consultas e exames) | 54.750 nos últimos 24m; `medico_agenda` → `tb_operador.operador_id` ✅; `procedimento_tuss_id`, `convenio_id`, `data`+`inicio`, `situacao`/`realizada`/`cancelada`/`faltou_manual`, `valor`/`valor_total` |
+| `tb_agenda` | 109 | **grade** (definição da agenda) | **`medico_id` está VAZIO**; o médico aparece como **texto** em `nome` (`DR. CARLOS MOTA`) |
+| `tb_horarioagenda` | 233 | **faixas da grade** (dia/horário/duração) | é a origem do `grade_medicos.csv` (`horaentrada1`/`horasaida1`/`tempoconsulta`/`qtdeconsulta` + `dia`) |
+| `tb_operador` | ~1.616 (**1.418 ativos**) | **médicos + operadores do sistema** | `nome`, `conselho`, `sigla_id`, `especializacoes`, `email`, `agendamento_online`; as flags **não discriminam** (§22.4) |
+| `tb_procedimento_percentual_medico` | 27 | médicos com comissão por procedimento | 2ª fonte possível de médicos |
+| `tb_operador_grupo_medico` | **0** | grupos de médicos | vazia — inútil |
+| `tb_sigla` | **0** | de-para da sigla do conselho | vazia → a sigla do CRM **não tem fonte** no legado |
+| `tb_aso_*`, `tb_cadastro_aso` | **0** | Medicina do Trabalho | a clínica não usa MT neste STG |
+| banco `dez` | 2.403 MB | base do STG | `painelWeb` (8 MB) é do painel Java |
+
+### 22.4 Armadilhas (na ordem em que custaram tempo)
+
+1. **Tabela do STG não está em `public`** — está no schema `ponto`.
+2. **`tb_operador.medico = true` em TODOS os 1.418 ativos** → não é filtro.
+   `medico_agenda` só em 3; `profissional = false` em todos.
+3. **`tb_agenda.medico_id` está vazio** → a grade identifica o médico **por texto**
+   (apelido).
+4. **A grade usa apelidos e o cadastro usa o nome completo**:
+   `DR. CARLOS MOTA` (grade) ≠ `CARLOS JOSE MOTA DE LIMA` (`tb_operador`). Casar
+   por nome só funciona para parte dos casos — a **fonte confiável é o
+   atendimento** (`tb_agenda_exames.medico_agenda` → id).
+5. **Os 87 "profissionais" do `dez_profissionais.json` (API do painel) NÃO são os
+   médicos da clínica** (o 1º registro é `TELE LAUDOS TELEMEDICINA`). Não use
+   essa lista como população de médicos.
+6. **`tb_paciente` não tem `email`** → paciente importado entra sem e-mail.
+7. **`convenio_id` de paciente não casa** com os 40 convênios importados em ~43%
+   dos casos → `default_agreement_id` fica nulo (a recepção escolhe).
+8. **`appointments` do DEZ não tem `legacy_id`** → a idempotência do import é o
+   `idempotency_key` (UUID v5 derivado do `agenda_exames_id`).
+9. **`service_offering_id` é obrigatório** em `appointments` → importar histórico
+   exige a oferta (unidade × procedimento × médico × convênio); daí o
+   `--create-offerings`.
+10. **`dbprefix` com ponto**: se um dia consultar sem `search_path`, lembre que o
+    "prefixo" é schema (`ponto.tb_x`), não `ponto_tb_x`.
+11. **Pager do `psql`** e **bracketed paste** — ver §22.2.
+
+### 22.5 Receitas prontas
+
+```sql
+-- médicos com atendimento na janela (fonte confiável, com nome completo e CRM)
+select distinct o.operador_id, o.nome, o.conselho, o.sigla_id
+from ponto.tb_agenda_exames ae
+join ponto.tb_operador o on o.operador_id = ae.medico_agenda
+where ae.data >= current_date - interval '24 months'
+order by o.nome;
+
+-- grade com o apelido do médico (o que o legado usa)
+select h.agenda_id, a.nome, h.dia, h.horaentrada1, h.horasaida1, h.tempoconsulta, h.qtdeconsulta
+from ponto.tb_horarioagenda h join ponto.tb_agenda a on a.agenda_id = h.agenda_id
+order by a.nome, h.dia;
+
+-- volume por situação na janela
+select case when cancelada then 'cancelada' when faltou_manual then 'faltou'
+            when atendimento or realizada then 'realizada' else 'agendada' end as situacao,
+       count(*) from ponto.tb_agenda_exames
+where data >= current_date - interval '24 months' group by 1 order by 2 desc;
+```
+
+### 22.6 De onde cada importador lê
+
+| Comando | Lê | Grava |
+|---|---|---|
+| `stg:import-catalog` | arquivos de `STG_IMPORT_PATH` (extração do PC) | `procedures`, `agreements`, `professionals`, `procedure_prices`, `units`, `catalog_links` |
+| `stg:import-report-templates` | arquivos de `STG_LAUDOS_PATH` | `report_templates` |
+| `stg:import-grade` | `grade_medicos.csv` (do mesmo diretório) | `catalog_links` + `service_offerings` + `schedule_windows` |
+| `stg:import-doctors` | **banco do legado** (`tb_operador`, via `--source=appointments|grade|agenda|percentual`) | `professionals` |
+| `stg:import-patients` | **banco do legado** (`tb_paciente`) | `patients` |
+| `stg:import-appointments` | **banco do legado** (`tb_agenda_exames`) | `service_offerings` (com `--create-offerings`) + `appointments` |
+
+> Todos os que leem o banco exigem `STG_DB_*` no `.env` e usam a conexão `stg`
+> **somente leitura**. Mudança de `.env` com `config` cacheada exige
+> `artisan config:clear` (o deploy roda `optimize`).
+
+---
+
 ## Anexo A — `/opt/dez/Caddyfile`
 
 ```
@@ -1515,6 +1665,14 @@ jobs:
 ```
 
 ## Anexo E — comandos pendentes (recuperar acesso ao Postgres)
+
+> ✅ **RESOLVIDO em 22/09/2026 — não foi preciso nada disso.** A senha do
+> `postgres` estava na própria config do STG
+> (`/home/server/projetos/dezstg2/application/config/database.php`, linha 40:
+> `$db['default']['password'] = …`). Bastou:
+> `PGPASS=$(sed -n '40p' /home/server/projetos/dezstg2/application/config/database.php | cut -d'"' -f2)`
+> e usar `PGPASSWORD="$PGPASS" psql …`. O passo do `peer` temporário abaixo fica
+> registrado apenas como plano B para outra máquina.
 
 **E1 — procurar a senha nas configs do STG (leitura, sem sudo):**
 ```bash
