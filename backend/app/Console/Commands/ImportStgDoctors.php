@@ -16,7 +16,8 @@ class ImportStgDoctors extends Command
     private array $sourceCounts = [];
 
     protected $signature = 'stg:import-doctors
-        {--source=agenda : População de médicos: agenda | percentual | both | flags}
+        {--source=grade : População de médicos: grade | agenda | percentual | both | flags}
+        {--grade-file= : CSV da grade (padrão: STG_IMPORT_PATH/grade_medicos.csv)}
         {--only-agenda : (source=flags) Importa apenas quem tem medico_agenda = true}
         {--include-inactive : Inclui operadores inativos}
         {--max=200 : Limite de segurança para a seleção}
@@ -164,14 +165,19 @@ class ImportStgDoctors extends Command
     /** @return Collection<int, object> */
     private function readDoctors(): Collection
     {
-        $source = (string) ($this->option('source') ?: 'agenda');
+        $source = (string) ($this->option('source') ?: 'grade');
 
-        if (! in_array($source, ['agenda', 'percentual', 'both', 'flags'], true)) {
-            throw new RuntimeException("--source inválido: {$source} (use agenda, percentual, both ou flags)");
+        if (! in_array($source, ['grade', 'agenda', 'percentual', 'both', 'flags'], true)) {
+            throw new RuntimeException("--source inválido: {$source} (use grade, agenda, percentual, both ou flags)");
         }
 
         $agendaIds = [];
         $percentualIds = [];
+        $gradeNames = [];
+
+        if ($source === 'grade') {
+            $gradeNames = $this->namesFromGrade();
+        }
 
         if (in_array($source, ['agenda', 'both'], true)) {
             $agendaIds = $this->idsFromAgenda();
@@ -181,7 +187,12 @@ class ImportStgDoctors extends Command
             $percentualIds = $this->idsFromPercentual();
         }
 
-        $this->sourceCounts = ['fonte' => $source, 'ids_agenda' => count($agendaIds), 'ids_percentual' => count($percentualIds)];
+        $this->sourceCounts = [
+            'fonte' => $source,
+            'nomes_na_grade' => count($gradeNames),
+            'ids_agenda' => count($agendaIds),
+            'ids_percentual' => count($percentualIds),
+        ];
 
         $query = DB::connection('stg')->table('tb_operador')
             ->select(['operador_id', 'nome', 'conselho', 'ativo', 'medico', 'medico_agenda', 'profissional'])
@@ -193,6 +204,28 @@ class ImportStgDoctors extends Command
             } else {
                 $query->where(fn ($builder) => $builder->where('medico', true)->orWhere('medico_agenda', true)->orWhere('profissional', true));
             }
+        } elseif ($source === 'grade') {
+            if (! (bool) $this->option('include-inactive')) {
+                $query->where('ativo', true);
+            }
+
+            $found = [];
+
+            $rows = $query->get()->filter(function (object $row) use ($gradeNames, &$found): bool {
+                $normalized = $this->normalize((string) $row->nome);
+
+                if (isset($gradeNames[$normalized])) {
+                    $found[$normalized] = true;
+
+                    return true;
+                }
+
+                return false;
+            });
+
+            $this->sourceCounts['nomes_sem_operador'] = count(array_diff_key($gradeNames, $found));
+
+            return $rows;
         } else {
             $query->whereIn('operador_id', array_values(array_unique([...$agendaIds, ...$percentualIds])));
         }
@@ -202,6 +235,51 @@ class ImportStgDoctors extends Command
         }
 
         return $query->get();
+    }
+
+    /** @return array<string, true> nomes normalizados distintos da grade */
+    private function namesFromGrade(): array
+    {
+        $file = (string) ($this->option('grade-file') ?: rtrim((string) config('sistema_dez.stg_import_path'), '/').'/grade_medicos.csv');
+
+        if (! is_file($file)) {
+            throw new RuntimeException("Grade não encontrada: {$file}");
+        }
+
+        $handle = fopen($file, 'rb');
+
+        if ($handle === false) {
+            throw new RuntimeException("Não foi possível abrir {$file}");
+        }
+
+        $header = fgetcsv($handle, escape: '');
+
+        if ($header === false) {
+            fclose($handle);
+
+            throw new RuntimeException("CSV vazio: {$file}");
+        }
+
+        $header[0] = ltrim((string) $header[0], "\xEF\xBB\xBF");
+        $index = array_flip(array_map(static fn (mixed $column): string => trim((string) $column), $header));
+        $names = [];
+
+        while (($line = fgetcsv($handle, escape: '')) !== false) {
+            $name = $this->normalize((string) ($line[$index['medico_agenda']] ?? ''));
+
+            if ($name !== '') {
+                $names[$name] = true;
+            }
+        }
+
+        fclose($handle);
+
+        return $names;
+    }
+
+    private function normalize(string $value): string
+    {
+        return Str::of($value)->ascii()->squish()->upper()->toString();
     }
 
     /** Ids dos médicos referenciados pela grade (tb_agenda.medico_id e o campo multi). */
