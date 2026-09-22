@@ -259,33 +259,30 @@ class ImportStgAppointments extends Command
     }
 
     /**
-     * O `tb_agenda_exames.procedimento_tuss_id` NÃO é id de `tb_procedimento_tuss`
-     * (aquela tabela vai de 1 a 1.961) — na prática ele aponta para o
-     * procedimento *precificado por convênio*. Montamos as pontes possíveis de
-     * uma vez (poucas dezenas de milhares de linhas) e resolvemos por tentativa,
-     * contando qual caminho funcionou.
+     * Ponte de procedimento do atendimento.
      *
-     * @return array{convenio: Collection<string, string>, tuss: Collection<string, string>}
+     * O `tb_agenda_exames.procedimento_tuss_id` **não** é id de `tb_procedimento_tuss`
+     * (aquela tabela vai de 1 a 1.961): na prática ele guarda o
+     * `tb_procedimento_convenio.procedimento_convenio_id` — o procedimento
+     * *precificado por convênio*, que faz sentido para faturamento. E o valor que
+     * casa com `procedures.legacy_id` no DEZ é o **`procedimento_tuss_id`**
+     * daquela linha (conferido em 6/6 amostras: 21610→453 ECOCARDIOGRAMA,
+     * 21838→1114 HOLTER, 21813→444 MAPA, 8504→436 RETORNO NEUROLOGISTA,
+     * 21602→511 NEUROLOGISTA, 22026→1867 NEUROLOGISTA CRIANÇA).
+     *
+     * @return array{convenio: Collection<string, int>}
      */
     private function procedureBridges(): array
     {
-        $convenio = DB::connection('stg')->table('tb_procedimento_convenio as pc')
-            ->join('tb_procedimento_tuss as pt', 'pt.procedimento_tuss_id', '=', 'pc.procedimento_tuss_id')
-            ->whereNotNull('pt.codigo')
-            ->where('pt.codigo', '<>', '')
-            ->select(['pc.procedimento_convenio_id as ponte_id', 'pt.codigo as codigo'])
+        $convenio = DB::connection('stg')->table('tb_procedimento_convenio')
+            ->select(['procedimento_convenio_id as ponte_id', 'procedimento_tuss_id as destino'])
             ->distinct()
-            ->pluck('codigo', 'ponte_id');
+            ->pluck('destino', 'ponte_id');
 
-        $tuss = DB::connection('stg')->table('tb_procedimento_tuss')
-            ->whereNotNull('codigo')
-            ->where('codigo', '<>', '')
-            ->pluck('codigo', 'procedimento_tuss_id');
-
-        return ['convenio' => $convenio, 'tuss' => $tuss];
+        return ['convenio' => $convenio];
     }
 
-    /** @param Collection<string, string> $procedures @param array{convenio: Collection<string, string>, tuss: Collection<string, string>} $bridges */
+    /** @param Collection<string, string> $procedures @param array{convenio: Collection<string, int>} $bridges */
     private function resolveProcedure(mixed $legacyProcedureId, Collection $procedures, array $bridges): ?string
     {
         $key = (string) $legacyProcedureId;
@@ -297,7 +294,6 @@ class ImportStgAppointments extends Command
         $candidates = [
             'direto' => $key,
             'convenio' => $bridges['convenio'][$key] ?? null,
-            'tuss' => $bridges['tuss'][$key] ?? null,
         ];
 
         foreach ($candidates as $path => $code) {
