@@ -658,10 +658,16 @@ health check em `/up`, log append em `/var/log/dez/deploy.log`.
 
 **Restauração** (testada em F6):
 ```bash
-sudo -u dez /opt/dez/bin/frankenphp php-cli --version >/dev/null
-pg_restore -h 127.0.0.1 -U sistema_dez -d sistema_dez --clean --if-exists \
-  /var/backups/dez/diario/sistema_dez-<data>.dump
+PG_BIN=$(ls -d /usr/lib/postgresql/*/bin | sort -V | tail -1)   # nunca o do PATH
+PGPASSWORD='<senha-do-role>' "$PG_BIN/pg_restore" -h 127.0.0.1 -U sistema_dez -d sistema_dez \
+  --clean --if-exists /var/backups/dez/diario/sistema_dez-<data>.dump
 ```
+> ⚠️ **Sempre use o `pg_restore` versionado** (`/usr/lib/postgresql/<versão>/bin/`).
+> O `pg_restore` do PATH pode ser de uma versão anterior e recusar um dump
+> válido com `unsupported version (1.16) in file header` — foi exatamente o que
+> aconteceu na 1ª execução do backup em 22/09 (o dump estava bom; o verificador
+> é que era velho). O `backup.sh` já resolve o par `pg_dump`/`pg_restore` pelo
+> diretório versionado de maior versão.
 > Rollback de **código** é `git reset --hard <commit>` (via `deploy.sh`).
 > Rollback de **dados** exige o dump — por isso o backup deixa de ser opcional.
 

@@ -38,12 +38,25 @@ DB_USER=$(get DB_USERNAME)
 DB_PASS=$(get DB_PASSWORD)
 DUMP="$DIARIO/$DB_NAME-$STAMP.dump"
 
+# Binários: usar SEMPRE o mesmo conjunto, do diretório versionado do servidor.
+# O pg_restore do PATH pode ser de uma versão anterior e recusar o dump com
+# "unsupported version (1.16) in file header", reprovando um dump que está bom.
+PG_BIN="$(ls -d /usr/lib/postgresql/*/bin 2>/dev/null | sort -V | tail -1)"
+if [ -n "$PG_BIN" ] && [ -x "$PG_BIN/pg_dump" ] && [ -x "$PG_BIN/pg_restore" ]; then
+	PG_DUMP="$PG_BIN/pg_dump"
+	PG_RESTORE="$PG_BIN/pg_restore"
+else
+	PG_DUMP="$(command -v pg_dump)"
+	PG_RESTORE="$(command -v pg_restore)"
+fi
+log "binários: $PG_DUMP ($("$PG_DUMP" --version))"
+
 log "pg_dump $DB_NAME@$DB_HOST:$DB_PORT"
-PGPASSWORD="$DB_PASS" pg_dump -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" -Fc -f "$DUMP"
+PGPASSWORD="$DB_PASS" "$PG_DUMP" -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" -Fc -f "$DUMP"
 
 log "verificando integridade do dump"
-if ! pg_restore --list "$DUMP" >/dev/null; then
-	log "ABORTADO: dump ilegível (arquivo mantido para inspeção)"
+if ! "$PG_RESTORE" --list "$DUMP" >/dev/null; then
+	log "ABORTADO: dump ilegível para $("$PG_RESTORE" --version) (arquivo mantido para inspeção)"
 	exit 1
 fi
 
