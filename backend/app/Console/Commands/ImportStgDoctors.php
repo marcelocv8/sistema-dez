@@ -14,6 +14,8 @@ class ImportStgDoctors extends Command
     protected $signature = 'stg:import-doctors
         {--only-agenda : Importa apenas quem tem medico_agenda = true no legado}
         {--include-inactive : Inclui operadores inativos}
+        {--max=200 : Limite de segurança para a seleção}
+        {--allow-large : Permite seleção acima do --max}
         {--dry-run : Simula e desfaz a transação}
         {--commit : Confirma}';
 
@@ -47,6 +49,22 @@ class ImportStgDoctors extends Command
             $this->warn('Nenhum médico encontrado com os filtros atuais no legado.');
 
             return self::SUCCESS;
+        }
+
+        // Guarda de segurança: a flag `medico` do legado está true em TODOS os
+        // operadores ativos (1418 em 22/09), então um filtro errado importaria
+        // a base inteira e poluiria a tela de profissionais.
+        $limit = (int) ($this->option('max') ?: 200);
+
+        if ($rows->count() > $limit && ! (bool) $this->option('allow-large')) {
+            $this->error(sprintf(
+                'A seleção tem %d registros (limite %d). Isso normalmente indica filtro errado. Ajuste os filtros, use --only-agenda, ou confirme com --max=%d --allow-large.',
+                $rows->count(),
+                $limit,
+                $rows->count(),
+            ));
+
+            return self::INVALID;
         }
 
         $commit = (bool) $this->option('commit');

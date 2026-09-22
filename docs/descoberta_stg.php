@@ -89,9 +89,22 @@ $columnStatement = $pdo->prepare(
 );
 
 foreach ($tables as $table) {
-    printf("\n=== %s.%s  (~%d linhas)\n", $schema, $table['table_name'], $table['approx_rows']);
+    $count = '?';
+
+    try {
+        $count = (string) $pdo->query(sprintf('SELECT count(*) FROM %s.%s', $schema, quoteIdent($table['table_name'])))->fetchColumn();
+    } catch (Throwable) {
+        $count = 'erro';
+    }
+
+    printf("\n=== %s.%s  (%s linhas; estimativa %d)\n", $schema, $table['table_name'], $count, $table['approx_rows']);
     $columnStatement->execute([$schema, $table['table_name']]);
     foreach ($columnStatement->fetchAll() as $column) {
         printf("  %-40s %s\n", $column['column_name'], $column['data_type']);
     }
+}
+
+function quoteIdent(string $identifier): string
+{
+    return '"'.str_replace('"', '""', $identifier).'"';
 }
