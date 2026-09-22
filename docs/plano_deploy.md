@@ -6,9 +6,10 @@
 >
 > **v1.3:** correções descobertas na execução real no servidor (§20.3) —
 > quoting do `-v` no `provision.sql`, `bootstrap.sh` sem depender do `vendor/`
-> (`APP_KEY` via `openssl`), `provision.sql` versionado (`*.sql` do `.gitignore`)
-> e ordem ajustada: `.env` → túnel → **primeiro deploy do CI** → migrations e
-> usuários. Sequência remota atualizada no §21.
+> (`APP_KEY` via `openssl`), `provision.sql` versionado (`*.sql` do `.gitignore`),
+> crases executadas dentro de heredoc, URL do asset do runner do GitHub (o nome
+> inclui a versão) e ordem ajustada: `.env` → túnel → **primeiro deploy do CI**
+> → migrations e usuários. Sequência remota atualizada no §21.
 >
 > **v1.2:** checagens do servidor registradas em §3.3 (senha do `postgres`,
 > `max_connections`, `password_encryption=md5`, hostname livre, baseline do STG);
@@ -291,6 +292,32 @@ depender de `~/.ssh/config`) e semeia `known_hosts` com `ssh-keyscan`.
 > timeout), usar `ssh.github.com:443` em `/opt/dez/.ssh/config`:
 > `Host github.com` / `HostName ssh.github.com` / `Port 443` / `User git` /
 > `IdentityFile /opt/dez/.ssh/dez_deploy`.
+
+### 6.5 Self-hosted runner (F6)
+
+O asset do runner **inclui a versão no nome**:
+`…/releases/latest/download/actions-runner-linux-x64.tar.gz` → **404**.
+Conferir a versão atual em <https://github.com/actions/runner/releases/latest>
+(verificado em 22/09/2026: **v2.337.0**, 226 MB).
+
+```bash
+sudo -u dez mkdir -p /opt/dez/actions-runner
+cd /opt/dez/actions-runner
+sudo -u dez curl -fL --retry 3 -o runner.tar.gz \
+  https://github.com/actions/runner/releases/latest/download/actions-runner-linux-x64-2.337.0.tar.gz
+sudo -u dez tar -xzf runner.tar.gz
+
+# token (expira em ~1h): repo > Settings > Actions > Runners > New self-hosted runner
+sudo -u dez ./config.sh --url https://github.com/marcelocv8/sistema-dez \
+  --token <TOKEN> --name dez-server --labels dez --work /opt/dez/_work --unattended
+sudo ./svc.sh install dez
+sudo ./svc.sh start
+sudo ./svc.sh status
+```
+
+O runner **precisa** rodar como `dez`: é quem tem o `sudo` restrito (§6.2) e o
+dono de `/opt/dez`. O label **`dez`** é o que o workflow usa em
+`runs-on: [self-hosted, dez]`.
 
 ---
 
@@ -850,6 +877,8 @@ com os prefixos corretos) · **borda real** com FrankenPHP 8.5 e os dists reais
 5. `deploy/sql/provision.sql` era **ignorado** pela regra `*.sql` do `.gitignore` → adicionada `!deploy/sql/*.sql`.
 6. **Quoting do `-v`**: `-v app_password="'$SENHA'"` grava a senha **com aspas literais** (o `:'app_password'` do SQL já as adiciona) → usar `-v app_password="$SENHA"`.
 7. `bootstrap.sh` exigia `vendor/` para gerar a `APP_KEY` → agora usa `openssl rand -base64 32` e pausa com orientação quando o `vendor/` ainda não chegou.
+8. Crases dentro de heredoc **sem aspas** no `bootstrap.sh` eram executadas como substituição de comando → trocadas por aspas.
+9. (antes de rodar) Asset do runner do GitHub: `…/latest/download/actions-runner-linux-x64.tar.gz` responde **404** — o nome inclui a versão (`…-2.337.0.tar.gz`). Corrigido no §6.5.
 
 ---
 
@@ -930,8 +959,8 @@ sudo /opt/dez/app/deploy/scripts/bootstrap.sh \
 ```
 
 **21.9 — primeiro deploy (F6): publica `vendor/` + os 4 frontends, roda as migrations**
-Instalar o runner (§6.5 do `deploy/README.md`) e depois, no GitHub,
-**Actions → deploy → Run workflow**. O `deploy.sh` reinicia o `dez-web` e valida `/up`.
+Instalar o runner (**§6.5**) e depois, no GitHub, **Actions → deploy → Run workflow**.
+O `deploy.sh` reinicia o `dez-web` e valida `/up`.
 
 ```bash
 sudo systemctl enable --now dez-web.service dez-schedule.timer dez-backup.timer dez-tunnel.service

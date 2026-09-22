@@ -114,16 +114,29 @@ Rollback manual: `sudo /opt/dez/app/deploy/scripts/deploy.sh --rollback <commit>
 
 ## Instalar o runner do GitHub (F6)
 
+O asset do runner **inclui a versão no nome** — `…/latest/download/actions-runner-linux-x64.tar.gz` responde **404**. Confira a versão atual em
+<https://github.com/actions/runner/releases/latest> (verificado em 22/09/2026: **v2.337.0**).
+
 ```bash
-sudo -u dez mkdir -p /opt/dez/actions-runner && cd /opt/dez/actions-runner
-sudo -u dez curl -fsSL -o runner.tar.gz \
-  https://github.com/actions/runner/releases/latest/download/actions-runner-linux-x64.tar.gz
+sudo -u dez mkdir -p /opt/dez/actions-runner
+cd /opt/dez/actions-runner
+sudo -u dez curl -fL --retry 3 -o runner.tar.gz \
+  https://github.com/actions/runner/releases/latest/download/actions-runner-linux-x64-2.337.0.tar.gz
 sudo -u dez tar -xzf runner.tar.gz
-# token em: repo → Settings → Actions → Runners → New self-hosted runner
+```
+
+Token (expira em ~1 hora): **repo → Settings → Actions → Runners → New self-hosted runner → Linux**.
+```bash
 sudo -u dez ./config.sh --url https://github.com/marcelocv8/sistema-dez \
   --token <TOKEN> --name dez-server --labels dez --work /opt/dez/_work --unattended
-sudo ./svc.sh install dez && sudo ./svc.sh start
+sudo ./svc.sh install dez
+sudo ./svc.sh start
+sudo ./svc.sh status
 ```
+Confirmado: o runner precisa rodar como **`dez`** (é quem tem o `sudo` restrito e o dono de `/opt/dez`).
+
+Depois disso, no GitHub: **Actions → deploy → Run workflow**. O job `verify` roda os
+testes; passando, o job `deploy` roda no servidor e publica `vendor/` + os 4 frontends.
 
 ## Regras que não podem ser quebradas
 
