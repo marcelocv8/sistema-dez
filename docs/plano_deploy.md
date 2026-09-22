@@ -827,10 +827,14 @@ Leitura **read-only** do banco legado, com lotes e log de reconciliação.
 - [x] Túnel `dez` (`72b041b9-…`) criado, CNAME em `dez.clinicadez.com.br`, `dez-tunnel.service` ativo
 - [x] `https://dez.clinicadez.com.br/up` = 200; os 4 prefixos (`/app/`, `/agendar/`, `/resultados/`, `/painel/`) = 200
 
-### F5 — Dados ⏳
-- [ ] Uploads das extrações + `stg:import-catalog` / `stg:import-report-templates` / `stg:import-mt` (`--dry-run` → `--commit`)
-- [ ] (opcional) `stg:resolve-issues --dry-run` → `--commit` para as 85 pendências do catálogo
-- [ ] Catálogo/preços/modelos/MT visíveis nas telas
+### F5 — Dados (concluída em 22/09/2026)
+- [x] Uploads das extrações (`_import/stg` + `_import/laudos`) com `sha256sum` conferido antes/depois de decifrar
+- [x] `stg:import-catalog --commit` — saída **idêntica** ao baseline (998/40/87, 2.303 válidos, 85 pendências)
+- [x] `stg:import-report-templates --commit` — 80 templates (1 pulado de 81), 40 médicos e 55 procedimentos vinculados
+- [x] `stg:resolve-issues --dry-run` → `changed: 0` (as 85 já estão no estado canônico: 33 IGNORED / 5 RESOLVED / 47 UNMATCHED) — nada a commitar
+- [x] Conferência no banco: `procedimentos=998 convenios=40 profissionais=87 precos=2313 unidades=2 templates=80`
+- [~] **MT: sem dados** — `ponto.tb_cadastro_aso` e `@ponto.tb_cadastro_aso` = **0 linhas**. O módulo está implementado, fica sem dados iniciais (nada a importar)
+- [ ] Conferência visual pelo Admin (`/precos`, `/cadastros`, `/laudos`)
 
 ### F6 — Operação (parcial)
 - [x] Self-hosted runner (`dez-server`, label `dez`) — unit próprio; **deploy #1 verde** (Tests 1m52 → Build 1m1 → Publicar 34s)
@@ -885,10 +889,11 @@ com os prefixos corretos) · **borda real** com FrankenPHP 8.5 e os dists reais
 | P3 | `password_encryption` (`md5` × `scram`) | ✅ **resolvido** | `md5` — role nasce em MD5, `pg_hba` já em MD5, sem ajuste |
 | P4 | Hostname do teste | ✅ **resolvido** | `dez.clinicadez.com.br` (livre, confirmado) |
 | P5 | Janela de import | ✅ **definida** | 00:00–06:00 |
-| P6 | Subir as extrações do STG para `/opt/dez/_import/` | ⏳ pendente | F5; pacotes prontos no PC (`dez-stg.zip` 88 KB, `dez-laudos.zip` 111 KB) |
+| P6 | Subir as extrações do STG para `/opt/dez/_import/` | ✅ **feito** | via `tar.gz` cifrado baixado pelo servidor (o `scp` não sai da LAN); hashes conferidos |
 | P7 | Escopo do F7 | ✅ **definido** | pacientes + atendimentos de 24 meses; **sem** financeiro/caixa |
 | P8 | Rollback automático + `dez-backup` testados | ⏳ pendente | resto do F6 |
 | P9 | Executar a F1 no servidor | ✅ **concluído** | ver §20.3/§20.4 |
+| P10 | F5 — catálogo, preços e modelos | ✅ **concluído** | §20.5; MT dispensada (sem dados no legado) |
 
 ### 20.3 Andamento da execução no servidor (22/09/2026)
 
@@ -970,11 +975,21 @@ baseline do §3.3:
 > não erro do importador. Os templates são criados de qualquer forma e o
 > vínculo pode ser ajustado na tela de cadastros.
 
-**Medicina do Trabalho — tabelas vazias.** Existem `ponto.tb_aso_risco`,
-`tb_aso_setor`, `tb_aso_funcao`, `tb_caso_*`/`tb_cadastro_aso` no schema
-**`ponto`** (o `dbprefix="ponto."` do CodeIgniter é o **schema** no Postgres),
-mas com **0 linhas**; há também o schema `@ponto` (537 tabelas, provavelmente
-backup) ainda não conferido.
+**Medicina do Trabalho — SEM DADOS, passo dispensado.** Existem
+`ponto.tb_aso_risco`, `tb_aso_setor`, `tb_aso_funcao`, `tb_aso_situacao`,
+`tb_cadastro_aso` no schema **`ponto`** (o `dbprefix="ponto."` do CodeIgniter é
+o **schema** no Postgres), mas **0 linhas** — e o schema `@ponto` (537 tabelas,
+backup) também tem **0** em `tb_cadastro_aso`. Conclusão: a clínica **não usa** a
+Medicina do Trabalho neste STG. O módulo do Sistema DEZ está implementado
+(empresas/setores/funções/riscos/ASOs) e fica sem dados iniciais; quando houver
+uso, basta rodar a extração com `--prefix=ponto.` e `stg:import-mt`.
+
+**Estado final do banco do DEZ:** `procedimentos=998 · convenios=40 ·
+profissionais=87 · precos=2313 · unidades=2 · templates=80`.
+
+**Pendências do catálogo:** `stg:resolve-issues --dry-run` → `matched: 85,
+changed: 0` (distribuição `33 IGNORED / 5 RESOLVED / 47 UNMATCHED`, idêntica à
+materialização histórica do §14.5.1 do plano de produto) ⇒ **nada a commitar**.
 
 
 
