@@ -279,7 +279,17 @@ class ImportStgDoctors extends Command
 
     private function normalize(string $value): string
     {
-        return Str::of($value)->ascii()->squish()->upper()->toString();
+        $normalized = Str::of($value)->ascii()->squish()->upper()->toString();
+
+        // A grade do legado traz títulos no nome ("DR. AUGUSTO UCHIDA",
+        // "DRA.LAICE CUNHA", "DR.GLAUBER JEAN") e o tb_operador.nome não.
+        // Exigir um separador (ponto ou espaço) depois do título evita que
+        // "DR" case antes de "DRA" e sobre um "A." no nome.
+        return trim((string) preg_replace(
+            '/^(DOUTORA|DOUTOR|ENFERMEIRA|PROFA|PROF|DRA|DR|ENF)[.\s]+/',
+            '',
+            $normalized,
+        ));
     }
 
     /** Ids dos médicos referenciados pela grade (tb_agenda.medico_id e o campo multi). */
