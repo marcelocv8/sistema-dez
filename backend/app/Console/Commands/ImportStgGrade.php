@@ -333,13 +333,39 @@ class ImportStgGrade extends Command
             $unit = Unit::query()->where('legacy_id', $value)->orWhere('name', $value)->first();
 
             if (! $unit instanceof Unit) {
-                throw new \RuntimeException("Unidade não encontrada: {$value}");
+                throw new \RuntimeException('Unidade não encontrada: '.$value.' | disponíveis: '.$this->unitList());
+            }
+
+            if (! $unit->operational_enabled) {
+                throw new \RuntimeException('A unidade '.$unit->name.' não está operacional. Habilite-a no cadastro ou use outra. | '.$this->unitList());
             }
 
             return $unit;
         }
 
-        return Unit::query()->where('operational_enabled', true)->orderBy('name')->firstOrFail();
+        $unit = Unit::query()->where('operational_enabled', true)->orderBy('name')->first();
+
+        if (! $unit instanceof Unit) {
+            throw new \RuntimeException(
+                'Nenhuma unidade operacional. Habilite a unidade no cadastro (ou use --unit=<legacy_id|nome>). | '.
+                $this->unitList()
+            );
+        }
+
+        return $unit;
+    }
+
+    private function unitList(): string
+    {
+        return Unit::query()->orderBy('name')->get(['legacy_id', 'name', 'operational_enabled', 'active'])
+            ->map(fn (Unit $unit): string => sprintf(
+                '%s (legacy_id=%s, operacional=%s, ativa=%s)',
+                $unit->name,
+                $unit->legacy_id ?? '-',
+                $unit->operational_enabled ? 'sim' : 'não',
+                $unit->active ? 'sim' : 'não',
+            ))
+            ->implode(' | ');
     }
 
     private function reportProcedureCandidates(): void
