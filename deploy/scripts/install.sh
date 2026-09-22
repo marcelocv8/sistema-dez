@@ -76,10 +76,12 @@ log "4/8 FrankenPHP static"
 if [ -x "$DEZ_ROOT/bin/frankenphp" ]; then
 	warn "frankenphp já instalado ($("$DEZ_ROOT/bin/frankenphp" version 2>/dev/null | head -1))"
 else
+	# O asset oficial é o binário puro (~173 MB), NÃO um .tar.gz
+	# (…/releases/latest/download/frankenphp-linux-x86_64.tar.gz → 404).
+	log "baixando ~173 MB de github.com/php/frankenphp — pode levar alguns minutos"
 	tmp=$(mktemp -d)
-	curl -fsSL -o "$tmp/frankenphp.tar.gz" \
-		"https://github.com/php/frankenphp/releases/${FRANKENPHP_VERSION}/download/frankenphp-linux-x86_64.tar.gz"
-	tar -xzf "$tmp/frankenphp.tar.gz" -C "$tmp"
+	curl -fL --retry 3 --retry-delay 2 -o "$tmp/frankenphp" \
+		"https://github.com/php/frankenphp/releases/${FRANKENPHP_VERSION}/download/frankenphp-linux-x86_64"
 	install -m 0755 -o root -g root "$tmp/frankenphp" "$DEZ_ROOT/bin/frankenphp"
 	rm -rf "$tmp"
 	"$DEZ_ROOT/bin/frankenphp" version
