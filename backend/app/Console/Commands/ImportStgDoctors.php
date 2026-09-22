@@ -12,12 +12,21 @@ use Throwable;
 
 class ImportStgDoctors extends Command
 {
+    /**
+     * Títulos que a grade do legado coloca no nome ("DR. AUGUSTO UCHIDA",
+     * "DRA.LAICE CUNHA", "DR.GLAUBER JEAN"). Exigir um separador (ponto ou
+     * espaço) depois do título evita que "DR" case antes de "DRA" e sobre um
+     * "A." no nome.
+     */
+    private const TITLE_PATTERN = '/^(DOUTORA|DOUTOR|ENFERMEIRA|PROFA|PROF|DRA|DR|ENF)[.\s]+/i';
+
     /** @var array<string, int|string> */
     private array $sourceCounts = [];
 
     protected $signature = 'stg:import-doctors
         {--source=grade : População de médicos: grade | agenda | percentual | both | flags}
         {--grade-file= : CSV da grade (padrão: STG_IMPORT_PATH/grade_medicos.csv)}
+        {--create-missing : Cria o profissional a partir do nome da grade quando não há operador correspondente}
         {--only-agenda : (source=flags) Importa apenas quem tem medico_agenda = true}
         {--include-inactive : Inclui operadores inativos}
         {--max=200 : Limite de segurança para a seleção}
@@ -89,18 +98,21 @@ class ImportStgDoctors extends Command
             $touched = [];
 
             foreach ($rows as $row) {
-                $legacyId = (string) $row->operador_id;
+                $legacyId = trim((string) ($row->operador_id ?? ''));
                 $name = Str::of((string) $row->nome)->squish()->toString();
 
                 if ($name === '') {
                     continue;
                 }
 
-                $normalized = Str::of($name)->ascii()->squish()->upper()->toString();
+                $normalized = $this->normalize($name);
                 $active = (bool) $row->ativo;
 
-                $professional = Professional::query()->where('search_name', $normalized)->first()
-                    ?? Professional::query()->where('legacy_id', $legacyId)->first();
+                $professional = Professional::query()->where('search_name', $normalized)->first();
+
+                if ($professional === null && $legacyId !== '') {
+                    $professional = Professional::query()->where('legacy_id', $legacyId)->first();
+                }
 
                 $attributes = [
                     'name' => $name,
@@ -122,7 +134,7 @@ class ImportStgDoctors extends Command
 
                 $createdProfessional = Professional::query()->create([
                     ...$attributes,
-                    'legacy_id' => $legacyId,
+                    'legacy_id' => $legacyId === '' ? null : $legacyId,
                     'online_enabled' => false,
                 ]);
                 $created++;
@@ -223,7 +235,27 @@ class ImportStgDoctors extends Command
                 return false;
             });
 
-            $this->sourceCounts['nomes_sem_operador'] = count(array_diff_key($gradeNames, $found));
+            $missing = array_diff_key($gradeNames, $found);
+            $this->sourceCounts['nomes_sem_operador'] = count($missing);
+
+            if ((bool) $this->option('create-missing')) {
+                // O legado não tem registro desses médicos fora do nome na grade
+                // (tb_agenda.nome é texto). Criamos o profissional com o nome
+                // normalizado — o conselho pode ser preenchido depois na UI.
+                foreach ($missing as $name) {
+                    $rows->push((object) [
+                        'operador_id' => null,
+                        'nome' => $name,
+                        'conselho' => null,
+                        'ativo' => true,
+                        'medico' => false,
+                        'medico_agenda' => true,
+                        'profissional' => true,
+                    ]);
+                }
+
+                $this->sourceCounts['criados_da_grade'] = count($missing);
+            }
 
             return $rows;
         } else {
@@ -265,10 +297,12 @@ class ImportStgDoctors extends Command
         $names = [];
 
         while (($line = fgetcsv($handle, escape: '')) !== false) {
-            $name = $this->normalize((string) ($line[$index['medico_agenda']] ?? ''));
+            $raw = (string) ($line[$index['medico_agenda']] ?? '');
+            $normalized = $this->normalize($raw);
 
-            if ($name !== '') {
-                $names[$name] = true;
+            if ($normalized !== '') {
+                $display = Str::of((string) preg_replace(self::TITLE_PATTERN, '', $raw))->squish()->toString();
+                $names[$normalized] = $display !== '' ? $display : $normalized;
             }
         }
 
@@ -281,15 +315,7 @@ class ImportStgDoctors extends Command
     {
         $normalized = Str::of($value)->ascii()->squish()->upper()->toString();
 
-        // A grade do legado traz títulos no nome ("DR. AUGUSTO UCHIDA",
-        // "DRA.LAICE CUNHA", "DR.GLAUBER JEAN") e o tb_operador.nome não.
-        // Exigir um separador (ponto ou espaço) depois do título evita que
-        // "DR" case antes de "DRA" e sobre um "A." no nome.
-        return trim((string) preg_replace(
-            '/^(DOUTORA|DOUTOR|ENFERMEIRA|PROFA|PROF|DRA|DR|ENF)[.\s]+/',
-            '',
-            $normalized,
-        ));
+        return trim((string) preg_replace(self::TITLE_PATTERN, '', $normalized));
     }
 
     /** Ids dos médicos referenciados pela grade (tb_agenda.medico_id e o campo multi). */

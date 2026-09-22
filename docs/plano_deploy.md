@@ -1063,23 +1063,24 @@ colunas** (só `SELECT` em `information_schema`/`pg_class`; força
 `default_transaction_read_only`).
 
 **Resolvido em 22/09:** a tabela dos médicos é **`ponto.tb_operador`** (~1.616
-linhas) — o legado não tem `tb_medico*`. Mas **nenhuma flag serve de filtro**:
-`medico = true` está em **todos** os 1.418 operadores ativos, `medico_agenda`
-apenas em 3, e `profissional` em 0. A FK da grade (`tb_agenda.medico_id`) também
-veio **vazia** — o `tb_agenda` identifica o médico pelo **nome** (coluna `nome`,
-denormalizada). Portanto a população de médicos vem da **própria grade**:
-o comando lê os nomes distintos de `grade_medicos.csv` (143 faixas) e casa com
-`tb_operador.nome` pela mesma normalização do catálogo
-(`Str::ascii()->squish()->upper()`).
+linhas) — o legado não tem `tb_medico*`. Mas **nenhuma flag serve de filtro**
+(`medico = true` em todos os 1.418 ativos; `medico_agenda` em 3; `profissional`
+em 0), a FK da grade (`tb_agenda.medico_id`) veio **vazia** e — o achado
+decisivo — **59 dos 73 nomes da grade não existem em `tb_operador`** (aquela
+tabela é dos *operadores* do sistema, não dos médicos). O legado guarda o médico
+da agenda essencialmente como **texto** (`tb_agenda.nome`).
 
-Foi criado o comando **`stg:import-doctors`** (`--source=grade` por padrão;
-`agenda`/`percentual`/`both`/`flags` seguem disponíveis), que lê direto do banco
-do legado por uma conexão **`stg`** nova e **somente leitura**
-(`config/database.php`; `search_path` vindo de `STG_DB_SCHEMA=ponto`, e
-`SET default_transaction_read_only = on` no início do comando). Ele casa por
-`search_name` (reaproveitando os registros que já existem) e grava `name`,
-`council_number`, `active` e `classification_status`. Há guarda de tamanho
-(`--max=200` + `--allow-large`) porque um filtro errado importaria a base inteira.
+Portanto o comando **`stg:import-doctors --source=grade --create-missing`**:
+1. lê os nomes distintos de `grade_medicos.csv` (73) e normaliza
+   (`Str::ascii()->squish()->upper()` + remoção de títulos `DR/DRA/…`, exigindo
+   separador depois do título para não comer o "A." de "DRA.");
+2. casa com `tb_operador.nome` quando existe (traz `conselho`);
+3. **cria o profissional só com o nome** quando não existe — o conselho/CRM
+   fica para a recepção preencher na UI.
+
+A conexão **`stg`** é nova e **somente leitura** (`config/database.php`;
+`search_path` de `STG_DB_SCHEMA=ponto`; `SET default_transaction_read_only = on`
+no início do comando). Há guarda de tamanho (`--max=200` + `--allow-large`).
 `tb_operador_grupo_medico` e `tb_sigla` estão **vazias** — por isso a sigla do
 conselho não tem fonte no legado (pendência cosmética: fica o código numérico).
 
