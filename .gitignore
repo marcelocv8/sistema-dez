@@ -31,6 +31,10 @@ frontend/.env.local
 # Deploy (o .env de produção vive só no servidor)
 deploy/.env.production
 deploy/**/*.local
+# exceção: o SQL de provisionamento É versionado de propósito (a regra *.sql
+# acima existe para não versionar dumps; sem esta linha o arquivo era ignorado
+# em silêncio e o servidor não o encontrava).
+!deploy/sql/*.sql
 
 # OS / editores
 .DS_Store
