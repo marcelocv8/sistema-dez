@@ -867,20 +867,24 @@ com os prefixos corretos) · **borda real** com FrankenPHP 8.5 e os dists reais
 | deploy key + `ssh -T git@github.com` | ✅ | `Hi marcelocv8/sistema-dez! You've successfully authenticated` |
 | clone em `/opt/dez/app` | ✅ | 1406 objetos, 1,14 MiB |
 | `install.sh` (base) | ✅ | FrankenPHP **v1.12.7 / PHP 8.5.10**; extensões com `pdo_pgsql`; 6 units; `visudo -c` OK; `/opt/dez` 0755 |
-| `provision.sql` (role + database) | ⚠️ parcial | objetos criados (`CREATE ROLE/DATABASE` + 5 `ALTER ROLE` + `REVOKE` + `GRANT`), mas a senha foi gravada **com aspas** (erro de quoting no `-v`) → corrigir com `ALTER ROLE` (§21.6) |
-| `bootstrap.sh` (`.env` + chaves) | ⚠️ | `.env` criado; agora pausa de propósito avisando que falta `vendor/` (chega no primeiro deploy do CI) |
-| túnel + serviços + validação | ⏳ | pendente |
+| `provision.sql` (role + database) | ⚠️ parcial | objetos criados (`CREATE ROLE/DATABASE` + 5 `ALTER ROLE` + `REVOKE` + `GRANT`), mas a senha foi gravada **com aspas** (erro de quoting no `-v`) → corrigido com `ALTER ROLE`; `select current_user` → `sistema_dez|sistema_dez` ✅ |
+| `bootstrap.sh` (`.env` + chaves) | ✅ | `.env` criado; `APP_KEY`, `IDENTITY_PEPPER`, `MANAGEMENT_TOKEN_SECRET`, `DB_PASSWORD`, `APP_URL`, `SANCTUM_STATEFUL_DOMAINS` todos preenchidos; pausa avisando que falta `vendor/` (chega no deploy do CI) |
+| túnel `dez` | ⚠️ | túnel criado (`72b041b9-…`), mas o CNAME saiu apontando para o **túnel do STG** (`dd9ef614-…`) → corrigido no `tunnel.sh` (UUID + `--overwrite-dns`) |
+| runner do GitHub | ⛔ | token do registro é por sessão (expira em ~1h); a primeira tentativa usou um placeholder literal → 404 |
+| serviços + validação final | ⏳ | pendente |
 
 **Bugs de script encontrados e corrigidos nesta execução** (todos já no `main`):
 1. `apt-get update` abortando por causa do `Label` do PPA `ondrej/php` → `AllowReleaseInfoChange` + só rodar o apt se faltar pacote.
 2. `/opt/dez` com permissão fechada → `server` não conseguia rodar o `tunnel.sh` → `chmod 0755`.
 3. URL do FrankenPHP: o asset `.tar.gz` **não existe** (404); é o binário puro (~173 MB).
-4. `frankenphp php-cli -m` **não repassa o `-m`** (exit 255) e, com `pipefail`, reprovava o binário → passou a usar `php-cli -r` + `extension_loaded`.
-5. `deploy/sql/provision.sql` era **ignorado** pela regra `*.sql` do `.gitignore` → adicionada `!deploy/sql/*.sql`.
-6. **Quoting do `-v`**: `-v app_password="'$SENHA'"` grava a senha **com aspas literais** (o `:'app_password'` do SQL já as adiciona) → usar `-v app_password="$SENHA"`.
-7. `bootstrap.sh` exigia `vendor/` para gerar a `APP_KEY` → agora usa `openssl rand -base64 32` e pausa com orientação quando o `vendor/` ainda não chegou.
-8. Crases dentro de heredoc **sem aspas** no `bootstrap.sh` eram executadas como substituição de comando → trocadas por aspas.
-9. (antes de rodar) Asset do runner do GitHub: `…/latest/download/actions-runner-linux-x64.tar.gz` responde **404** — o nome inclui a versão (`…-2.337.0.tar.gz`). Corrigido no §6.5.
+4. `frankenphp php-cli -m` **não repassa o `-m`** (exit 255) e, com `pipefail`, reprovava o binário → `php-cli -r` + `extension_loaded`.
+5. `deploy/sql/provision.sql` era **ignorado** pela regra `*.sql` do `.gitignore` → `!deploy/sql/*.sql`.
+6. **Quoting do `-v`**: `-v app_password="'$SENHA'"` grava a senha **com aspas literais** → usar `-v app_password="$SENHA"`.
+7. `bootstrap.sh` exigia `vendor/` para gerar a `APP_KEY` → `openssl rand -base64 32` + pausa orientada.
+8. Crases dentro de heredoc **sem aspas** no `bootstrap.sh` eram executadas como substituição de comando.
+9. Asset do runner: `…/latest/download/actions-runner-linux-x64.tar.gz` → 404 (o nome tem a versão).
+10. Job `deploy` chamava `sudo deploy.sh`, mas o sudoers só libera 3 `systemctl` → rodaria pedindo senha.
+11. `tunnel.sh`: `route dns` por **nome** apontou o CNAME para o **túnel do STG** (o `cloudflared` lê o `/etc/cloudflared/config.yml` default) → agora usa o **UUID** + `--overwrite-dns`; e `ingress validate --config` estava na ordem errada de flags.
 
 ---
 
