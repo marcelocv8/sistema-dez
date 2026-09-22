@@ -24,12 +24,17 @@ declare(strict_types=1);
 // Valores OBRIGATÓRIOS (um ':') para as opções que sempre recebem valor: o PHP
 // só aceita `--host valor` / `--host=valor` nessa forma. Com '::' (valor
 // opcional) o getopt ignora `--host valor` e o host chega vazio ao DSN.
-$args = getopt('', ['host:', 'port:', 'db:', 'user:', 'out:', 'discover::']) ?: [];
+$args = getopt('', ['host:', 'port:', 'db:', 'user:', 'out:', 'prefix:', 'discover::']) ?: [];
 $host = (string) ($args['host'] ?? 'localhost');
 $port = (string) ($args['port'] ?? '5432');
 $db = (string) ($args['db'] ?? 'dez');
 $user = (string) ($args['user'] ?? 'postgres');
 $password = (string) (getenv('STG_DB_PASSWORD') ?: '');
+
+// Prefixo das tabelas. No STG da clínica o CodeIgniter usa dbprefix = "ponto.",
+// e no PostgreSQL esse "prefixo com ponto" é na verdade o SCHEMA: as tabelas
+// ficam em ponto.tb_aso_risco. Passe --prefix=ponto. (com o ponto no final).
+$prefix = (string) ($args['prefix'] ?? '');
 
 // `array_key_exists`: com 'discover::' (valor opcional) o getopt devolve
 // `discover => false` quando a flag vem sozinha — o teste anterior
@@ -48,11 +53,14 @@ if (! is_dir($out)) {
 $pdo = connect($host, $port, $db, $user, $password);
 $pdo->beginTransaction();
 
+// Nome de tabela já com o prefixo/schema aplicado
+$t = static fn (string $table): string => $prefix.$table;
+
 writeCsv($out, 'mt_riscos.csv', ['legacy_id', 'descricao', 'ativo'], $pdo->query(
     "SELECT aso_risco_id AS legacy_id,
             COALESCE(descricao_risco, '') AS descricao,
             CASE WHEN ativo = 't' THEN 1 ELSE 0 END AS ativo
-     FROM tb_aso_risco
+     FROM {$t('tb_aso_risco')}
      ORDER BY aso_risco_id"
 )->fetchAll(PDO::FETCH_ASSOC));
 
@@ -61,7 +69,7 @@ writeCsv($out, 'mt_setores.csv', ['legacy_id', 'legacy_convenio_id', 'descricao'
             convenio_id AS legacy_convenio_id,
             COALESCE(descricao_setor, '') AS descricao,
             CASE WHEN ativo = 't' THEN 1 ELSE 0 END AS ativo
-     FROM tb_aso_setor
+     FROM {$t('tb_aso_setor')}
      ORDER BY aso_setor_id"
 )->fetchAll(PDO::FETCH_ASSOC));
 
@@ -71,7 +79,7 @@ writeCsv($out, 'mt_funcoes.csv', ['legacy_id', 'legacy_setor_id', 'legacy_risco_
             aso_risco_id AS legacy_risco_id,
             COALESCE(descricao_funcao, '') AS descricao,
             CASE WHEN ativo = 't' THEN 1 ELSE 0 END AS ativo
-     FROM tb_aso_funcao
+     FROM {$t('tb_aso_funcao')}
      ORDER BY aso_funcao_id"
 )->fetchAll(PDO::FETCH_ASSOC));
 
@@ -79,8 +87,8 @@ $examesPorAso = [];
 $stmt = $pdo->query(
     "SELECT ae.cadastro_aso_id AS legacy_aso_id,
             string_agg(DISTINCT COALESCE(pt.nome, pt.descricao, CAST(pt.procedimento_tuss_id AS text)), ' | ') AS exames
-     FROM tb_agenda_exames ae
-     LEFT JOIN tb_procedimento_tuss pt ON pt.procedimento_tuss_id = ae.procedimento_tuss_id
+     FROM {$t('tb_agenda_exames')} ae
+     LEFT JOIN {$t('tb_procedimento_tuss')} pt ON pt.procedimento_tuss_id = ae.procedimento_tuss_id
      WHERE ae.cadastro_aso_id IS NOT NULL
      GROUP BY ae.cadastro_aso_id"
 );
@@ -98,10 +106,10 @@ foreach ($pdo->query(
             COALESCE(ca.data_realizacao, '') AS data_realizacao,
             COALESCE(ca.data_validade, '') AS data_validade,
             CASE WHEN ca.ativo = 't' THEN 1 ELSE 0 END AS ativo
-     FROM tb_cadastro_aso ca
+     FROM {$t('tb_cadastro_aso')} ca
      ORDER BY ca.cadastro_aso_id"
 ) as $row) {
-    $meta = parseImpressaoAso($row['legacy_id'], $pdo);
+    $meta = parseImpressaoAso($row['legacy_id'], $pdo, $prefix);
     $asoRows[] = [
         'legacy_id' => $row['legacy_id'],
         'legacy_paciente_id' => $row['legacy_paciente_id'],
@@ -190,9 +198,9 @@ function discover(PDO $pdo): void
 }
 
 /** Lê o JSON `impressao_aso` (POST do cadastro) para setor/função/riscos/situação. */
-function parseImpressaoAso(string $legacyAsoId, PDO $pdo): array
+function parseImpressaoAso(string $legacyAsoId, PDO $pdo, string $prefix = ''): array
 {
-    $stmt = $pdo->prepare('SELECT impressao_aso FROM tb_cadastro_aso WHERE cadastro_aso_id = ?');
+    $stmt = $pdo->prepare("SELECT impressao_aso FROM {$prefix}tb_cadastro_aso WHERE cadastro_aso_id = ?");
     $stmt->execute([(int) $legacyAsoId]);
     $raw = (string) ($stmt->fetchColumn() ?: '');
     $data = json_decode($raw, true);
