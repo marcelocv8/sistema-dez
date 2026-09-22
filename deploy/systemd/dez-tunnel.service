@@ -4,9 +4,11 @@ Documentation=file:/opt/dez/app/docs/plano_deploy.md
 # IMPORTANTE: este e um tunel NOVO e independente. O tunel do STG
 # (cloudflared.service / /etc/cloudflared/config.yml) nao deve ser alterado:
 # reinicia-lo derruba a producao.
+#
+# NAO usar BindsTo=dez-web.service: o deploy reinicia o dez-web e o tunel
+# seria parado junto, derrubando a URL publica. Apenas ordenacao (After).
 After=network-online.target dez-web.service
 Wants=network-online.target
-BindsTo=dez-web.service
 
 [Service]
 Type=simple

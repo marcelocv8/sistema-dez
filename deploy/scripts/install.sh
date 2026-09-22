@@ -46,8 +46,10 @@ else
 	warn "usuário $DEZ_USER já existe"
 fi
 mkdir -p "$DEZ_ROOT"/{bin,frontend,releases,_import/stg,_import/laudos} \
+         "$DEZ_ROOT/.ssh" \
          /var/log/dez /var/backups/dez/{diario,semanal}
 chown -R "$DEZ_USER:$DEZ_USER" "$DEZ_ROOT" /var/log/dez /var/backups/dez
+chmod 0700 "$DEZ_ROOT/.ssh"
 
 log "4/8 FrankenPHP static"
 if [ -x "$DEZ_ROOT/bin/frankenphp" ]; then
@@ -91,13 +93,30 @@ systemctl daemon-reload
 systemctl enable dez-schedule.timer dez-backup.timer >/dev/null
 
 log "7/8 repositório em $REPO_DIR"
+DEPLOY_KEY="$DEZ_ROOT/.ssh/dez_deploy"
+SSH_CMD="ssh -i $DEPLOY_KEY -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new"
+
+# evita prompt de host key no primeiro fetch (o serviço não é interativo)
+if [ ! -s "$DEZ_ROOT/.ssh/known_hosts" ]; then
+	ssh-keyscan -t rsa,ecdsa,ed25519 github.com > "$DEZ_ROOT/.ssh/known_hosts" 2>/dev/null || true
+	chown "$DEZ_USER:$DEZ_USER" "$DEZ_ROOT/.ssh/known_hosts"
+	chmod 0644 "$DEZ_ROOT/.ssh/known_hosts"
+fi
+
 if [ -d "$REPO_DIR/.git" ]; then
-	warn "repositório já clonado — pulando"
+	warn "repositório já clonado — apenas ajustando a chave de deploy"
+	sudo -u "$DEZ_USER" git -C "$REPO_DIR" config core.sshCommand "$SSH_CMD"
+	[ -n "$REPO_URL" ] && sudo -u "$DEZ_USER" git -C "$REPO_DIR" remote set-url origin "$REPO_URL"
+elif [ -n "$REPO_URL" ] && [ -f "$DEPLOY_KEY" ]; then
+	sudo -u "$DEZ_USER" env GIT_SSH_COMMAND="$SSH_CMD" git clone "$REPO_URL" "$REPO_DIR"
+	sudo -u "$DEZ_USER" git -C "$REPO_DIR" config core.sshCommand "$SSH_CMD"
 elif [ -n "$REPO_URL" ]; then
-	sudo -u "$DEZ_USER" git clone "$REPO_URL" "$REPO_DIR"
+	warn "sem a chave $DEPLOY_KEY — gere-a e clone manualmente como $DEZ_USER:"
+	warn "  sudo -u $DEZ_USER ssh-keygen -t ed25519 -N \"\" -f $DEPLOY_KEY"
+	warn "  (cole $DEPLOY_KEY.pub em GitHub > Settings > Deploy keys, SEM write access)"
+	warn "  sudo -u $DEZ_USER env GIT_SSH_COMMAND=\"$SSH_CMD\" git clone $REPO_URL $REPO_DIR"
 else
 	warn "DEZ_REPO_URL não informado: clone manualmente como $DEZ_USER"
-	warn "  sudo -u $DEZ_USER git clone <url-do-repo> $REPO_DIR"
 fi
 if [ -d "$REPO_DIR/deploy/scripts" ]; then
 	# o bit de execução não viaja bem pelo Windows; garante aqui
@@ -107,18 +126,32 @@ fi
 log "8/8 próximos passos"
 cat <<EOF
 
-Base instalada. Faltam (tudo documentado em docs/plano_deploy.md):
+Base instalada. Faltam 3 passos (tudo documentado em docs/plano_deploy.md §19/F1):
 
-  1) Banco (precisa do superusuário do PostgreSQL):
-       sudo -u postgres psql -p 5432 -d postgres -v app_password="'<SENHA>'" \\
-         -f $REPO_DIR/deploy/sql/provision.sql
-  2) Ambiente e dados:
-       sudo $REPO_DIR/deploy/scripts/bootstrap.sh --url https://dez.clinicadez.com.br
-  3) URL pública (túnel NOVO, separado do túnel do STG):
-       sudo -u $DEZ_USER $REPO_DIR/deploy/scripts/tunnel.sh dez.clinicadez.com.br
-  4) Serviços:
-       sudo systemctl start dez-web.service dez-schedule.timer dez-backup.timer dez-tunnel.service
+  1) Banco — cria o role sistema_dez + database (SÓ cria objetos novos, não
+     toca no banco legado). Guarde a senha gerada onde preferir:
+       SENHA=\$(openssl rand -base64 18 | tr -d '/+=' | cut -c1-20)
+       echo "senha do role sistema_dez: \$SENHA"
+       PGPASSWORD='<senha-do-postgres>' psql -h 127.0.0.1 -p 5432 -U postgres -d postgres \\
+         -v app_password="'\$SENHA'" -f $REPO_DIR/deploy/sql/provision.sql
+
+  2) Ambiente, migrations e usuários do app:
+       sudo $REPO_DIR/deploy/scripts/bootstrap.sh \\
+         --url https://dez.clinicadez.com.br --db-password "\$SENHA" \\
+         --admin-email <seu-email> --admin-name "<Seu Nome>"
+
+  3) URL pública — rode como o usuário 'server' (que tem ~/.cloudflared/cert.pem),
+     SEM sudo na frente (o script pede sudo internamente):
+       $REPO_DIR/deploy/scripts/tunnel.sh dez.clinicadez.com.br
+
+  Depois, subir tudo e validar:
+       sudo systemctl enable --now dez-web.service dez-schedule.timer dez-backup.timer dez-tunnel.service
        curl -s -o /dev/null -w '%{http_code}\\n' http://127.0.0.1:$PORT/up
+       curl -s -o /dev/null -w '%{http_code}\\n' https://dez.clinicadez.com.br/up
 
-Nada do STG foi alterado.
+  Conferir que o STG segue no ar:
+       curl -sI https://sistema.clinicadez.com.br | head -1
+       sudo systemctl is-active apache2 postgresql@16-main cloudflared painel
+
+Nada do STG foi alterado (nem Apache, nem o banco 'dez', nem o túnel dele).
 EOF

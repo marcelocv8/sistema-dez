@@ -1,8 +1,14 @@
 # Plano de Deploy — Sistema DEZ no servidor da Clínica DEZ
 
-> **Versão 1.1 — 21/09/2026**
+> **Versão 1.2 — 22/09/2026**
 > Documento **operacional** (infra/deploy). O plano de **produto** é
 > `docs/plano_sistema_dez.md` (lá está o §16, que aponta para este arquivo).
+>
+> **v1.2:** checagens do servidor registradas em §3.3 (senha do `postgres`,
+> `max_connections`, `password_encryption=md5`, hostname livre, baseline do STG);
+> pendências **P2/P3/P4 fechadas**; ordem de bootstrap **sem transferência de
+> arquivos** (§3.4, §6.4) e `tunnel.sh` passou a entregar as credenciais para o
+> usuário `dez`; sequência remota da F1 em §21.
 >
 > **v1.1:** F2 implementada e validada localmente (código, `deploy/`, workflow);
 > Anexo A sincronizado com o `Caddyfile` real (correção do prefixo sem barra e
@@ -104,9 +110,64 @@ Stone/Inter, WhatsApp (fica `WHATSAPP_ENABLED=false`).
 - GNOME (`gnome-shell` ~206 MB) num servidor → dá para liberar trocando para
   `multi-user.target`, **mas isso quebra a visão de desktop do AnyDesk**.
   Fica como alavanca futura, só a pedido.
-- `host all all 0.0.0.0/0 md5` no `pg_hba` → inofensivo hoje porque
-  `listen_addresses` é loopback; **registrado como item de hardening do STG**
-  (responsabilidade de quem administra o legado, não deste deploy).
+### 3.3 Checagens executadas no servidor (22/09/2026)
+
+Comandos rodados no terminal do servidor (via AnyDesk) e resultados. Servem de
+**baseline** — se algum destes mudar de forma inesperada, algo saiu do previsto.
+
+```bash
+# recursos / ferramentas
+free -h; df -h /var                          # → 1,8 Gi disponíveis; 80 G livres em /
+curl -sS -o /dev/null -w '%{http_code}\n' https://github.com   # → 200
+git --version                                # → 2.43.0
+ss -lntp | grep 8002 || echo "8002 LIVRE"    # → 8002 LIVRE
+
+# baseline do STG (deve continuar idêntico no fim da F1)
+curl -sI https://sistema.clinicadez.com.br | head -3   # → HTTP/2 200
+sudo systemctl is-active apache2 postgresql@16-main cloudflared painel
+                                             # → active / active / active / active
+
+# túnel atual (o do STG) — existe UM só, e não será tocado
+cloudflared tunnel list                      # → dd9ef614-…  clinica-dez-stg
+ls -la ~/.cloudflared/                       # → cert.pem + dd9ef614-….json (usuário server)
+
+# PostgreSQL (superusuário confirmado na config do STG; db legado 'dez')
+PGPASSWORD='<senha-do-postgres>' psql -h 127.0.0.1 -p 5432 -U postgres -d postgres -At -P pager=off \
+  -c "select datname || ' ' || pg_size_pretty(pg_database_size(datname)) from pg_database order by pg_database_size(datname) desc limit 15;"
+# → dez 2403 MB | painelWeb 8215 kB | postgres 7503 kB | template1 7409 kB | template0 7345 kB
+PGPASSWORD='<senha-do-postgres>' psql ... -c "show max_connections;"       # → 100
+PGPASSWORD='<senha-do-postgres>' psql ... -c "show password_encryption;"   # → md5
+
+# hostnames de teste
+dig +short dez.clinicadez.com.br                             # → vazio (LIVRE)
+dig +short sistema-dez.clinicadez.com.br                     # → vazio (LIVRE)
+```
+
+| Conclusão | Efeito |
+|---|---|
+| a senha do `postgres` (achada na config do STG) funciona, db legado é **`dez`** (2,4 GB) | P2 resolvido; MT sai de `psql -d dez` |
+| `max_connections = 100` | `CONNECTION LIMIT 15` do role segue folgado |
+| `password_encryption = md5` | **O role nasce em MD5 e casa com o `pg_hba` — zero mudança no `pg_hba`.** P3 resolvido |
+| `dez.clinicadez.com.br` livre | P4 resolvido |
+| Só existe 1 túnel (`clinica-dez-stg`) | Criaremos um UUID novo; o do STG não é lido nem editado |
+| `cloudflared` 2026.7.3 (desatualizado) | **Não atualizar**: o upgrade reinicia o túnel que serve o STG |
+| Serviços do STG `active`, HTTP/2 200 | Baseline gravado para conferência no fim da F1 |
+
+> **Alternativa ao `PGPASSWORD`:** se o pager voltar a travar, use
+> `export PSQL_PAGER=cat` (ou `-P pager=off`, como acima). Aperte `q` para sair
+> do `less`.
+
+### 3.4 Ordem de bootstrap adotada (sem transferência de arquivos)
+
+O `install.sh` vive **dentro** do repo, mas o repo ainda não está no servidor.
+Solução adotada (dispensa `scp`/AnyDesk-file-transfer):
+
+1. criar o usuário `dez` + `/opt/dez/.ssh` (mínimo);
+2. gerar a **deploy key** e registrá-la no GitHub (read-only);
+3. `git clone` para `/opt/dez/app` já usando a chave;
+4. rodar `deploy/scripts/install.sh` **de dentro do clone** (idempotente — detecta usuário e repo existentes e apenas ajusta `core.sshCommand`).
+
+Detalhes na seção 6.4 e o passo a passo em `deploy/README.md`.
 
 ---
 
@@ -196,6 +257,35 @@ dez ALL=(root) NOPASSWD: /usr/bin/systemctl daemon-reload
 | `dez-backup.service` + `.timer` | backup diário 03:00 | 256 M |
 | `dez-tunnel.service` | `cloudflared tunnel run dez` | 96 M |
 
+### 6.4 Deploy key e clone do repositório
+
+O repo é privado e o `deploy.sh` faz `git pull` em `/opt/dez/app`, então o
+usuário `dez` precisa de leitura via SSH:
+
+```bash
+sudo adduser --system --group --home /opt/dez --shell /bin/bash dez
+sudo mkdir -p /opt/dez/.ssh && sudo chown -R dez:dez /opt/dez && sudo chmod 700 /opt/dez/.ssh
+
+sudo -u dez ssh-keygen -t ed25519 -N "" -f /opt/dez/.ssh/dez_deploy
+sudo cat /opt/dez/.ssh/dez_deploy.pub
+#   -> GitHub > repo > Settings > Deploy keys > Add (SEM "Allow write access")
+
+# teste (esperado: "Hi ...! You've successfully authenticated" + "does not provide shell access")
+sudo -u dez ssh -i /opt/dez/.ssh/dez_deploy -o IdentitiesOnly=yes \
+  -o StrictHostKeyChecking=accept-new -T git@github.com
+
+sudo -u dez env GIT_SSH_COMMAND="ssh -i /opt/dez/.ssh/dez_deploy -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new" \
+  git clone git@github.com:marcelocv8/sistema-dez.git /opt/dez/app
+```
+
+O `install.sh` grava `core.sshCommand` no clone (para o `git pull` do deploy não
+depender de `~/.ssh/config`) e semeia `known_hosts` com `ssh-keyscan`.
+
+> **Se a porta 22 estiver bloqueada** na rede da clínica (o teste acima dá
+> timeout), usar `ssh.github.com:443` em `/opt/dez/.ssh/config`:
+> `Host github.com` / `HostName ssh.github.com` / `Port 443` / `User git` /
+> `IdentityFile /opt/dez/.ssh/dez_deploy`.
+
 ---
 
 ## 7. Banco de dados
@@ -204,22 +294,20 @@ dez ALL=(root) NOPASSWD: /usr/bin/systemctl daemon-reload
 
 Reaproveita o `postgresql@16-main` em `127.0.0.1:5432`. **Nada de segundo cluster.**
 
-### 7.2 Pendência bloqueante: acesso de superusuário
+### 7.2 Acesso de superusuário — **RESOLVIDO (22/09/2026)**
 
-**Problema:** o `pg_hba.conf` exige `md5` **até para `local`**, então
-`sudo -u postgres psql` pede a senha do `postgres` — que o dono não tem em mãos.
+A senha do `postgres` estava na própria config do STG
+(`/home/server/projetos/dezstg2/application/config/database.php`):
+`hostname=localhost`, `username=postgres`, `password=<a senha do STG>`, `database=dez`
+(usuário e senha do **superusuário** — valor obtido na própria config, não
+repetido aqui).
 
-**Ordem de tentativa (do mais barato ao mais invasivo):**
+Confirmado funcionando (`select current_user, version()` → `postgres`,
+PostgreSQL **16.15**). Não foi preciso mexer no `pg_hba` nem resetar senha.
 
-1. **Achar a senha em configs já existentes na máquina** (zero risco, só leitura).
-   Ver Anexo E, passos E1–E3. Candidatos:
-   - `/home/server/projetos/dezstg2/application/config/database.php` (config do STG);
-   - config/serviço do painel Java (`systemctl cat painel`, arquivos ao lado do `.jar`);
-   - `~/.pgpass`.
-2. **Se não achar**, habilitar temporariamente `peer` **apenas** para
-   `local all postgres`, `systemctl reload` (⚠️ **reload**, não restart — não
-   derruba o STG), definir a senha, e **reverter**. Anexo E, passo E4.
-3. **Se ainda assim não der**, pedir a senha a quem administra o STG.
+> Registrado como item de hardening do STG (fora do escopo deste deploy):
+> senha fraca no superusuário e a linha `host all all 0.0.0.0/0 md5`
+> no `pg_hba` — hoje inofensiva porque `listen_addresses` é loopback.
 
 ### 7.3 Provisionamento (executar como superusuário)
 
@@ -235,31 +323,36 @@ ALTER ROLE sistema_dez SET search_path = public;
 REVOKE ALL ON DATABASE sistema_dez FROM PUBLIC;
 ```
 ```bash
-sudo -u postgres psql -p 5432 -v app_password="'<GERADA>'" -f deploy/sql/provision.sql
+# gera a senha do role na própria máquina (não precisa inventar fora)
+SENHA=$(openssl rand -base64 18 | tr -d '/+=' | cut -c1-20)
+echo "senha do role sistema_dez: $SENHA"      # guarde antes de continuar
+
+PGPASSWORD='<senha-do-postgres>' psql -h 127.0.0.1 -p 5432 -U postgres -d postgres \
+  -v app_password="'$SENHA'" -f /opt/dez/app/deploy/sql/provision.sql
 ```
+> Roda como o **superusuário** (a senha está na config do STG — ver §7.2).
+> Só **cria** objetos novos — não altera nada do banco `dez`.
 
 **Justificativa dos limites:** o DEZ compartilha o cluster com a produção do
 STG. `statement_timeout=15s` + `CONNECTION LIMIT 15` garantem que uma consulta
 ruim ou um vazamento de conexões do DEZ não derrube o STG. Imports longos rodam
 com `SET statement_timeout = 0` **na própria sessão** do comando de import.
 
-### 7.4 Autenticação: atenção ao `md5` × `scram`
+### 7.4 Autenticação: `md5` — **confirmado, nada a mudar**
 
-O cluster tem `password_encryption` provavelmente em `scram-sha-256` (padrão do
-PG 16), mas o `pg_hba` pede `md5` nas linhas de `127.0.0.1`. Verificar e, se
-necessário, alinhar:
+O cluster está com `password_encryption = md5` (verificado em 22/09) e o
+`pg_hba` também pede `md5` em `127.0.0.1/32` — **alinhados**, então o role
+`sistema_dez` nasce com a senha em MD5 e conecta sem ajuste nenhum.
+
+Teste que vale (é o que a aplicação vai fazer):
 ```bash
-sudo -u postgres psql -p 5432 -c "show password_encryption;"
-# teste real da conexão da app (é o teste que vale):
-PGPASSWORD='<senha>' psql -h 127.0.0.1 -p 5432 -U sistema_dez -d sistema_dez -c "select current_user, current_database();"
+PGPASSWORD='<senha-do-role>' psql -h 127.0.0.1 -p 5432 -U sistema_dez -d sistema_dez \
+  -At -P pager=off -c "select current_user, current_database();"
+# esperado: sistema_dez|sistema_dez
 ```
-- Se conectar com `md5` no `pg_hba` e senha SCRAM: **OK** (o PG negocia SCRAM).
-- Se falhar com `password authentication failed`, criar a senha em MD5:
-  ```sql
-  SET password_encryption = 'md5';
-  ALTER ROLE sistema_dez PASSWORD '<senha>';
-  ```
-  ou trocar a linha de `127.0.0.1/32` para `scram-sha-256` e `reload`.
+> Quando o STG for desativado, o hardening natural do cluster é migrar
+> `password_encryption` para `scram-sha-256` (e o `pg_hba` junto). Não fazer
+> agora: exigiria trocar a senha de todos os roles em uso pelo legado.
 
 ---
 
@@ -525,24 +618,30 @@ pg_restore -h 127.0.0.1 -U sistema_dez -d sistema_dez --clean --if-exists \
 **Nunca tocar** em `cloudflared.service` / `/etc/cloudflared/config.yml` (túnel do STG).
 
 ```bash
-# como o usuário `dez` (ou `server`), que tem cert.pem em ~/.cloudflared/
-cloudflared tunnel login                 # só se o cert.pem não existir para esse usuário
-cloudflared tunnel create dez            # gera UUID + credentials .json
-cloudflared tunnel list
-cloudflared tunnel route dns dez dez.clinicadez.com.br   # cria o CNAME no Cloudflare
+# Rode como o usuário 'server' (dono de ~/.cloudflared/cert.pem), SEM sudo na
+# frente — o script pede sudo só para instalar os arquivos em /opt/dez.
+# Ele cria o túnel, cria o CNAME no Cloudflare, valida o ingress e entrega as
+# credenciais para o serviço (que roda como 'dez').
+/opt/dez/app/deploy/scripts/tunnel.sh dez.clinicadez.com.br
 ```
-`/opt/dez/cloudflared/config.yml`:
+O script gera `/opt/dez/cloudflared/config.yml` (0640 `dez:dez`):
 ```yaml
 tunnel: <UUID-do-tunel-dez>
-credentials-file: /opt/dez/.cloudflared/<UUID>.json
+credentials-file: /opt/dez/cloudflared/<UUID>.json
 ingress:
   - hostname: dez.clinicadez.com.br
     service: http://127.0.0.1:8002
   - service: http_status:404
 ```
+> **Por que não rodar como `dez`:** o `cert.pem` da conta Cloudflare está no
+> `~/.cloudflared/` do usuário `server` (foi ele que criou o túnel do STG).
+> Copiar o `cert.pem` seria pior que copiar só as credenciais do túnel novo —
+> e assim evitamos um `cloudflared tunnel login` com navegador.
+
 `dez-tunnel.service` (anexo B). Validação:
 ```bash
 curl -sS -o /dev/null -w '%{http_code}\n' https://dez.clinicadez.com.br/up
+sudo systemctl is-active cloudflared          # túnel do STG continua ativo
 ```
 
 ---
@@ -634,11 +733,14 @@ Leitura **read-only** do banco legado, com lotes e log de reconciliação.
 
 ## 19. Checklist de aceite por fase
 
-### F1 — Provisionamento (base)
-- [ ] `dez` criado, `/opt/dez` populado, sudoers validado (`visudo -c`)
-- [ ] FrankenPHP static rodando: `frankenphp version` + `php-cli -i` com `pdo_pgsql`/`opcache`
-- [ ] Role `sistema_dez` + database criados; conexão `psql -h 127.0.0.1 -U sistema_dez` OK
-- [ ] **STG intacto**: `curl -sI https://sistema.clinicadez.com.br` continua respondendo; vhost e túnel inalterados
+### F1 — Provisionamento (base) — ordem real, sem transferência de arquivos
+
+- [ ] 1. usuário `dez` + `/opt/dez/.ssh` (700) criados
+- [ ] 2. deploy key gerada e registrada no GitHub (read-only); `ssh -T git@github.com` responde
+- [ ] 3. repo clonado em `/opt/dez/app` com a deploy key
+- [ ] 4. `install.sh` rodado: FrankenPHP static (`php-cli -i` com `pdo_pgsql`/`opcache`), `php.ini`, `Caddyfile`, 6 units/timers, `visudo -c` OK
+- [ ] 5. role `sistema_dez` + database criados; `psql -h 127.0.0.1 -U sistema_dez -d sistema_dez` → `sistema_dez|sistema_dez`
+- [ ] 6. **STG intacto**: `curl -sI https://sistema.clinicadez.com.br` = 200 e os 4 serviços (`apache2`, `postgresql@16-main`, `cloudflared`, `painel`) `active`
 
 ### F2 — Código (no PC de dev)
 - [ ] `trustProxies` + CSRF público aplicados
@@ -703,19 +805,105 @@ com os prefixos corretos) · **borda real** com FrankenPHP 8.5 e os dists reais
 > **ignora CSRF na suíte** — o bug de 419 só aparece em HTTP real, por isso a
 > validação foi feita na borda e não só pelos testes.
 
-### 20.2 Pendências abertas
+### 20.2 Pendências
 
-| # | Pendência | Depende de | Bloqueia |
+| # | Pendência | Status | Detalhe |
 |---|---|---|---|
-| P1 | Rodar a suíte de testes do backend (`php artisan test --compact`) — **bloqueado: Docker Desktop desligado**, precisa do PostgreSQL na `5433` | dono subir o Docker (ou `docker compose -f compose.yaml -f compose.local.yaml up -d postgres`) | nada no servidor; é a validação final do F2 |
-| P2 | Senha do superusuário `postgres` no servidor | Anexo E | criação do role/database (F1) |
-| P3 | `password_encryption` do cluster (`md5` × `scram`) | §7.4 | conexão da app (F1) |
-| P4 | Confirmar o hostname final (`dez.` × `sistema-dez.`) e que está livre | dono | CNAME do túnel (F4) |
-| P5 | Janela de import (sugestão: 00:00–06:00) | dono | F5 |
-| P6 | Subir as extrações do STG para `/opt/dez/_import/` | F1 concluída | F5 |
-| P7 | Início da F7 (importadores de pacientes/atendimentos) | dono | F7 |
-| P8 | Instalar o runner do GitHub e testar o rollback automático | F3/F4 | F6 |
+| P1 | Suíte de testes do backend (`php artisan test --compact`) | ⛔ **bloqueado** | Docker Desktop desligado no PC de dev; precisa do PostgreSQL na `5433`. Único item que falta do F2 |
+| P2 | Senha do superusuário `postgres` | ✅ **resolvido** | achada na config do STG; `select current_user` → `postgres`, PG 16.15 (valor **não** versionado) |
+| P3 | `password_encryption` (`md5` × `scram`) | ✅ **resolvido** | `md5` — role nasce em MD5, `pg_hba` já em MD5, sem ajuste |
+| P4 | Hostname do teste | ✅ **resolvido** | `dez.clinicadez.com.br` (livre, confirmado) |
+| P5 | Janela de import | ✅ **definida** | 00:00–06:00 |
+| P6 | Subir as extrações do STG para `/opt/dez/_import/` | ⏳ pendente | F5; ~0,9 MB (catálogo + laudos) |
+| P7 | Escopo do F7 | ✅ **definido** | pacientes + atendimentos de 24 meses; **sem** financeiro/caixa |
+| P8 | Runner do GitHub + teste de rollback | ⏳ pendente | F6 |
+| P9 | Executar a F1 no servidor | ⏳ **agora** | 6 passos da checklist F1 (§19); 100% remoto pelo AnyDesk |
 
+
+---
+
+## 21. Sequência remota da F1 (copiar e colar no AnyDesk)
+
+Tudo abaixo roda **pelo terminal do servidor, remotamente** — não precisa estar
+na rede da clínica nem transferir arquivos do PC de dev.
+
+> Cole **um bloco por vez** e use `Ctrl+Shift+V`. O `sudo` vai pedir a senha do
+> usuário `server`.
+
+**21.1 — mínimo (usuário + diretório da chave)**
+```bash
+sudo adduser --system --group --home /opt/dez --shell /bin/bash dez
+sudo mkdir -p /opt/dez/.ssh
+sudo chown -R dez:dez /opt/dez
+sudo chmod 700 /opt/dez/.ssh
+```
+
+**21.2 — deploy key**
+```bash
+sudo -u dez ssh-keygen -t ed25519 -N "" -f /opt/dez/.ssh/dez_deploy
+sudo cat /opt/dez/.ssh/dez_deploy.pub
+```
+→ copie a chave pública e cadastre em **GitHub → repo → Settings → Deploy keys → Add deploy key** (deixe **"Allow write access" DESMARCADO**).
+
+**21.3 — testar a saída SSH para o GitHub**
+```bash
+sudo -u dez ssh -i /opt/dez/.ssh/dez_deploy -o IdentitiesOnly=yes \
+  -o StrictHostKeyChecking=accept-new -T git@github.com
+```
+Esperado: `Hi marcelocv8/sistema-dez! You've successfully authenticated` +
+`does not provide shell access`. Se der **timeout**, ver o fallback
+`ssh.github.com:443` em §6.4.
+
+**21.4 — clonar o repositório**
+```bash
+sudo -u dez env GIT_SSH_COMMAND="ssh -i /opt/dez/.ssh/dez_deploy -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new" \
+  git clone git@github.com:marcelocv8/sistema-dez.git /opt/dez/app
+```
+
+**21.5 — base (FrankenPHP, php.ini, Caddyfile, units, sudoers)**
+```bash
+sudo /opt/dez/app/deploy/scripts/install.sh
+```
+Conferir: `/opt/dez/bin/frankenphp version` e
+`PHPRC=/opt/dez/bin /opt/dez/bin/frankenphp php-cli -m | grep -E 'pdo_pgsql|opcache'`.
+
+**21.6 — banco (role + database; só cria objetos novos)**
+```bash
+SENHA=$(openssl rand -base64 18 | tr -d '/+=' | cut -c1-20)
+echo "senha do role sistema_dez: $SENHA"
+PGPASSWORD='<senha-do-postgres>' psql -h 127.0.0.1 -p 5432 -U postgres -d postgres \
+  -v app_password="'$SENHA'" -f /opt/dez/app/deploy/sql/provision.sql
+PGPASSWORD="$SENHA" psql -h 127.0.0.1 -p 5432 -U sistema_dez -d sistema_dez \
+  -At -P pager=off -c "select current_user, current_database();"
+```
+Esperado: `sistema_dez|sistema_dez`. **Guarde a senha.**
+
+**21.7 — ambiente, migrations e usuários**
+```bash
+sudo /opt/dez/app/deploy/scripts/bootstrap.sh \
+  --url https://dez.clinicadez.com.br --db-password "$SENHA" \
+  --admin-email <SEU_EMAIL> --admin-name "<SEU_NOME>"
+```
+
+**21.8 — URL pública (como `server`, sem `sudo` na frente)**
+```bash
+/opt/dez/app/deploy/scripts/tunnel.sh dez.clinicadez.com.br
+```
+
+**21.9 — subir tudo e validar**
+```bash
+sudo systemctl enable --now dez-web.service dez-schedule.timer dez-backup.timer dez-tunnel.service
+sudo systemctl --no-pager status dez-web dez-tunnel | head -20
+curl -s -o /dev/null -w 'local=%{http_code}\n'  http://127.0.0.1:8002/up
+curl -s -o /dev/null -w 'publico=%{http_code}\n' https://dez.clinicadez.com.br/up
+```
+
+**21.10 — confirmar que o STG segue intacto**
+```bash
+curl -sI https://sistema.clinicadez.com.br | head -1
+sudo systemctl is-active apache2 postgresql@16-main cloudflared painel
+```
+Esperado: `HTTP/2 200` e `active` nos quatro.
 
 ---
 

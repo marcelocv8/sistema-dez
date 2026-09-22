@@ -17,8 +17,8 @@ O que este pacote produz (formato canônico consumido por `stg:import-mt`):
 ## Caminho A — script PHP (recomendado)
 
 1. Descobrir o IP do servidor do STG na rede (o mesmo host usado pelo painel web).
-2. Descobrir a senha do Postgres (a do painel é `postgres/123456` na config do
-   CodeIgniter, mas pode divergir no servidor).
+2. Descobrir a senha do Postgres (a mesma que o painel usa — está em
+   `application/config/database.php` do CodeIgniter, mas pode divergir no servidor).
 3. Rodar, em `C:\Projects\sistema-dez\docs\extracao_mt\`:
 
 ```powershell
