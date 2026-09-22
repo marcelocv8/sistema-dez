@@ -86,8 +86,6 @@ else
 	rm -rf "$tmp"
 	"$DEZ_ROOT/bin/frankenphp" version
 fi
-"$DEZ_ROOT/bin/frankenphp" php-cli -m | grep -qi pdo_pgsql \
-	|| die "o binário não traz pdo_pgsql — baixe o build estático oficial"
 
 log "5/8 configuração (php.ini, Caddyfile, wrapper artisan)"
 src="$(cd "$(dirname "$0")/.." && pwd)"
@@ -101,6 +99,26 @@ exec /opt/dez/bin/frankenphp php-cli /opt/dez/app/backend/artisan "$@"
 EOF
 chmod 0755 "$DEZ_ROOT/bin/artisan"
 chown root:root "$DEZ_ROOT/bin/artisan"
+
+# Extensões essenciais do binário.
+# ATENÇÃO: `frankenphp php-cli -m` NÃO repassa o -m ao PHP (sai 255) — com
+# `set -o pipefail` isso reprovava o binário sem motivo. Usar -r +
+# extension_loaded, que funciona de verdade.
+missing_ext=$(PHPRC="$DEZ_ROOT/bin" "$DEZ_ROOT/bin/frankenphp" php-cli -r \
+	'echo implode(" ", array_filter(["pdo_pgsql","pgsql","mbstring","intl","zip","curl","openssl","fileinfo"], fn ($e) => ! extension_loaded($e)));' 2>/dev/null || echo "ERRO_AO_CONSULTAR")
+case "$missing_ext" in
+	ERRO_AO_CONSULTAR)
+		warn "não foi possível consultar as extensões do binário" ;;
+	"")
+		log "extensões essenciais OK: pdo_pgsql, pgsql, mbstring, intl, zip, curl, openssl, fileinfo" ;;
+	*)
+		warn "extensões ausentes no binário: $missing_ext"
+		PHPRC="$DEZ_ROOT/bin" "$DEZ_ROOT/bin/frankenphp" php-cli -r 'print_r(get_loaded_extensions());' 2>/dev/null || true
+		case ",$missing_ext," in
+			*,pdo_pgsql,*) die "sem pdo_pgsql a aplicação não conecta no PostgreSQL — binário inadequado" ;;
+		esac
+		;;
+esac
 
 log "6/8 units do systemd e sudoers"
 install -m 0644 -o root -g root "$src"/systemd/dez-web.service     /etc/systemd/system/
