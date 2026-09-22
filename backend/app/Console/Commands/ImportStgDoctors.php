@@ -7,12 +7,17 @@ use Illuminate\Console\Command;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
+use RuntimeException;
 use Throwable;
 
 class ImportStgDoctors extends Command
 {
+    /** @var array<string, int|string> */
+    private array $sourceCounts = [];
+
     protected $signature = 'stg:import-doctors
-        {--only-agenda : Importa apenas quem tem medico_agenda = true no legado}
+        {--source=agenda : População de médicos: agenda | percentual | both | flags}
+        {--only-agenda : (source=flags) Importa apenas quem tem medico_agenda = true}
         {--include-inactive : Inclui operadores inativos}
         {--max=200 : Limite de segurança para a seleção}
         {--allow-large : Permite seleção acima do --max}
@@ -141,7 +146,7 @@ class ImportStgDoctors extends Command
             ];
         });
 
-        $payload = [...$stats, ...$summary, 'commit' => $commit];
+        $payload = [...$stats, ...$this->sourceCounts, ...$summary, 'commit' => $commit];
 
         $this->line(json_encode($payload, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR));
 
@@ -159,14 +164,37 @@ class ImportStgDoctors extends Command
     /** @return Collection<int, object> */
     private function readDoctors(): Collection
     {
+        $source = (string) ($this->option('source') ?: 'agenda');
+
+        if (! in_array($source, ['agenda', 'percentual', 'both', 'flags'], true)) {
+            throw new RuntimeException("--source inválido: {$source} (use agenda, percentual, both ou flags)");
+        }
+
+        $agendaIds = [];
+        $percentualIds = [];
+
+        if (in_array($source, ['agenda', 'both'], true)) {
+            $agendaIds = $this->idsFromAgenda();
+        }
+
+        if (in_array($source, ['percentual', 'both'], true)) {
+            $percentualIds = $this->idsFromPercentual();
+        }
+
+        $this->sourceCounts = ['fonte' => $source, 'ids_agenda' => count($agendaIds), 'ids_percentual' => count($percentualIds)];
+
         $query = DB::connection('stg')->table('tb_operador')
             ->select(['operador_id', 'nome', 'conselho', 'ativo', 'medico', 'medico_agenda', 'profissional'])
             ->orderBy('nome');
 
-        if ((bool) $this->option('only-agenda')) {
-            $query->where('medico_agenda', true);
+        if ($source === 'flags') {
+            if ((bool) $this->option('only-agenda')) {
+                $query->where('medico_agenda', true);
+            } else {
+                $query->where(fn ($builder) => $builder->where('medico', true)->orWhere('medico_agenda', true)->orWhere('profissional', true));
+            }
         } else {
-            $query->where(fn ($builder) => $builder->where('medico', true)->orWhere('medico_agenda', true)->orWhere('profissional', true));
+            $query->whereIn('operador_id', array_values(array_unique([...$agendaIds, ...$percentualIds])));
         }
 
         if (! (bool) $this->option('include-inactive')) {
@@ -174,6 +202,45 @@ class ImportStgDoctors extends Command
         }
 
         return $query->get();
+    }
+
+    /** Ids dos médicos referenciados pela grade (tb_agenda.medico_id e o campo multi). */
+    private function idsFromAgenda(): array
+    {
+        $ids = [];
+
+        foreach (DB::connection('stg')->table('tb_agenda')->where('ativo', true)->get(['medico_id', 'medico_id_multiplo']) as $row) {
+            $id = (int) $row->medico_id;
+
+            if ($id > 0) {
+                $ids[$id] = true;
+            }
+
+            foreach (preg_split('/\D+/', (string) $row->medico_id_multiplo) ?: [] as $extra) {
+                $extra = (int) $extra;
+
+                if ($extra > 0) {
+                    $ids[$extra] = true;
+                }
+            }
+        }
+
+        return array_keys($ids);
+    }
+
+    /** Ids dos médicos com comissão cadastrada por procedimento. */
+    private function idsFromPercentual(): array
+    {
+        return DB::connection('stg')->table('tb_procedimento_percentual_medico')
+            ->where('ativo', true)
+            ->whereNotNull('medico')
+            ->distinct()
+            ->pluck('medico')
+            ->map(static fn (mixed $id): int => (int) $id)
+            ->filter(static fn (int $id): bool => $id > 0)
+            ->unique()
+            ->values()
+            ->all();
     }
 
     private function nullable(mixed $value): ?string

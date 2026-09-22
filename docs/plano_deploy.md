@@ -1063,13 +1063,21 @@ colunas** (só `SELECT` em `information_schema`/`pg_class`; força
 `default_transaction_read_only`).
 
 **Resolvido em 22/09:** a tabela dos médicos é **`ponto.tb_operador`** (~1.616
-linhas) — o legado não tem `tb_medico*`; os médicos são operadores com as flags
-`medico`, `medico_agenda` e `profissional`. Foi criado o comando
-**`stg:import-doctors`**, que lê direto do banco do legado por uma conexão
-**`stg`** nova e **somente leitura** (`config/database.php`; `search_path`
-vindo de `STG_DB_SCHEMA=ponto`, e `SET default_transaction_read_only = on` no
-início do comando). Ele casa por `search_name` (reaproveitando os registros que
-já existem) e grava `name`, `council_number`, `active` e `classification_status`.
+linhas) — o legado não tem `tb_medico*`. Mas **as flags não servem de filtro**:
+`medico = true` está em **todos** os 1.418 operadores ativos e `medico_agenda`
+apenas em 3. O conjunto correto vem da **grade**: `tb_agenda.medico_id` (109
+agendas; `medico_id_multiplo` cobre agendas compartilhadas). `tb_operador_grupo_medico`
+e `tb_sigla` estão **vazias** — por isso a sigla do conselho não tem fonte no
+legado (pendência cosmética: o campo fica com o código numérico).
+
+Foi criado o comando **`stg:import-doctors`** (`--source=agenda` por padrão,
+ou `percentual`/`both`/`flags`), que lê direto do banco do legado por uma conexão
+**`stg`** nova e **somente leitura** (`config/database.php`; `search_path` vindo
+de `STG_DB_SCHEMA=ponto`, e `SET default_transaction_read_only = on` no início do
+comando). Ele casa por `search_name` (reaproveitando os registros que já existem)
+e grava `name`, `council_number`, `active` e `classification_status`. Há guarda de
+tamanho (`--max=200` + `--allow-large`) porque um filtro errado importaria a base
+inteira.
 
 Variáveis novas no `.env` do servidor:
 ```
