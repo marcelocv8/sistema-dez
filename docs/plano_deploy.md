@@ -834,7 +834,7 @@ Leitura **read-only** do banco legado, com lotes e log de reconciliação.
 - [x] `stg:resolve-issues --dry-run` → `changed: 0` (as 85 já estão no estado canônico: 33 IGNORED / 5 RESOLVED / 47 UNMATCHED) — nada a commitar
 - [x] Conferência no banco: `procedimentos=998 convenios=40 profissionais=87 precos=2313 unidades=2 templates=80`
 - [~] **MT: sem dados** — `ponto.tb_cadastro_aso` e `@ponto.tb_cadastro_aso` = **0 linhas**. O módulo está implementado, fica sem dados iniciais (nada a importar)
-- [ ] Conferência visual pelo Admin (`/precos`, `/cadastros`, `/laudos`)
+- [x] **Conferência visual pelo Admin** (`/app/` abriu e navegou; usuários de teste criados via `team:user`)
 
 ### F6 — Operação (parcial)
 - [x] Self-hosted runner (`dez-server`, label `dez`) — unit próprio; **deploy #1 verde** (Tests 1m52 → Build 1m1 → Publicar 34s)
