@@ -28,11 +28,28 @@ die()  { printf '\033[1;31m[erro]\033[0m %s\n' "$*" >&2; exit 1; }
 [ "${ID:-}" = "ubuntu" ] || warn "testado em Ubuntu 24.04; SO detectado: ${PRETTY_NAME:-desconhecido}"
 
 log "1/8 dependências do sistema (rsync, unzip, curl, ca-certificates)"
-export DEBIAN_FRONTEND=noninteractive
-apt-get update -qq
-apt-get install -y -qq rsync unzip curl ca-certificates >/dev/null
+# Só mexe no apt se faltar algo. Este servidor tem o PPA ondrej/php, que já
+# mudou de 'Label' uma vez: sem AllowReleaseInfoChange o apt-get update falha e
+# (com set -e) abortaria a instalação inteira.
+missing=()
+for c in rsync unzip curl git; do
+	command -v "$c" >/dev/null 2>&1 || missing+=("$c")
+done
+[ -f /etc/ssl/certs/ca-certificates.crt ] || missing+=(ca-certificates)
 
-command -v git >/dev/null || apt-get install -y -qq git >/dev/null
+if [ ${#missing[@]} -eq 0 ]; then
+	warn "rsync, unzip, curl e git já instalados — pulando o apt"
+else
+	log "instalando via apt: ${missing[*]}"
+	export DEBIAN_FRONTEND=noninteractive
+	APT_OPTS=(-qq -o Acquire::AllowReleaseInfoChange=true)
+	apt-get update "${APT_OPTS[@]}" || warn "apt-get update reclamou — seguindo mesmo assim"
+	apt-get install -y "${APT_OPTS[@]}" "${missing[@]}" \
+		|| die "não foi possível instalar: ${missing[*]}"
+fi
+for c in rsync unzip curl git; do
+	command -v "$c" >/dev/null 2>&1 || die "$c continua ausente"
+done
 
 log "2/8 conferindo a porta $PORT"
 if ss -lntH "sport = :$PORT" | grep -q .; then
@@ -49,6 +66,10 @@ mkdir -p "$DEZ_ROOT"/{bin,frontend,releases,_import/stg,_import/laudos} \
          "$DEZ_ROOT/.ssh" \
          /var/log/dez /var/backups/dez/{diario,semanal}
 chown -R "$DEZ_USER:$DEZ_USER" "$DEZ_ROOT" /var/log/dez /var/backups/dez
+# /opt/dez precisa ser atravessável: os scripts de deploy rodam como 'server'
+# (ex.: tunnel.sh, que depende do cert.pem dele). O que é sensível fica
+# restrito: .ssh 0700, cloudflared e _import 0750, backend/.env 0640.
+chmod 0755 "$DEZ_ROOT"
 chmod 0700 "$DEZ_ROOT/.ssh"
 
 log "4/8 FrankenPHP static"
