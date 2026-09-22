@@ -3,8 +3,13 @@
 --
 -- Executar como superusuário, passando a senha da aplicação por variável:
 --
---   sudo -u postgres psql -p 5432 -d postgres \
---     -v app_password="'<SENHA_GERADA>'" -f deploy/sql/provision.sql
+--   SENHA=$(openssl rand -base64 18 | tr -d '/+=' | cut -c1-20)
+--   PGPASSWORD='<senha-do-postgres>' psql -h 127.0.0.1 -p 5432 -U postgres -d postgres \
+--     -v app_password="$SENHA" -f deploy/sql/provision.sql
+--
+-- ATENÇÃO ao quoting: como o SQL usa :'app_password' (que JÁ adiciona as aspas),
+-- passe o valor cru — `-v app_password="'$SENHA'"` grava a senha COM aspas
+-- literais e o login da aplicação falha depois.
 --
 -- Nada aqui toca no banco legado do STG: apenas cria um role e um database
 -- novos. Os limites de sessão existem para que uma consulta ruim do DEZ não

@@ -1,8 +1,14 @@
 # Plano de Deploy — Sistema DEZ no servidor da Clínica DEZ
 
-> **Versão 1.2 — 22/09/2026**
+> **Versão 1.3 — 22/09/2026**
 > Documento **operacional** (infra/deploy). O plano de **produto** é
 > `docs/plano_sistema_dez.md` (lá está o §16, que aponta para este arquivo).
+>
+> **v1.3:** correções descobertas na execução real no servidor (§20.3) —
+> quoting do `-v` no `provision.sql`, `bootstrap.sh` sem depender do `vendor/`
+> (`APP_KEY` via `openssl`), `provision.sql` versionado (`*.sql` do `.gitignore`)
+> e ordem ajustada: `.env` → túnel → **primeiro deploy do CI** → migrations e
+> usuários. Sequência remota atualizada no §21.
 >
 > **v1.2:** checagens do servidor registradas em §3.3 (senha do `postgres`,
 > `max_connections`, `password_encryption=md5`, hostname livre, baseline do STG);
@@ -328,8 +334,11 @@ SENHA=$(openssl rand -base64 18 | tr -d '/+=' | cut -c1-20)
 echo "senha do role sistema_dez: $SENHA"      # guarde antes de continuar
 
 PGPASSWORD='<senha-do-postgres>' psql -h 127.0.0.1 -p 5432 -U postgres -d postgres \
-  -v app_password="'$SENHA'" -f /opt/dez/app/deploy/sql/provision.sql
+  -v app_password="$SENHA" -f /opt/dez/app/deploy/sql/provision.sql
 ```
+> **Atenção ao quoting:** o SQL usa `:'app_password'`, que **já** envolve o valor
+> em aspas. Passar `-v app_password="'$SENHA'"` grava a senha **com aspas**
+> literais e o login falha depois. Passe o valor cru: `-v app_password="$SENHA"`.
 > Roda como o **superusuário** (a senha está na config do STG — ver §7.2).
 > Só **cria** objetos novos — não altera nada do banco `dez`.
 
@@ -749,9 +758,11 @@ Leitura **read-only** do banco legado, com lotes e log de reconciliação.
 - [ ] `php artisan test --compact` verde; `vendor/bin/pint --dirty` ok
 - [ ] **Diff apresentado ao dono e autorização obtida antes de qualquer commit**
 
-### F3 — Primeiro deploy
-- [ ] `.env` de produção com chaves novas; `migrate --force` ok; `/up` = 200 em `127.0.0.1:8002`
-- [ ] `team:user` dos 2–3 testadores; login funcionando por `127.0.0.1`
+### F3 — Ambiente e primeiro deploy (ordem ajustada)
+- [ ] `.env` de produção com chaves novas (**`APP_KEY` via `openssl`**, não artisan) — `bootstrap.sh`
+- [ ] `vendor/` + os 4 `dist/` publicados pelo primeiro deploy do CI (§21.9) — sem isso o `artisan` não roda
+- [ ] `migrate --force` (executado pelo próprio `deploy.sh`); `/up` = 200 em `127.0.0.1:8002`
+- [ ] `team:user` dos testadores **depois** do deploy; login funcionando (local e pela URL)
 
 ### F4 — URL
 - [ ] Túnel `dez` criado, CNAME em `dez.clinicadez.com.br`, `dez-tunnel.service` ativo
@@ -817,7 +828,31 @@ com os prefixos corretos) · **borda real** com FrankenPHP 8.5 e os dists reais
 | P6 | Subir as extrações do STG para `/opt/dez/_import/` | ⏳ pendente | F5; ~0,9 MB (catálogo + laudos) |
 | P7 | Escopo do F7 | ✅ **definido** | pacientes + atendimentos de 24 meses; **sem** financeiro/caixa |
 | P8 | Runner do GitHub + teste de rollback | ⏳ pendente | F6 |
-| P9 | Executar a F1 no servidor | ⏳ **agora** | 6 passos da checklist F1 (§19); 100% remoto pelo AnyDesk |
+| P9 | Executar a F1 no servidor | ⏳ **em andamento** | ver §20.3 |
+
+### 20.3 Andamento da execução no servidor (22/09/2026)
+
+| Passo | Status | Observação |
+|---|---|---|
+| usuário `dez` + `/opt/dez/.ssh` | ✅ | |
+| deploy key + `ssh -T git@github.com` | ✅ | `Hi marcelocv8/sistema-dez! You've successfully authenticated` |
+| clone em `/opt/dez/app` | ✅ | 1406 objetos, 1,14 MiB |
+| `install.sh` (base) | ✅ | FrankenPHP **v1.12.7 / PHP 8.5.10**; extensões com `pdo_pgsql`; 6 units; `visudo -c` OK; `/opt/dez` 0755 |
+| `provision.sql` (role + database) | ⚠️ parcial | objetos criados (`CREATE ROLE/DATABASE` + 5 `ALTER ROLE` + `REVOKE` + `GRANT`), mas a senha foi gravada **com aspas** (erro de quoting no `-v`) → corrigir com `ALTER ROLE` (§21.6) |
+| `bootstrap.sh` (`.env` + chaves) | ⚠️ | `.env` criado; agora pausa de propósito avisando que falta `vendor/` (chega no primeiro deploy do CI) |
+| túnel + serviços + validação | ⏳ | pendente |
+
+**Bugs de script encontrados e corrigidos nesta execução** (todos já no `main`):
+1. `apt-get update` abortando por causa do `Label` do PPA `ondrej/php` → `AllowReleaseInfoChange` + só rodar o apt se faltar pacote.
+2. `/opt/dez` com permissão fechada → `server` não conseguia rodar o `tunnel.sh` → `chmod 0755`.
+3. URL do FrankenPHP: o asset `.tar.gz` **não existe** (404); é o binário puro (~173 MB).
+4. `frankenphp php-cli -m` **não repassa o `-m`** (exit 255) e, com `pipefail`, reprovava o binário → passou a usar `php-cli -r` + `extension_loaded`.
+5. `deploy/sql/provision.sql` era **ignorado** pela regra `*.sql` do `.gitignore` → adicionada `!deploy/sql/*.sql`.
+6. **Quoting do `-v`**: `-v app_password="'$SENHA'"` grava a senha **com aspas literais** (o `:'app_password'` do SQL já as adiciona) → usar `-v app_password="$SENHA"`.
+7. `bootstrap.sh` exigia `vendor/` para gerar a `APP_KEY` → agora usa `openssl rand -base64 32` e pausa com orientação quando o `vendor/` ainda não chegou.
+
+---
+
 
 
 ---
@@ -872,33 +907,47 @@ Conferir: `/opt/dez/bin/frankenphp version` e
 SENHA=$(openssl rand -base64 18 | tr -d '/+=' | cut -c1-20)
 echo "senha do role sistema_dez: $SENHA"
 PGPASSWORD='<senha-do-postgres>' psql -h 127.0.0.1 -p 5432 -U postgres -d postgres \
-  -v app_password="'$SENHA'" -f /opt/dez/app/deploy/sql/provision.sql
+  -v app_password="$SENHA" -f /opt/dez/app/deploy/sql/provision.sql
 PGPASSWORD="$SENHA" psql -h 127.0.0.1 -p 5432 -U sistema_dez -d sistema_dez \
   -At -P pager=off -c "select current_user, current_database();"
 ```
 Esperado: `sistema_dez|sistema_dez`. **Guarde a senha.**
+> Sem aspas internas no `-v`: o `:'app_password'` do SQL já as adiciona.
 
-**21.7 — ambiente, migrations e usuários**
+**21.7 — ambiente (`.env` + chaves) — ainda SEM migrations**
 ```bash
 sudo /opt/dez/app/deploy/scripts/bootstrap.sh \
   --url https://dez.clinicadez.com.br --db-password "$SENHA" \
   --admin-email <SEU_EMAIL> --admin-name "<SEU_NOME>"
 ```
+> Aqui o script para de propósito avisando que falta `vendor/`: ele chega no
+> primeiro deploy do CI (F6). O `bootstrap.sh` gera o `.env`, a `APP_KEY`
+> (via `openssl`, **não** via artisan) e os segredos.
 
 **21.8 — URL pública (como `server`, sem `sudo` na frente)**
 ```bash
 /opt/dez/app/deploy/scripts/tunnel.sh dez.clinicadez.com.br
 ```
 
-**21.9 — subir tudo e validar**
+**21.9 — primeiro deploy (F6): publica `vendor/` + os 4 frontends, roda as migrations**
+Instalar o runner (§6.5 do `deploy/README.md`) e depois, no GitHub,
+**Actions → deploy → Run workflow**. O `deploy.sh` reinicia o `dez-web` e valida `/up`.
+
 ```bash
 sudo systemctl enable --now dez-web.service dez-schedule.timer dez-backup.timer dez-tunnel.service
-sudo systemctl --no-pager status dez-web dez-tunnel | head -20
-curl -s -o /dev/null -w 'local=%{http_code}\n'  http://127.0.0.1:8002/up
+curl -s -o /dev/null -w 'local=%{http_code}\n'   http://127.0.0.1:8002/up
 curl -s -o /dev/null -w 'publico=%{http_code}\n' https://dez.clinicadez.com.br/up
+curl -s -o /dev/null -w '/app/=%{http_code}\n'   https://dez.clinicadez.com.br/app/
 ```
 
-**21.10 — confirmar que o STG segue intacto**
+**21.10 — usuários do app** (depois do deploy, que já rodou as migrations)
+```bash
+sudo -u dez /opt/dez/bin/artisan team:user <EMAIL> --name="<Nome>" --role=ADMIN
+sudo -u dez /opt/dez/bin/artisan team:user <EMAIL2> --name="<Nome2>" --role=RECEPTION
+```
+perfis: `ADMIN | SUPERVISOR | RECEPTION | CASHIER | MANAGER | DOCTOR`
+
+**21.11 — confirmar que o STG segue intacto**
 ```bash
 curl -sI https://sistema.clinicadez.com.br | head -1
 sudo systemctl is-active apache2 postgresql@16-main cloudflared painel

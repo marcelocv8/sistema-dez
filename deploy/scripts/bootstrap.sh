@@ -58,7 +58,36 @@ else
 fi
 
 log "gerando APP_KEY (se ainda não houver)"
-grep -q '^APP_KEY=base64:' "$ENV_FILE" || sudo -u dez "$ARTISAN" key:generate --force
+# Não usa `artisan key:generate` porque o vendor/ só chega no primeiro deploy
+# do CI (decisão D7: nada de composer no servidor). A chave do Laravel é
+# simplesmente base64 de 32 bytes aleatórios.
+if ! grep -q '^APP_KEY=base64:' "$ENV_FILE"; then
+	APP_KEY_VALUE="base64:$(openssl rand -base64 32)"
+	sed -i "s|^APP_KEY=.*|APP_KEY=$APP_KEY_VALUE|" "$ENV_FILE"
+	log "APP_KEY gerada"
+fi
+
+if [ ! -f "$BACKEND/vendor/autoload.php" ]; then
+	cat <<EOF
+
+Ambiente (.env + chaves) pronto, mas ainda NÃO há vendor/ em $BACKEND.
+
+Isso é esperado: o vendor/ e os 4 frontends chegam pelo primeiro deploy do CI
+(GitHub Actions -> self-hosted runner -> deploy.sh), que também roda as
+migrations. Ordem correta a partir daqui:
+
+  1) criar a URL pública:  /opt/dez/app/deploy/scripts/tunnel.sh dez.clinicadez.com.br
+  2) instalar o runner e rodar o workflow "deploy" (F6) — o próprio deploy.sh
+     publica vendor/ + dist/ e roda `artisan migrate --force`
+  3) depois do deploy, criar os usuários:
+       sudo -u dez $ARTISAN team:user <email> --name="<Nome>" --role=ADMIN
+     perfis: ADMIN | SUPERVISOR | RECEPTION | CASHIER | MANAGER | DOCTOR
+
+Se algum dia o vendor/ já existir (ex.: segundo bootstrap), este script roda
+as migrations e cria o Admin normalmente.
+EOF
+	exit 0
+fi
 
 log "migrations"
 sudo -u dez "$ARTISAN" migrate --force

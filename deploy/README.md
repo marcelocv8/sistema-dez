@@ -57,7 +57,7 @@ sudo /opt/dez/app/deploy/scripts/install.sh
 SENHA=$(openssl rand -base64 18 | tr -d '/+=' | cut -c1-20)
 echo "senha do role sistema_dez: $SENHA"
 PGPASSWORD='<senha-do-postgres>' psql -h 127.0.0.1 -p 5432 -U postgres -d postgres \
-  -v app_password="'$SENHA'" -f /opt/dez/app/deploy/sql/provision.sql
+  -v app_password="$SENHA" -f /opt/dez/app/deploy/sql/provision.sql
 
 # 6) ambiente, migrations e usuários (um por pessoa, com RBAC)
 sudo /opt/dez/app/deploy/scripts/bootstrap.sh \

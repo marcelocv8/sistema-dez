@@ -174,7 +174,7 @@ Base instalada. Faltam 3 passos (tudo documentado em docs/plano_deploy.md §19/F
        SENHA=\$(openssl rand -base64 18 | tr -d '/+=' | cut -c1-20)
        echo "senha do role sistema_dez: \$SENHA"
        PGPASSWORD='<senha-do-postgres>' psql -h 127.0.0.1 -p 5432 -U postgres -d postgres \\
-         -v app_password="'\$SENHA'" -f $REPO_DIR/deploy/sql/provision.sql
+         -v app_password="\$SENHA" -f $REPO_DIR/deploy/sql/provision.sql
 
   2) Ambiente, migrations e usuários do app:
        sudo $REPO_DIR/deploy/scripts/bootstrap.sh \\
