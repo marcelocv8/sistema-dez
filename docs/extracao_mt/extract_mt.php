@@ -21,7 +21,10 @@
 
 declare(strict_types=1);
 
-$args = getopt('', ['host::', 'port::', 'db::', 'user::', 'out::', 'discover::']) ?: [];
+// Valores OBRIGATÓRIOS (um ':') para as opções que sempre recebem valor: o PHP
+// só aceita `--host valor` / `--host=valor` nessa forma. Com '::' (valor
+// opcional) o getopt ignora `--host valor` e o host chega vazio ao DSN.
+$args = getopt('', ['host:', 'port:', 'db:', 'user:', 'out:', 'discover::']) ?: [];
 $host = (string) ($args['host'] ?? 'localhost');
 $port = (string) ($args['port'] ?? '5432');
 $db = (string) ($args['db'] ?? 'dez');
