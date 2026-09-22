@@ -1026,8 +1026,7 @@ sudo -u dez /opt/dez/bin/artisan stg:import-grade --commit  --procedure=<legacy_
 sudo -u dez /opt/dez/bin/artisan schedule:materialize
 ```
 
-Ressalvas registradas:
-- as ofertas nascem com **`online_enabled = false`** (só agenda interna) — a grade
+Ressalvas registradas:- as ofertas nascem com **`online_enabled = false`** (só agenda interna) — a grade
   do legado está desatualizada e não deve gerar vagas no agendamento público;
   use `--online` só depois de a recepção validar a escala;
 - a grade traz `intervalo_ini`/`intervalo_fim` (almoço) — o comando cria **uma
@@ -1035,6 +1034,34 @@ Ressalvas registradas:
   legado já separava as faixas;
 - `weekday` do legado (`1 - Segunda` … `5 - Sexta`) casa com o `dayOfWeek` do
   Carbon usado pelo materializador (0 = domingo) — sem conversão.
+
+#### Achado: os 87 profissionais do catálogo NÃO são os médicos da clínica
+
+Na 1ª execução (22/09) o seed casou **apenas 3** profissionais e reportou **71
+nomes não encontrados** — todos nomes reais da agenda (`DR. AUGUSTO UCHIDA`,
+`DRA. LAICE CUNHA`, `FABIANA NOGUEIRA DA ROCHA MACIEL`, …). Ou seja: o
+`dez_profissionais.json`, que veio da **API do painel do STG**, traz outra
+população (o 1º registro é `TELE LAUDOS TELEMEDICINA`), não os médicos que a
+grade usa.
+
+Consequência: a agenda fica quase vazia e a tela de profissionais mostra a
+população errada. **Antes de re-rodar o seed é preciso importar os médicos
+reais** — a tabela dos médicos no legado não se chama `tb_medico*`; os
+candidatos encontrados são tabelas de vínculo (`tb_operador_grupo_medico`,
+`tb_procedimento_percentual_medico`), o que sugere que **médico = operador**
+(`tb_operador`) no STG.
+
+Para resolver isso (e o F7) sem muitas idas e voltas foi criado o script de
+descoberta **somente leitura** `docs/descoberta_stg.php`:
+```bash
+sudo -u dez env STG_DB_PASSWORD="$PGPASS" /opt/dez/bin/frankenphp php-cli \
+  /opt/dez/app/docs/descoberta_stg.php --host=127.0.0.1 --port=5432 --db=dez \
+  --user=postgres --schema=ponto --pattern=%operador% --pattern=%medico%
+```
+Ele imprime, para cada tabela que casar, a estimativa de linhas e **todas as
+colunas** (só `SELECT` em `information_schema`/`pg_class`; força
+`default_transaction_read_only`).
+
 
 
 
