@@ -31,7 +31,10 @@ $db = (string) ($args['db'] ?? 'dez');
 $user = (string) ($args['user'] ?? 'postgres');
 $password = (string) (getenv('STG_DB_PASSWORD') ?: '');
 
-if (($args['discover'] ?? null) !== null && $args['discover'] !== false) {
+// `array_key_exists`: com 'discover::' (valor opcional) o getopt devolve
+// `discover => false` quando a flag vem sozinha — o teste anterior
+// (`!== null && !== false`) ignorava o `--discover` sem valor.
+if (array_key_exists('discover', $args)) {
     $pdo = connect($host, $port, $db, $user, $password);
     discover($pdo);
     exit(0);
@@ -151,16 +154,36 @@ function connect(string $host, string $port, string $db, string $user, string $p
 
 function discover(PDO $pdo): void
 {
-    $tables = ['tb_aso_risco', 'tb_aso_setor', 'tb_aso_funcao', 'tb_aso_situacao', 'tb_cadastro_aso', 'tb_agenda_exames'];
+    // O schema do STG varia entre instalações (prefixo de tabela, nomes). Este
+    // modo é o ponto de partida quando as consultas de extração falham com
+    // "relation ... does not exist": lista as tabelas candidatas e as colunas.
+    $patterns = ['%risco%', '%aso%', '%setor%', '%funcao%', '%ocupacional%', '%procedimento_tuss%'];
+
+    $sql = 'SELECT table_name FROM information_schema.tables
+            WHERE table_schema = \'public\' AND ('
+        .implode(' OR ', array_fill(0, count($patterns), 'table_name ILIKE ?'))
+        .') ORDER BY table_name';
+
+    $stmt = $pdo->prepare($sql);
+    $stmt->execute($patterns);
+    $tables = $stmt->fetchAll(PDO::FETCH_COLUMN);
+
+    if ($tables === []) {
+        echo "Nenhuma tabela casou com: ".implode(', ', $patterns)."\n";
+        echo "Liste tudo com: select tablename from pg_tables where schemaname='public' order by 1;\n";
+
+        return;
+    }
+
     foreach ($tables as $table) {
-        $stmt = $pdo->prepare(
+        echo "=== $table ===\n";
+        $cols = $pdo->prepare(
             "SELECT column_name, data_type FROM information_schema.columns
              WHERE table_schema = 'public' AND table_name = ?
              ORDER BY ordinal_position"
         );
-        $stmt->execute([$table]);
-        echo "=== $table ===\n";
-        foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $col) {
+        $cols->execute([$table]);
+        foreach ($cols->fetchAll(PDO::FETCH_ASSOC) as $col) {
             echo "  {$col['column_name']} : {$col['data_type']}\n";
         }
     }
