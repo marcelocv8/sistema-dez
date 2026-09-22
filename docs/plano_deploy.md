@@ -1,8 +1,16 @@
 # Plano de Deploy — Sistema DEZ no servidor da Clínica DEZ
 
-> **Versão 1.3 — 22/09/2026**
+> **Versão 1.4 — 22/09/2026**
 > Documento **operacional** (infra/deploy). O plano de **produto** é
 > `docs/plano_sistema_dez.md` (lá está o §16, que aponta para este arquivo).
+>
+> **v1.4 — SISTEMA NO AR.** Execução no servidor concluída em 22/09/2026:
+> **F1, F2, F3, F4 e F6 (primeiro deploy) fechadas**; `https://dez.clinicadez.com.br`
+> respondendo 200 em `/up`, `/app/`, `/agendar/`, `/resultados/` e `/painel/`,
+> com o **STG intacto** (4 serviços `active`). Deploy #1 verde
+> (Tests → Build → Publicar). Registro da execução em §20.3, evidências em
+> §20.4 e os **12 bugs** encontrados/corrigidos no caminho. Falta **F5**
+> (importar catálogo/preços/modelos/MT) e **F7** (pacientes/atendimentos).
 >
 > **v1.3:** correções descobertas na execução real no servidor (§20.3) —
 > quoting do `-v` no `provision.sql`, `bootstrap.sh` sem depender do `vendor/`
@@ -779,38 +787,42 @@ Leitura **read-only** do banco legado, com lotes e log de reconciliação.
 
 ## 19. Checklist de aceite por fase
 
-### F1 — Provisionamento (base) — ordem real, sem transferência de arquivos
+> **Executado em 22/09/2026** — F1, F2, F3, F4 e F6 (primeiro deploy) concluídas;
+> validação final em §20.4. Falta F5 (dados) e F7 (importadores).
 
-- [ ] 1. usuário `dez` + `/opt/dez/.ssh` (700) criados
-- [ ] 2. deploy key gerada e registrada no GitHub (read-only); `ssh -T git@github.com` responde
-- [ ] 3. repo clonado em `/opt/dez/app` com a deploy key
-- [ ] 4. `install.sh` rodado: FrankenPHP static (`php-cli -i` com `pdo_pgsql`/`opcache`), `php.ini`, `Caddyfile`, 6 units/timers, `visudo -c` OK
-- [ ] 5. role `sistema_dez` + database criados; `psql -h 127.0.0.1 -U sistema_dez -d sistema_dez` → `sistema_dez|sistema_dez`
-- [ ] 6. **STG intacto**: `curl -sI https://sistema.clinicadez.com.br` = 200 e os 4 serviços (`apache2`, `postgresql@16-main`, `cloudflared`, `painel`) `active`
+### F1 — Provisionamento (base) — ordem real, sem transferência de arquivos ✅
 
-### F2 — Código (no PC de dev)
-- [ ] `trustProxies` + CSRF público aplicados
-- [ ] `base` nos 4 `vite.config.ts` e `basename` na equipe; ajuste no paciente
-- [ ] `pnpm build` + **validação local da borda** (Anexo A) abrindo os 4 prefixos
-- [ ] `php artisan test --compact` verde; `vendor/bin/pint --dirty` ok
-- [ ] **Diff apresentado ao dono e autorização obtida antes de qualquer commit**
+- [x] 1. usuário `dez` + `/opt/dez/.ssh` (700) criados
+- [x] 2. deploy key gerada e registrada no GitHub (read-only); `ssh -T git@github.com` responde
+- [x] 3. repo clonado em `/opt/dez/app` com a deploy key
+- [x] 4. `install.sh` rodado: FrankenPHP **v1.12.7 / PHP 8.5.10** (`pdo_pgsql`, `pgsql`, `mbstring`, `intl`, `zip`, `curl`, `openssl`, `fileinfo` OK), `php.ini`, `Caddyfile`, 7 units/timers, `visudo -c` OK
+- [x] 5. role `sistema_dez` + database criados; `psql -h 127.0.0.1 -U sistema_dez -d sistema_dez` → `sistema_dez|sistema_dez`
+- [x] 6. **STG intacto**: `curl -sI https://sistema.clinicadez.com.br` = 200 e os 4 serviços (`apache2`, `postgresql@16-main`, `cloudflared`, `painel`) `active`
 
-### F3 — Ambiente e primeiro deploy (ordem ajustada)
-- [ ] `.env` de produção com chaves novas (**`APP_KEY` via `openssl`**, não artisan) — `bootstrap.sh`
-- [ ] `vendor/` + os 4 `dist/` publicados pelo primeiro deploy do CI (§21.9) — sem isso o `artisan` não roda
-- [ ] `migrate --force` (executado pelo próprio `deploy.sh`); `/up` = 200 em `127.0.0.1:8002`
-- [ ] `team:user` dos testadores **depois** do deploy; login funcionando (local e pela URL)
+### F2 — Código (no PC de dev) ✅
+- [x] `trustProxies` + CSRF público aplicados
+- [x] `base` nos 4 `vite.config.ts` e `basename` na equipe; ajuste no paciente
+- [x] `pnpm build` + **validação local da borda** (Anexo A) abrindo os 4 prefixos
+- [x] `php artisan test --compact` verde (rodou no job `verify` do CI, junto com typecheck e Vitest 42/42); `pint --dirty` ok
+- [x] Diff apresentado ao dono e autorização obtida antes de cada commit
 
-### F4 — URL
-- [ ] Túnel `dez` criado, CNAME em `dez.clinicadez.com.br`, `dez-tunnel.service` ativo
-- [ ] `https://dez.clinicadez.com.br/up` = 200; login stateful funcionando pela URL (cookie `Secure`)
+### F3 — Ambiente e primeiro deploy (ordem ajustada) ✅
+- [x] `.env` de produção com chaves novas (**`APP_KEY` via `openssl`**, não artisan) — `bootstrap.sh`
+- [x] `vendor/` + os 4 `dist/` publicados pelo primeiro deploy do CI (§21.9) — sem isso o `artisan` não roda
+- [x] `migrate --force` (executado pelo próprio `deploy.sh`); `/up` = 200 em `127.0.0.1:8002`
+- [x] `team:user` dos testadores **depois** do deploy; login funcionando (local e pela URL)
 
-### F5 — Dados
+### F4 — URL ✅
+- [x] Túnel `dez` (`72b041b9-…`) criado, CNAME em `dez.clinicadez.com.br`, `dez-tunnel.service` ativo
+- [x] `https://dez.clinicadez.com.br/up` = 200; os 4 prefixos (`/app/`, `/agendar/`, `/resultados/`, `/painel/`) = 200
+
+### F5 — Dados ⏳
 - [ ] Uploads das extrações + `stg:import-catalog` / `stg:import-report-templates` / `stg:import-mt` (`--dry-run` → `--commit`)
+- [ ] (opcional) `stg:resolve-issues --dry-run` → `--commit` para as 85 pendências do catálogo
 - [ ] Catálogo/preços/modelos/MT visíveis nas telas
 
-### F6 — Operação
-- [ ] Self-hosted runner instalado; "Run workflow" faz deploy de ponta a ponta
+### F6 — Operação (parcial)
+- [x] Self-hosted runner (`dez-server`, label `dez`) — unit próprio; **deploy #1 verde** (Tests 1m52 → Build 1m1 → Publicar 34s)
 - [ ] **Rollback testado** (commit ruim → volta sozinho)
 - [ ] `dez-backup.timer` rodou; dump verificado com `pg_restore --list`; restauração testada
 
@@ -857,15 +869,15 @@ com os prefixos corretos) · **borda real** com FrankenPHP 8.5 e os dists reais
 
 | # | Pendência | Status | Detalhe |
 |---|---|---|---|
-| P1 | Suíte de testes do backend (`php artisan test --compact`) | ⛔ **bloqueado** | Docker Desktop desligado no PC de dev; precisa do PostgreSQL na `5433`. Único item que falta do F2 |
+| P1 | Suíte de testes do backend (`php artisan test --compact`) | ✅ **resolvido** | passou no job `verify` do CI (com typecheck e Vitest **42/42**) no deploy #1 |
 | P2 | Senha do superusuário `postgres` | ✅ **resolvido** | achada na config do STG; `select current_user` → `postgres`, PG 16.15 (valor **não** versionado) |
 | P3 | `password_encryption` (`md5` × `scram`) | ✅ **resolvido** | `md5` — role nasce em MD5, `pg_hba` já em MD5, sem ajuste |
 | P4 | Hostname do teste | ✅ **resolvido** | `dez.clinicadez.com.br` (livre, confirmado) |
 | P5 | Janela de import | ✅ **definida** | 00:00–06:00 |
-| P6 | Subir as extrações do STG para `/opt/dez/_import/` | ⏳ pendente | F5; ~0,9 MB (catálogo + laudos) |
+| P6 | Subir as extrações do STG para `/opt/dez/_import/` | ⏳ pendente | F5; pacotes prontos no PC (`dez-stg.zip` 88 KB, `dez-laudos.zip` 111 KB) |
 | P7 | Escopo do F7 | ✅ **definido** | pacientes + atendimentos de 24 meses; **sem** financeiro/caixa |
-| P8 | Runner do GitHub + teste de rollback | ⏳ pendente | F6 |
-| P9 | Executar a F1 no servidor | ⏳ **em andamento** | ver §20.3 |
+| P8 | Rollback automático + `dez-backup` testados | ⏳ pendente | resto do F6 |
+| P9 | Executar a F1 no servidor | ✅ **concluído** | ver §20.3/§20.4 |
 
 ### 20.3 Andamento da execução no servidor (22/09/2026)
 
@@ -878,8 +890,26 @@ com os prefixos corretos) · **borda real** com FrankenPHP 8.5 e os dists reais
 | `provision.sql` (role + database) | ⚠️ parcial | objetos criados (`CREATE ROLE/DATABASE` + 5 `ALTER ROLE` + `REVOKE` + `GRANT`), mas a senha foi gravada **com aspas** (erro de quoting no `-v`) → corrigido com `ALTER ROLE`; `select current_user` → `sistema_dez|sistema_dez` ✅ |
 | `bootstrap.sh` (`.env` + chaves) | ✅ | `.env` criado; `APP_KEY`, `IDENTITY_PEPPER`, `MANAGEMENT_TOKEN_SECRET`, `DB_PASSWORD`, `APP_URL`, `SANCTUM_STATEFUL_DOMAINS` todos preenchidos; pausa avisando que falta `vendor/` (chega no deploy do CI) |
 | túnel `dez` (F4) | ✅ | túnel `72b041b9-…` ativo; CNAME corrigido para ele; `https://dez.clinicadez.com.br/up` = **502** com o journal provando o roteamento certo (`ingressRule=0 originService=http://127.0.0.1:8002`, `connection refused` por o app não ter subido) |
-| runner do GitHub | ⏳ | `svc.sh` **não vem** no tarball 2.337.0 → unit próprio `deploy/systemd/dez-runner.service` (sem `NoNewPrivileges`); falta registrar com o token e subir |
-| serviços + validação final | ⏳ | pendente do primeiro deploy (F6) |
+| runner do GitHub | ✅ | registrado (`dez-server`, label `dez`); `svc.sh` **não vem** no tarball 2.337.0 → unit próprio `deploy/systemd/dez-runner.service` (sem `NoNewPrivileges`); `Listening for Jobs` |
+| deploy #1 (F3/F6) | ✅ | **Tests 1m52 ✓ → Build 1m1 ✓ → Publicar 34s ✓** (3m38 no total); no servidor: `vendor/` + 4 frontends publicados, `migrate --force`, `optimize`, restart e health check |
+| validação final | ✅ | ver §20.4 |
+
+### 20.4 Validação final (22/09/2026)
+
+```
+local=200   /up=200   /app/=200   /agendar/=200   /resultados/=200   /painel/=200
+apache2=active  postgresql@16-main=active  cloudflared=active  painel=active
+```
+
+- `https://dez.clinicadez.com.br/app/` **no ar** com login próprio do app.
+- `deploy.log`: `deploy ok: be98a28… -> be98a28…`.
+- Primeiro usuário criado: perfil **ADMIN**.
+  **Regra de senha** do `team:user`: mínimo 1 número (senão reprova com
+  "The password field must contain at least one number").
+
+> **O STG continua intacto**: nenhum arquivo, serviço, banco, vhost ou túnel
+> dele foi alterado — só foram **criados** objetos novos (role, database,
+> service `dez-*`, túnel `dez` e o CNAME do hostname novo).
 
 **Bugs de script encontrados e corrigidos nesta execução** (todos já no `main`):
 1. `apt-get update` abortando por causa do `Label` do PPA `ondrej/php` → `AllowReleaseInfoChange` + só rodar o apt se faltar pacote.
