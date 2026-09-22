@@ -51,12 +51,7 @@ fi
 SRC_CRED="$HOME/.cloudflared/$UUID.json"
 [ -f "$SRC_CRED" ] || die "credenciais não encontradas em $SRC_CRED"
 
-# --- 2. DNS -------------------------------------------------------------------
-log "criando/atualizando o CNAME $HOSTNAME_ARG no Cloudflare"
-cloudflared tunnel route dns "$TUNNEL_NAME" "$HOSTNAME_ARG" \
-	|| warn "o CNAME pode já existir — confira no painel do Cloudflare"
-
-# --- 3. config (validada antes de instalar) -----------------------------------
+# --- 2. config (montada e validada antes de rotear o DNS) --------------------
 TMP_CFG=$(mktemp)
 cat > "$TMP_CFG" <<EOF
 # Túnel do Sistema DEZ (independente do túnel do STG).
@@ -70,7 +65,19 @@ ingress:
 EOF
 
 log "validando a configuração do ingress"
-cloudflared tunnel ingress validate --config "$TMP_CFG" || { rm -f "$TMP_CFG"; die "ingress inválido"; }
+# Sintaxe correta: --config é flag do comando `tunnel`, ANTES de `ingress`.
+# (`cloudflared tunnel ingress validate --config …` → 'flag provided but not defined')
+cloudflared tunnel --config "$TMP_CFG" ingress validate \
+	|| { rm -f "$TMP_CFG"; die "ingress inválido"; }
+
+# --- 3. DNS ------------------------------------------------------------------
+log "criando/atualizando o CNAME $HOSTNAME_ARG no Cloudflare"
+# ATENÇÃO: usar o UUID — NÃO o nome. Nesta máquina o cloudflared carrega o
+# /etc/cloudflared/config.yml default (o do STG) e o `route dns` por nome
+# acabou apontando o CNAME para o TÚNEL DO STG. Com o UUID não há ambiguidade.
+# `--overwrite-dns` corrige um registro já criado apontando para outro túnel.
+cloudflared tunnel route dns --overwrite-dns "$UUID" "$HOSTNAME_ARG" \
+	|| warn "não foi possível criar/atualizar o CNAME — confira no painel do Cloudflare"
 
 # --- 4. instalação para o serviço (usuário dez) -------------------------------
 log "instalando credenciais e config em $CFG_DIR (dono: $SVC_USER)"
