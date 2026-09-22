@@ -717,6 +717,17 @@ Compress-Archive -Path "C:\Projects\STG\dezstg2\_extracoes_stg\*" -DestinationPa
 Compress-Archive -Path "C:\Projects\STG\_extracoes_laudos\*"      -DestinationPath "$env:TEMP\dez-laudos.zip" -Force
 scp "$env:TEMP\dez-stg.zip" "$env:TEMP\dez-laudos.zip" server@192.168.0.170:/tmp/
 ```
+> **O `scp` só funciona de dentro da rede da clínica.** Fora dela, o caminho que
+> funcionou em 22/09/2026 foi: juntar os dois zips em um `tar.gz`, **cifrar**
+> (os arquivos têm dados de negócio) e baixar por um host temporário — assim o
+> servidor puxa com `curl` e não precisa de AnyDesk. Exemplo genérico:
+> ```bash
+> tar -czf dez-f5.tar.gz dez-stg.zip dez-laudos.zip
+> # cifra com chave/IV derivados por SHA-256 (o servidor decifra com openssl puro)
+> # ... ver o histórico da execução; nunca versionar a senha no repo
+> ```
+> No servidor, **sempre conferir o `sha256sum`** antes e depois de decifrar
+> (`openssl enc -d -aes-256-cbc -K "$KEY" -iv "$IV" -in x.enc -out x.tar.gz`).
 ```bash
 # no servidor:
 sudo mkdir -p /opt/dez/_import/{stg,laudos}
