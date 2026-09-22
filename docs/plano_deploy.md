@@ -947,6 +947,9 @@ apache2=active  postgresql@16-main=active  cloudflared=active  painel=active
 10. Job `deploy` chamava `sudo deploy.sh`, mas o sudoers só libera 3 `systemctl` → rodaria pedindo senha.
 11. `tunnel.sh`: `route dns` por **nome** apontou o CNAME para o **túnel do STG** (o `cloudflared` lê o `/etc/cloudflared/config.yml` default) → agora usa o **UUID** + `--overwrite-dns`; e `ingress validate --config` estava na ordem errada de flags.
 12. `svc.sh` **não existe** no tarball do `actions-runner` 2.337.0 → unit systemd próprio (`dez-runner.service`), **sem** `NoNewPrivileges` (o `sudo` do `deploy.sh` é setuid e seria bloqueado).
+13. **`DB::transaction($closure)` faz COMMIT quando o closure retorna** — os "dry-run" dos comandos novos `stg:import-doctors` e `stg:import-grade` **persistiam de verdade** (a mensagem "nenhuma alteração persistida" mentia; dava para ver porque o `--commit` seguinte reportava `criados: 0`). Agora o commit/rollback é explícito (`beginTransaction` + `commit`/`rollBack`).
+14. **Normalização de nomes precisa ser compartilhada**: a remoção de títulos (`DR.`/`DRA.`) foi feita só no `stg:import-doctors` e o `stg:import-grade` continuou sem casar 40 médicos. Extraído `App\Services\Stg\LegacyNameNormalizer` (`key()` para casar/`search_name`, `display()` para exibir), usado pelos dois comandos.
+15. `preg_replace` do título: `(DR|DRA)` casava **`DR` antes de `DRA`** e sobrava um `A.` no nome ("DRA.LAICE CUNHA" → "A.LAICE CUNHA"). Exigir um separador depois do título (`.` ou espaço) resolve.
 
 ---
 

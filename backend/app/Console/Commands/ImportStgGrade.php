@@ -14,9 +14,9 @@ use App\Models\Professional;
 use App\Models\ScheduleWindow;
 use App\Models\ServiceOffering;
 use App\Models\Unit;
+use App\Services\Stg\LegacyNameNormalizer;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Str;
 use Throwable;
 
 class ImportStgGrade extends Command
@@ -78,117 +78,131 @@ class ImportStgGrade extends Command
         $commit = (bool) $this->option('commit');
         $online = (bool) $this->option('online');
 
-        $summary = DB::transaction(function () use ($rows, $procedure, $agreement, $unit, $online): array {
-            $createdOffers = 0;
-            $createdWindows = 0;
-            $createdLinks = 0;
-            $unmatchedNames = [];
-            $inactiveNames = [];
-            $withoutPrice = [];
-            $byProfessional = [];
+        // ATENÇÃO: `DB::transaction($closure)` faz COMMIT quando o closure
+        // retorna — um "dry-run" com ele persistiria de verdade. Por isso o
+        // commit/rollback é explícito aqui.
+        DB::beginTransaction();
 
-            foreach ($rows as $name => $windows) {
-                $professional = Professional::query()->where('search_name', $name)->first();
+        try {
+            $summary = (function () use ($rows, $procedure, $agreement, $unit, $online): array {
+                $createdOffers = 0;
+                $createdWindows = 0;
+                $createdLinks = 0;
+                $unmatchedNames = [];
+                $inactiveNames = [];
+                $withoutPrice = [];
+                $byProfessional = [];
 
-                if (! $professional instanceof Professional) {
-                    $unmatchedNames[$name] = count($windows);
+                foreach ($rows as $name => $windows) {
+                    $professional = Professional::query()->where('search_name', $name)->first();
 
-                    continue;
-                }
+                    if (! $professional instanceof Professional) {
+                        $unmatchedNames[$name] = count($windows);
 
-                if (! $professional->active) {
-                    $inactiveNames[$professional->name] = count($windows);
+                        continue;
+                    }
 
-                    continue;
-                }
+                    if (! $professional->active) {
+                        $inactiveNames[$professional->name] = count($windows);
 
-                $price = $this->validPrice($procedure, $agreement, $unit);
+                        continue;
+                    }
 
-                if ($price === null) {
-                    $withoutPrice[$professional->name] = count($windows);
+                    $price = $this->validPrice($procedure, $agreement, $unit);
 
-                    continue;
-                }
+                    if ($price === null) {
+                        $withoutPrice[$professional->name] = count($windows);
 
-                $link = CatalogLink::query()->firstOrCreate(
-                    [
+                        continue;
+                    }
+
+                    $link = CatalogLink::query()->firstOrCreate(
+                        [
+                            'unit_id' => $unit->id,
+                            'procedure_id' => $procedure->id,
+                            'professional_id' => $professional->id,
+                            'agreement_id' => $agreement->id,
+                        ],
+                        ['active' => true],
+                    );
+
+                    if ($link->wasRecentlyCreated) {
+                        $createdLinks++;
+                    }
+
+                    $offering = ServiceOffering::query()->firstOrNew([
                         'unit_id' => $unit->id,
                         'procedure_id' => $procedure->id,
                         'professional_id' => $professional->id,
                         'agreement_id' => $agreement->id,
-                    ],
-                    ['active' => true],
-                );
-
-                if ($link->wasRecentlyCreated) {
-                    $createdLinks++;
-                }
-
-                $offering = ServiceOffering::query()->firstOrNew([
-                    'unit_id' => $unit->id,
-                    'procedure_id' => $procedure->id,
-                    'professional_id' => $professional->id,
-                    'agreement_id' => $agreement->id,
-                ]);
-
-                $isNewOffering = ! $offering->exists;
-
-                $offering->fill([
-                    'catalog_link_id' => $link->id,
-                    'procedure_price_id' => $price->id,
-                    'booking_mode' => BookingMode::FixedSlot,
-                    'modality' => Modality::Presential,
-                    'price' => $price->amount,
-                    'duration_override_minutes' => $this->slotMinutes($windows),
-                    'daily_capacity' => null,
-                    'arrival_block_minutes' => 60,
-                    'arrival_block_capacity' => 3,
-                    'online_enabled' => $online,
-                    'active' => true,
-                ]);
-                $offering->save();
-
-                if ($isNewOffering) {
-                    $createdOffers++;
-                }
-
-                foreach ($windows as $window) {
-                    $scheduleWindow = ScheduleWindow::query()->firstOrNew([
-                        'service_offering_id' => $offering->id,
-                        'weekday' => $window['weekday'],
-                        'starts_at' => $window['starts_at'],
                     ]);
 
-                    $isNewWindow = ! $scheduleWindow->exists;
+                    $isNewOffering = ! $offering->exists;
 
-                    $scheduleWindow->fill([
-                        'ends_at' => $window['ends_at'],
-                        'slot_minutes' => $window['slot_minutes'],
-                        'daily_capacity_override' => $window['capacity'],
-                        'effective_from' => now()->toDateString(),
-                        'effective_to' => now()->addDays(30)->toDateString(),
+                    $offering->fill([
+                        'catalog_link_id' => $link->id,
+                        'procedure_price_id' => $price->id,
+                        'booking_mode' => BookingMode::FixedSlot,
+                        'modality' => Modality::Presential,
+                        'price' => $price->amount,
+                        'duration_override_minutes' => $this->slotMinutes($windows),
+                        'daily_capacity' => null,
+                        'arrival_block_minutes' => 60,
+                        'arrival_block_capacity' => 3,
+                        'online_enabled' => $online,
                         'active' => true,
                     ]);
-                    $scheduleWindow->save();
+                    $offering->save();
 
-                    if ($isNewWindow) {
-                        $createdWindows++;
+                    if ($isNewOffering) {
+                        $createdOffers++;
                     }
+
+                    foreach ($windows as $window) {
+                        $scheduleWindow = ScheduleWindow::query()->firstOrNew([
+                            'service_offering_id' => $offering->id,
+                            'weekday' => $window['weekday'],
+                            'starts_at' => $window['starts_at'],
+                        ]);
+
+                        $isNewWindow = ! $scheduleWindow->exists;
+
+                        $scheduleWindow->fill([
+                            'ends_at' => $window['ends_at'],
+                            'slot_minutes' => $window['slot_minutes'],
+                            'daily_capacity_override' => $window['capacity'],
+                            'effective_from' => now()->toDateString(),
+                            'effective_to' => now()->addDays(30)->toDateString(),
+                            'active' => true,
+                        ]);
+                        $scheduleWindow->save();
+
+                        if ($isNewWindow) {
+                            $createdWindows++;
+                        }
+                    }
+
+                    $byProfessional[$professional->name] = count($windows);
                 }
 
-                $byProfessional[$professional->name] = count($windows);
-            }
+                return [
+                    'links' => $createdLinks,
+                    'offerings' => $createdOffers,
+                    'windows' => $createdWindows,
+                    'linked_professionals' => count($byProfessional),
+                    'unmatched_names' => $unmatchedNames,
+                    'inactive_names' => $inactiveNames,
+                    'without_price' => $withoutPrice,
+                ];
+            })();
 
-            return [
-                'links' => $createdLinks,
-                'offerings' => $createdOffers,
-                'windows' => $createdWindows,
-                'linked_professionals' => count($byProfessional),
-                'unmatched_names' => $unmatchedNames,
-                'inactive_names' => $inactiveNames,
-                'without_price' => $withoutPrice,
-            ];
-        });
+            $commit ? DB::commit() : DB::rollBack();
+        } catch (Throwable $exception) {
+            DB::rollBack();
+            $this->error('Falha ao semear a agenda: '.$exception->getMessage());
+
+            return self::FAILURE;
+        }
 
         if (! $commit) {
             $this->line(json_encode([...$summary, 'commit' => false], JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR));
@@ -393,6 +407,6 @@ class ImportStgGrade extends Command
 
     private function normalize(string $value): string
     {
-        return Str::of($value)->ascii()->squish()->upper()->toString();
+        return LegacyNameNormalizer::key($value);
     }
 }

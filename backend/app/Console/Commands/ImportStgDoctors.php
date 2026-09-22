@@ -3,6 +3,7 @@
 namespace App\Console\Commands;
 
 use App\Models\Professional;
+use App\Services\Stg\LegacyNameNormalizer;
 use Illuminate\Console\Command;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
@@ -12,14 +13,6 @@ use Throwable;
 
 class ImportStgDoctors extends Command
 {
-    /**
-     * Títulos que a grade do legado coloca no nome ("DR. AUGUSTO UCHIDA",
-     * "DRA.LAICE CUNHA", "DR.GLAUBER JEAN"). Exigir um separador (ponto ou
-     * espaço) depois do título evita que "DR" case antes de "DRA" e sobre um
-     * "A." no nome.
-     */
-    private const TITLE_PATTERN = '/^(DOUTORA|DOUTOR|ENFERMEIRA|PROFA|PROF|DRA|DR|ENF)[.\s]+/i';
-
     /** @var array<string, int|string> */
     private array $sourceCounts = [];
 
@@ -91,73 +84,87 @@ class ImportStgDoctors extends Command
             'legado_inativos' => $rows->where('ativo', false)->count(),
         ];
 
-        $summary = DB::transaction(function () use ($rows): array {
-            $created = 0;
-            $updated = 0;
-            $matchedNames = [];
-            $touched = [];
+        // ATENÇÃO: `DB::transaction($closure)` faz COMMIT quando o closure
+        // retorna — um "dry-run" com ele persistiria de verdade. Por isso o
+        // commit/rollback é explícito aqui.
+        DB::beginTransaction();
 
-            foreach ($rows as $row) {
-                $legacyId = trim((string) ($row->operador_id ?? ''));
-                $name = Str::of((string) $row->nome)->squish()->toString();
+        try {
+            $summary = (function () use ($rows): array {
+                $created = 0;
+                $updated = 0;
+                $matchedNames = [];
+                $touched = [];
 
-                if ($name === '') {
-                    continue;
+                foreach ($rows as $row) {
+                    $legacyId = trim((string) ($row->operador_id ?? ''));
+                    $name = Str::of((string) $row->nome)->squish()->toString();
+
+                    if ($name === '') {
+                        continue;
+                    }
+
+                    $normalized = $this->normalize($name);
+                    $active = (bool) $row->ativo;
+
+                    $professional = Professional::query()->where('search_name', $normalized)->first();
+
+                    if ($professional === null && $legacyId !== '') {
+                        $professional = Professional::query()->where('legacy_id', $legacyId)->first();
+                    }
+
+                    $attributes = [
+                        'name' => $name,
+                        'search_name' => $normalized,
+                        'council_number' => $this->nullable($row->conselho),
+                        'active' => $active,
+                        'classification_status' => $active ? 'ATIVO' : 'SEM_MOVIMENTO',
+                    ];
+
+                    if ($professional instanceof Professional) {
+                        $professional->fill($attributes);
+                        $professional->save();
+                        $updated++;
+                        $touched[$professional->id] = true;
+                        $matchedNames[$normalized] = $professional->name;
+
+                        continue;
+                    }
+
+                    $createdProfessional = Professional::query()->create([
+                        ...$attributes,
+                        'legacy_id' => $legacyId === '' ? null : $legacyId,
+                        'online_enabled' => false,
+                    ]);
+                    $created++;
+                    $touched[$createdProfessional->id] = true;
                 }
 
-                $normalized = $this->normalize($name);
-                $active = (bool) $row->ativo;
+                $extra = Professional::query()
+                    ->whereNotNull('legacy_id')
+                    ->whereNotIn('id', array_keys($touched))
+                    ->orderBy('name')
+                    ->get(['name', 'active']);
 
-                $professional = Professional::query()->where('search_name', $normalized)->first();
-
-                if ($professional === null && $legacyId !== '') {
-                    $professional = Professional::query()->where('legacy_id', $legacyId)->first();
-                }
-
-                $attributes = [
-                    'name' => $name,
-                    'search_name' => $normalized,
-                    'council_number' => $this->nullable($row->conselho),
-                    'active' => $active,
-                    'classification_status' => $active ? 'ATIVO' : 'SEM_MOVIMENTO',
+                return [
+                    'criados' => $created,
+                    'atualizados' => $updated,
+                    'total_medicos_no_dez' => count($touched),
+                    'nao_mencionados_no_legado' => [
+                        'total' => $extra->count(),
+                        'ativos' => $extra->where('active', true)->count(),
+                        'exemplos' => $extra->take(10)->pluck('name')->all(),
+                    ],
                 ];
+            })();
 
-                if ($professional instanceof Professional) {
-                    $professional->fill($attributes);
-                    $professional->save();
-                    $updated++;
-                    $touched[$professional->id] = true;
-                    $matchedNames[$normalized] = $professional->name;
+            $commit ? DB::commit() : DB::rollBack();
+        } catch (Throwable $exception) {
+            DB::rollBack();
+            $this->error('Falha ao importar médicos: '.$exception->getMessage());
 
-                    continue;
-                }
-
-                $createdProfessional = Professional::query()->create([
-                    ...$attributes,
-                    'legacy_id' => $legacyId === '' ? null : $legacyId,
-                    'online_enabled' => false,
-                ]);
-                $created++;
-                $touched[$createdProfessional->id] = true;
-            }
-
-            $extra = Professional::query()
-                ->whereNotNull('legacy_id')
-                ->whereNotIn('id', array_keys($touched))
-                ->orderBy('name')
-                ->get(['name', 'active']);
-
-            return [
-                'criados' => $created,
-                'atualizados' => $updated,
-                'total_medicos_no_dez' => count($touched),
-                'nao_mencionados_no_legado' => [
-                    'total' => $extra->count(),
-                    'ativos' => $extra->where('active', true)->count(),
-                    'exemplos' => $extra->take(10)->pluck('name')->all(),
-                ],
-            ];
-        });
+            return self::FAILURE;
+        }
 
         $payload = [...$stats, ...$this->sourceCounts, ...$summary, 'commit' => $commit];
 
@@ -301,7 +308,7 @@ class ImportStgDoctors extends Command
             $normalized = $this->normalize($raw);
 
             if ($normalized !== '') {
-                $display = Str::of((string) preg_replace(self::TITLE_PATTERN, '', $raw))->squish()->toString();
+                $display = LegacyNameNormalizer::display($raw);
                 $names[$normalized] = $display !== '' ? $display : $normalized;
             }
         }
@@ -313,9 +320,7 @@ class ImportStgDoctors extends Command
 
     private function normalize(string $value): string
     {
-        $normalized = Str::of($value)->ascii()->squish()->upper()->toString();
-
-        return trim((string) preg_replace(self::TITLE_PATTERN, '', $normalized));
+        return LegacyNameNormalizer::key($value);
     }
 
     /** Ids dos médicos referenciados pela grade (tb_agenda.medico_id e o campo multi). */
