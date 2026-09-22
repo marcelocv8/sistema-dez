@@ -1038,6 +1038,23 @@ Ressalvas registradas:- as ofertas nascem com **`online_enabled = false`** (só 
 - `weekday` do legado (`1 - Segunda` … `5 - Sexta`) casa com o `dayOfWeek` do
   Carbon usado pelo materializador (0 = domingo) — sem conversão.
 
+#### Resultado (22/09/2026) — agenda provisória no ar
+
+| Passo | Resultado |
+|---|---|
+| `stg:import-doctors --commit --create-missing` | **73 médicos** no DEZ (59 criados só com o nome + 15 reaproveitados/enriquecidos com `conselho`); `nomes_sem_operador: 59` (confirmado: os médicos não estavam em `tb_operador`) |
+| `stg:import-grade --commit --procedure=499` | `linked_professionals: **73**`, `unmatched_names: []`, `inactive_names: []`, `without_price: []` |
+| `schedule:materialize` | **16.201 ocorrências** abertas na janela de 90 dias |
+
+Restrições mantidas: todas as ofertas nasceram com **`online_enabled = false`**
+(agenda só interna, porque a grade do legado está desatualizada) e usam o
+procedimento `499 CLINICA MEDICA` de forma genérica — a recepção troca por
+especialidade e habilita o online quando validar a escala real.
+
+> A FK `tb_agenda.medico_id` **está vazia** no legado: o médico da agenda existe
+> apenas como texto em `tb_agenda.nome`. Foi isso que exigiu o casamento por
+> nome (com `--create-missing` para os 59 sem cadastro).
+
 #### Achado: os 87 profissionais do catálogo NÃO são os médicos da clínica
 
 Na 1ª execução (22/09) o seed casou **apenas 3** profissionais e reportou **71
