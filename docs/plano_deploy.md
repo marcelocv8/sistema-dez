@@ -1000,6 +1000,44 @@ materialização histórica do §14.5.1 do plano de produto) ⇒ **nada a commit
 
 
 
+### 20.6 Agenda provisória para teste (`stg:import-grade`)
+
+**Problema:** os testadores relataram "não tem nada de médicos nem agenda". Diagnóstico:
+a agenda **não existe no STG para importar** (§6.2.1 do plano de produto: a escala
+real é montada à mão pela Samara e a grade do STG está desatualizada), e sem
+**vínculo + oferta + janela de escala** o motor devolve zero vagas (por design).
+
+**Solução (provisória, só para teste):** o comando `stg:import-grade` lê o
+`grade_medicos.csv` da própria extração (143 faixas, já em `/opt/dez/_import/stg/`)
+e cria, para cada médico **ativo** da grade:
+
+| Passo | O que cria |
+|---|---|
+| 1 | `catalog_links` (unidade × procedimento × profissional × convênio) |
+| 2 | `service_offerings` (`FIXED_SLOT`, presencial, preço vindo de um `procedure_prices` **VALID**) |
+| 3 | `schedule_windows` (dia da semana, início/fim, `slot_minutes` = `tempo_consulta`, `daily_capacity` = `qtde`) |
+
+Uso (sempre `--dry-run` antes):
+```bash
+# lista candidatos de procedimento de consulta (legacy_id + nome + preço)
+sudo -u dez /opt/dez/bin/artisan stg:import-grade --dry-run
+sudo -u dez /opt/dez/bin/artisan stg:import-grade --dry-run --procedure=<legacy_id>
+sudo -u dez /opt/dez/bin/artisan stg:import-grade --commit  --procedure=<legacy_id>
+sudo -u dez /opt/dez/bin/artisan schedule:materialize
+```
+
+Ressalvas registradas:
+- as ofertas nascem com **`online_enabled = false`** (só agenda interna) — a grade
+  do legado está desatualizada e não deve gerar vagas no agendamento público;
+  use `--online` só depois de a recepção validar a escala;
+- a grade traz `intervalo_ini`/`intervalo_fim` (almoço) — o comando cria **uma
+  janela por faixa**, então o intervalo fica fora automaticamente quando o
+  legado já separava as faixas;
+- `weekday` do legado (`1 - Segunda` … `5 - Sexta`) casa com o `dayOfWeek` do
+  Carbon usado pelo materializador (0 = domingo) — sem conversão.
+
+
+
 ---
 
 ## 21. Sequência remota da F1 (copiar e colar no AnyDesk)
