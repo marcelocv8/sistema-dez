@@ -17,9 +17,10 @@ class ImportStgDoctors extends Command
     private array $sourceCounts = [];
 
     protected $signature = 'stg:import-doctors
-        {--source=grade : População de médicos: grade | agenda | percentual | both | flags}
+        {--source=grade : População de médicos: grade | appointments | agenda | percentual | both | flags}
         {--grade-file= : CSV da grade (padrão: STG_IMPORT_PATH/grade_medicos.csv)}
-        {--create-missing : Cria o profissional a partir do nome da grade quando não há operador correspondente}
+        {--months=24 : (source=appointments) janela de histórico em meses}
+        {--create-missing : Cria o profissional a partir do nome quando não há operador correspondente}
         {--only-agenda : (source=flags) Importa apenas quem tem medico_agenda = true}
         {--include-inactive : Inclui operadores inativos}
         {--max=200 : Limite de segurança para a seleção}
@@ -186,12 +187,13 @@ class ImportStgDoctors extends Command
     {
         $source = (string) ($this->option('source') ?: 'grade');
 
-        if (! in_array($source, ['grade', 'agenda', 'percentual', 'both', 'flags'], true)) {
-            throw new RuntimeException("--source inválido: {$source} (use grade, agenda, percentual, both ou flags)");
+        if (! in_array($source, ['grade', 'appointments', 'agenda', 'percentual', 'both', 'flags'], true)) {
+            throw new RuntimeException("--source inválido: {$source} (use grade, appointments, agenda, percentual, both ou flags)");
         }
 
         $agendaIds = [];
         $percentualIds = [];
+        $appointmentIds = [];
         $gradeNames = [];
 
         if ($source === 'grade') {
@@ -206,11 +208,16 @@ class ImportStgDoctors extends Command
             $percentualIds = $this->idsFromPercentual();
         }
 
+        if (in_array($source, ['appointments', 'both'], true)) {
+            $appointmentIds = $this->idsFromAppointments();
+        }
+
         $this->sourceCounts = [
             'fonte' => $source,
             'nomes_na_grade' => count($gradeNames),
             'ids_agenda' => count($agendaIds),
             'ids_percentual' => count($percentualIds),
+            'ids_atendimento' => count($appointmentIds),
         ];
 
         $query = DB::connection('stg')->table('tb_operador')
@@ -266,7 +273,7 @@ class ImportStgDoctors extends Command
 
             return $rows;
         } else {
-            $query->whereIn('operador_id', array_values(array_unique([...$agendaIds, ...$percentualIds])));
+            $query->whereIn('operador_id', array_values(array_unique([...$agendaIds, ...$percentualIds, ...$appointmentIds])));
         }
 
         if (! (bool) $this->option('include-inactive')) {
@@ -345,6 +352,29 @@ class ImportStgDoctors extends Command
         }
 
         return array_keys($ids);
+    }
+
+    /**
+     * Ids dos médicos que ATENDERAM na janela (tb_agenda_exames.medico_agenda).
+     *
+     * É a fonte mais confiável: o atendimento referencia o operador por id e o
+     * nome cadastrado é o completo ("CARLOS JOSE MOTA DE LIMA"), enquanto a
+     * grade usa apelidos ("DR. CARLOS MOTA"), que não casam por nome.
+     */
+    private function idsFromAppointments(): array
+    {
+        $since = now()->subMonths((int) ($this->option('months') ?: 24))->toDateString();
+
+        return DB::connection('stg')->table('tb_agenda_exames')
+            ->whereNotNull('medico_agenda')
+            ->where('data', '>=', $since)
+            ->distinct()
+            ->pluck('medico_agenda')
+            ->map(static fn (mixed $id): int => (int) $id)
+            ->filter(static fn (int $id): bool => $id > 0)
+            ->unique()
+            ->values()
+            ->all();
     }
 
     /** Ids dos médicos com comissão cadastrada por procedimento. */
