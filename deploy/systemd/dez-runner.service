@@ -1,0 +1,32 @@
+[Unit]
+Description=Sistema DEZ - GitHub Actions self-hosted runner
+Documentation=file:/opt/dez/app/docs/plano_deploy.md
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=dez
+Group=dez
+WorkingDirectory=/opt/dez/actions-runner
+# run.sh e o launcher oficial do runner. NAO usar svc.sh: ele nao vem no
+# tarball do actions-runner 2.337.0 (verificado no servidor).
+ExecStart=/opt/dez/actions-runner/run.sh
+Restart=always
+RestartSec=10
+
+# ATENCAO: NAO usar NoNewPrivileges=true aqui. O deploy.sh chama
+# `sudo systemctl restart dez-web` e o sudo e um binario setuid — com
+# NoNewPrivileges o sudo falharia e o deploy quebraria no restart.
+#
+# Teto de memoria: o runner so orquestra (build pesado roda no CI do GitHub).
+MemoryMax=1G
+
+# Um deploy em andamento nao pode ser morto no meio
+KillMode=process
+TimeoutStopSec=5min
+
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

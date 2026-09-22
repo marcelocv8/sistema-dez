@@ -127,6 +127,7 @@ install -m 0644 -o root -g root "$src"/systemd/dez-schedule.timer  /etc/systemd/
 install -m 0644 -o root -g root "$src"/systemd/dez-backup.service  /etc/systemd/system/
 install -m 0644 -o root -g root "$src"/systemd/dez-backup.timer    /etc/systemd/system/
 install -m 0644 -o root -g root "$src"/systemd/dez-tunnel.service  /etc/systemd/system/
+install -m 0644 -o root -g root "$src"/systemd/dez-runner.service  /etc/systemd/system/
 sed "s/^dez /$DEZ_USER /" "$src/systemd/sudoers.dez-deploy" > /etc/sudoers.d/dez-deploy
 chmod 0440 /etc/sudoers.d/dez-deploy
 visudo -c >/dev/null || die "sudoers inválido — reverta /etc/sudoers.d/dez-deploy"

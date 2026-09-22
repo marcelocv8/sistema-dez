@@ -126,14 +126,28 @@ sudo -u dez tar -xzf runner.tar.gz
 ```
 
 Token (expira em ~1 hora): **repo → Settings → Actions → Runners → New self-hosted runner → Linux**.
+Como o token é por sessão, peça no terminal com `read` (evita colar um placeholder literal):
 ```bash
+cd /opt/dez/actions-runner
+read -rsp "Cole o token do runner: " RUNNER_TOKEN; echo
 sudo -u dez ./config.sh --url https://github.com/marcelocv8/sistema-dez \
-  --token <TOKEN> --name dez-server --labels dez --work /opt/dez/_work --unattended
-sudo ./svc.sh install dez
-sudo ./svc.sh start
-sudo ./svc.sh status
+  --token "$RUNNER_TOKEN" --name dez-server --labels dez --work /opt/dez/_work --unattended
 ```
-Confirmado: o runner precisa rodar como **`dez`** (é quem tem o `sudo` restrito e o dono de `/opt/dez`).
+
+O **`svc.sh` não vem no tarball** do runner 2.337.0 (verificado no servidor).
+Usamos um unit próprio, já versionado em `deploy/systemd/dez-runner.service`:
+```bash
+sudo install -m 0644 -o root -g root /opt/dez/app/deploy/systemd/dez-runner.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now dez-runner.service
+sudo systemctl status dez-runner --no-pager | head -12
+```
+> O unit **não** pode ter `NoNewPrivileges=true`: o `deploy.sh` chama
+> `sudo systemctl restart dez-web` e o `sudo` é setuid — com essa flag o restart
+> do deploy falharia.
+
+O runner **precisa** rodar como `dez`: é quem tem o `sudo` restrito (§6.2) e o dono de `/opt/dez`.
+O label **`dez`** é o que o workflow usa em `runs-on: [self-hosted, dez]`.
 
 Depois disso, no GitHub: **Actions → deploy → Run workflow**. O job `verify` roda os
 testes; passando, o job `deploy` roda no servidor e publica `vendor/` + os 4 frontends.

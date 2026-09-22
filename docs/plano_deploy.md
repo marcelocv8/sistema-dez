@@ -308,16 +308,24 @@ sudo -u dez curl -fL --retry 3 -o runner.tar.gz \
 sudo -u dez tar -xzf runner.tar.gz
 
 # token (expira em ~1h): repo > Settings > Actions > Runners > New self-hosted runner
+read -rsp "Cole o token do runner: " RUNNER_TOKEN; echo
 sudo -u dez ./config.sh --url https://github.com/marcelocv8/sistema-dez \
-  --token <TOKEN> --name dez-server --labels dez --work /opt/dez/_work --unattended
-sudo ./svc.sh install dez
-sudo ./svc.sh start
-sudo ./svc.sh status
+  --token "$RUNNER_TOKEN" --name dez-server --labels dez --work /opt/dez/_work --unattended
+
+# service: o svc.sh NAO vem no tarball → unit proprio (versionado)
+sudo install -m 0644 -o root -g root /opt/dez/app/deploy/systemd/dez-runner.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now dez-runner.service
+sudo systemctl status dez-runner --no-pager | head -12
 ```
 
 O runner **precisa** rodar como `dez`: é quem tem o `sudo` restrito (§6.2) e o
 dono de `/opt/dez`. O label **`dez`** é o que o workflow usa em
 `runs-on: [self-hosted, dez]`.
+
+> ⚠️ O unit **não** pode ter `NoNewPrivileges=true`: o `deploy.sh` chama
+> `sudo systemctl restart dez-web` e o `sudo` é um binário setuid — com essa
+> flag o restart do deploy falharia.
 
 ---
 
@@ -869,9 +877,9 @@ com os prefixos corretos) · **borda real** com FrankenPHP 8.5 e os dists reais
 | `install.sh` (base) | ✅ | FrankenPHP **v1.12.7 / PHP 8.5.10**; extensões com `pdo_pgsql`; 6 units; `visudo -c` OK; `/opt/dez` 0755 |
 | `provision.sql` (role + database) | ⚠️ parcial | objetos criados (`CREATE ROLE/DATABASE` + 5 `ALTER ROLE` + `REVOKE` + `GRANT`), mas a senha foi gravada **com aspas** (erro de quoting no `-v`) → corrigido com `ALTER ROLE`; `select current_user` → `sistema_dez|sistema_dez` ✅ |
 | `bootstrap.sh` (`.env` + chaves) | ✅ | `.env` criado; `APP_KEY`, `IDENTITY_PEPPER`, `MANAGEMENT_TOKEN_SECRET`, `DB_PASSWORD`, `APP_URL`, `SANCTUM_STATEFUL_DOMAINS` todos preenchidos; pausa avisando que falta `vendor/` (chega no deploy do CI) |
-| túnel `dez` | ⚠️ | túnel criado (`72b041b9-…`), mas o CNAME saiu apontando para o **túnel do STG** (`dd9ef614-…`) → corrigido no `tunnel.sh` (UUID + `--overwrite-dns`) |
-| runner do GitHub | ⛔ | token do registro é por sessão (expira em ~1h); a primeira tentativa usou um placeholder literal → 404 |
-| serviços + validação final | ⏳ | pendente |
+| túnel `dez` (F4) | ✅ | túnel `72b041b9-…` ativo; CNAME corrigido para ele; `https://dez.clinicadez.com.br/up` = **502** com o journal provando o roteamento certo (`ingressRule=0 originService=http://127.0.0.1:8002`, `connection refused` por o app não ter subido) |
+| runner do GitHub | ⏳ | `svc.sh` **não vem** no tarball 2.337.0 → unit próprio `deploy/systemd/dez-runner.service` (sem `NoNewPrivileges`); falta registrar com o token e subir |
+| serviços + validação final | ⏳ | pendente do primeiro deploy (F6) |
 
 **Bugs de script encontrados e corrigidos nesta execução** (todos já no `main`):
 1. `apt-get update` abortando por causa do `Label` do PPA `ondrej/php` → `AllowReleaseInfoChange` + só rodar o apt se faltar pacote.
@@ -885,6 +893,7 @@ com os prefixos corretos) · **borda real** com FrankenPHP 8.5 e os dists reais
 9. Asset do runner: `…/latest/download/actions-runner-linux-x64.tar.gz` → 404 (o nome tem a versão).
 10. Job `deploy` chamava `sudo deploy.sh`, mas o sudoers só libera 3 `systemctl` → rodaria pedindo senha.
 11. `tunnel.sh`: `route dns` por **nome** apontou o CNAME para o **túnel do STG** (o `cloudflared` lê o `/etc/cloudflared/config.yml` default) → agora usa o **UUID** + `--overwrite-dns`; e `ingress validate --config` estava na ordem errada de flags.
+12. `svc.sh` **não existe** no tarball do `actions-runner` 2.337.0 → unit systemd próprio (`dez-runner.service`), **sem** `NoNewPrivileges` (o `sudo` do `deploy.sh` é setuid e seria bloqueado).
 
 ---
 
