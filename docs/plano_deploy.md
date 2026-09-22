@@ -1062,6 +1062,30 @@ Ele imprime, para cada tabela que casar, a estimativa de linhas e **todas as
 colunas** (só `SELECT` em `information_schema`/`pg_class`; força
 `default_transaction_read_only`).
 
+**Resolvido em 22/09:** a tabela dos médicos é **`ponto.tb_operador`** (~1.616
+linhas) — o legado não tem `tb_medico*`; os médicos são operadores com as flags
+`medico`, `medico_agenda` e `profissional`. Foi criado o comando
+**`stg:import-doctors`**, que lê direto do banco do legado por uma conexão
+**`stg`** nova e **somente leitura** (`config/database.php`; `search_path`
+vindo de `STG_DB_SCHEMA=ponto`, e `SET default_transaction_read_only = on` no
+início do comando). Ele casa por `search_name` (reaproveitando os registros que
+já existem) e grava `name`, `council_number`, `active` e `classification_status`.
+
+Variáveis novas no `.env` do servidor:
+```
+STG_DB_HOST=127.0.0.1
+STG_DB_PORT=5432
+STG_DB_DATABASE=dez
+STG_DB_USERNAME=postgres
+STG_DB_PASSWORD=<a senha do STG>
+STG_DB_SCHEMA=ponto
+```
+> Com `artisan optimize` aplicado pelo deploy, mudanças no `.env` só valem
+> depois de `php artisan config:clear` (ou novo `optimize`).
+> A sigla do conselho (`sigla_id` → CRM etc.) ainda precisa do mapa do legado —
+> pendência cosmética registrada.
+
+
 
 
 

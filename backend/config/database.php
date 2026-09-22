@@ -99,6 +99,31 @@ return [
             'sslmode' => env('DB_SSLMODE', 'prefer'),
         ],
 
+        /*
+         * Legado STG — SOMENTE LEITURA.
+         *
+         * Usada pelos importadores `stg:import-doctors` / `stg:import-patients`.
+         * O `search_path` aponta para o schema do legado (a clínica usa
+         * dbprefix="ponto." no CodeIgniter, que no PostgreSQL é o schema
+         * `ponto`), então as consultas referenciam as tabelas sem prefixo.
+         *
+         * Os comandos forçam `SET default_transaction_read_only = on` no início:
+         * esta conexão nunca deve escrever no banco de produção do STG.
+         */
+        'stg' => [
+            'driver' => 'pgsql',
+            'host' => env('STG_DB_HOST', '127.0.0.1'),
+            'port' => env('STG_DB_PORT', '5432'),
+            'database' => env('STG_DB_DATABASE', 'dez'),
+            'username' => env('STG_DB_USERNAME'),
+            'password' => env('STG_DB_PASSWORD'),
+            'charset' => env('DB_CHARSET', 'utf8'),
+            'prefix' => '',
+            'prefix_indexes' => true,
+            'search_path' => env('STG_DB_SCHEMA', 'public'),
+            'sslmode' => 'prefer',
+        ],
+
         'sqlsrv' => [
             'driver' => 'sqlsrv',
             'url' => env('DB_URL'),
