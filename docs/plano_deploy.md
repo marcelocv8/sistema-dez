@@ -1,8 +1,25 @@
 # Plano de Deploy — Sistema DEZ no servidor da Clínica DEZ
 
-> **Versão 1.5 — 22/09/2026**
+> **Versão 1.6 — 23/09/2026**
 > Documento **operacional** (infra/deploy). O plano de **produto** é
 > `docs/plano_sistema_dez.md` (lá está o §16, que aponta para este arquivo).
+>
+> **v1.6 — F7 CONCLUÍDA.** `stg:import-appointments` importou **54.082
+> atendimentos** dos últimos 24 meses (a ponte de procedimento foi o último
+> obstáculo: `procedimento_tuss_id` do atendimento é o
+> `procedimento_convenio_id`, e o valor que casa com `procedures.legacy_id` é o
+> **`procedimento_tuss_id`** daquela linha — descoberto e registrado no §22).
+> Estado do banco do DEZ: **22.871 pacientes · 47 médicos reais · 998
+> procedimentos · 2.313 preços · 80 modelos · 1.290 ofertas · 54.084
+> atendimentos**.
+> Também foi criado `deploy/scripts/importar-stg.sh` (roda os 5 importadores na
+> ordem certa, idempotente, com `--dry-run`).
+>
+> **P12 (unificação dos médicos por apelido) está PENDENTE DE UM AJUSTE:** a 1ª
+> execução removeu os 59 apelidos corretamente, mas a agenda desses médicos
+> ficou **sem as janelas** — porque o seed ainda resolveu o médico por NOME (que
+> casava com o apelido) e depois os apelidos foram removidos. A agenda caiu de
+> 15.490 para **2.793 ocorrências**. Detalhes, causa e correção no §20.6.
 >
 > **v1.5:** **F5 concluída** (catálogo, preços e modelos; MT dispensada — sem
 > dados no legado) e **F7 quase inteira**: pacientes importados (**22.844**),
@@ -866,12 +883,13 @@ Leitura **read-only** do banco legado, com lotes e log de reconciliação.
 - [ ] **Rollback testado** (commit ruim → volta sozinho)
 - [ ] `dez-backup.timer` rodou; dump verificado com `pg_restore --list`; restauração testada
 
-### F7 — Importadores de pacientes/histórico
-- [x] `stg:import-patients --commit --only-with-appointments-months=24` — **22.844 pacientes** (base: 22.873 com atendimento em 24 meses; 29 de conflito de CPF pulados; 7.308 sem CPF; 9.835 sem convênio correspondente)
-- [x] `stg:import-doctors --source=appointments` — a fonte confiável de médicos (49 com atendimento, nome completo + CRM)
-- [ ] `stg:import-appointments --create-offerings` (24 meses ≈ 54.750 atendimentos) — **comando pronto, executar na janela 00:00–06:00**
+### F7 — Importadores de pacientes/histórico ✅ (23/09/2026)
+- [x] `stg:import-patients --commit --only-with-appointments-months=24` — **22.871 pacientes** (29 de conflito de CPF pulados; ~7.300 sem CPF; ~9.840 sem convênio correspondente)
+- [x] `stg:import-doctors --source=appointments` — a fonte confiável de médicos (**47–48**, nome completo + CRM)
+- [x] `stg:import-appointments --commit --create-offerings` — **54.082 atendimentos** (24 meses; `procedimento_via_convenio: 54.314`; 1.289 ofertas criadas; 469 sem procedimento, 80 sem paciente, 196 sem médico)
+- [x] Script `deploy/scripts/importar-stg.sh` — roda os 5 importadores na ordem correta, idempotente, com `--dry-run`
 - [ ] Amostragem validada com o dono (um paciente com histórico abrindo na recepção)
-- [ ] Limpeza: os 59 profissionais criados por **apelido** (via `--source=grade`) ficaram em paralelo aos médicos reais — decidir se desativa/refaz a agenda com os médicos do atendimento
+- [~] **P12 em aberto** — apelidos removidos, mas a agenda precisa ser reamarrada aos médicos reais (§20.6)
 
 ---
 
@@ -922,8 +940,8 @@ com os prefixos corretos) · **borda real** com FrankenPHP 8.5 e os dists reais
 | P8 | Rollback automático + `dez-backup` testados | ⏳ pendente | resto do F6 |
 | P9 | Executar a F1 no servidor | ✅ **concluído** | ver §20.3/§20.4 |
 | P10 | F5 — catálogo, preços e modelos | ✅ **concluído** | §20.5; MT dispensada (sem dados no legado) |
-| P11 | F7 — rodar `stg:import-appointments --create-offerings` (24 meses) | ⏳ **pronto para rodar** | ~54.750 atendimentos; executar na janela 00:00–06:00 |
-| P12 | Limpar os profissionais criados por **apelido** (grade) vs os médicos reais (atendimento) | ⏳ pendente | ver §22.4 item 4-5 e §20.6 |
+| P11 | F7 — rodar `stg:import-appointments --create-offerings` (24 meses) | ✅ **concluído** | **54.082 atendimentos** importados (23/09); 1.289 ofertas criadas |
+| P12 | Unificar os médicos (apelido da grade × nome completo do atendimento) | ⚠️ **parcial** | apelidos removidos, **mas a agenda ficou sem as janelas** — ver §20.6 |
 | P13 | Testar o **rollback automático** do deploy e o `dez-backup` | ⏳ pendente | resto do F6 |
 
 ### 20.3 Andamento da execução no servidor (22/09/2026)
@@ -1142,6 +1160,50 @@ STG_DB_SCHEMA=ponto
 > A sigla do conselho (`sigla_id` → CRM etc.) ainda precisa do mapa do legado —
 > pendência cosmética registrada.
 
+#### P12 — unificação dos médicos (executado em 23/09/2026) — **falta um ajuste**
+
+**O que foi feito:** `deploy/scripts/unificar-medicos-apelido.sh` (refaz a agenda
+pelo médico real + `--prune-nicknames`) rodou nos dois modos, com resultado:
+
+| Métrica | Valor |
+|---|---|
+| `apelidos_removidos` | **59** ✅ |
+| `ofertas_removidas` | **59** ✅ |
+| `apelidos_preservados_com_atendimento` | 0 ✅ (nenhum histórico foi perdido) |
+| `unmatched_names` | **vazio** ✅ |
+| `vinculados_por_agenda` | **1** ⚠️ |
+| `vinculados_por_nome` | 72 |
+| `schedule:materialize` depois | **2.793 ocorrências** (era 15.490) ⚠️ |
+
+**O que deu errado (e por quê):** os apelidos saíram, mas a agenda desses médicos
+ficou **sem as janelas**. Causa: o seed resolve o profissional na ordem
+*agenda → nome*; o mapa `agenda → médico` só tinha **1** entrada, então 72 grupos
+casaram **pelo nome** — que, naquele momento, ainda encontrava o **apelido**
+(`CARLOS MOTA`) e criava a agenda nele. Logo em seguida o `--prune-nicknames`
+removeu esses profissionais **com a agenda junto** (as ofertas/windows), e o
+materialize caiu de 15.490 para 2.793 ocorrências.
+
+**Por que o mapa `agenda → médico` deu 1:** ele é montado por
+`tb_agenda_exames.horarioagenda_id → tb_horarioagenda.agenda_id`, e
+**`horarioagenda_id` está vazio na maioria dos atendimentos** (a clínica atende
+muito por ordem de chegada, sem vínculo com a faixa da grade).
+
+**A correção (pendente de 1 dado):** a relação agenda→médico existe em
+`tb_agenda`, na coluna **`medico_id_multiplo`** (texto) — `medico_id` está vazio,
+mas o campo "múltiplo" pode carregar os ids. Basta confirmar com:
+
+```bash
+export PGPASS=$(sed -n '40p' /home/server/projetos/dezstg2/application/config/database.php | cut -d'"' -f2); PGPASSWORD="$PGPASS" psql -h 127.0.0.1 -p 5432 -U postgres -d dez -At -P pager=off -c "select agenda_id, nome, medico_id, medico_id_multiplo from ponto.tb_agenda where ativo order by nome limit 20;"
+```
+
+Se vierem ids em `medico_id_multiplo`, o `agendaDoctorMap()` passa a lê-los e a
+agenda é refeita para os médicos reais com **um** comando
+(`unificar-medicos-apelido.sh` de novo, agora com o mapa funcionando).
+
+> Enquanto isso, a agenda tem 2.793 ocorrências dos médicos que casaram **por
+> nome** (os que o cadastro tem o mesmo nome da grade) — funcional, mas
+> incompleta.
+
 
 
 
@@ -1333,6 +1395,26 @@ PGPASSWORD="$PGPASS" psql -h 127.0.0.1 -p 5432 -U postgres -d dez -At -P pager=o
 10. **`dbprefix` com ponto**: se um dia consultar sem `search_path`, lembre que o
     "prefixo" é schema (`ponto.tb_x`), não `ponto_tb_x`.
 11. **Pager do `psql`** e **bracketed paste** — ver §22.2.
+12. **`tb_agenda_exames.procedimento_tuss_id` NÃO é id de `tb_procedimento_tuss`**
+    (aquela tabela vai de 1 a 1.961). Ele guarda o
+    **`tb_procedimento_convenio.procedimento_convenio_id`** — o procedimento
+    *precificado por convênio*. E o valor que casa com `procedures.legacy_id` do
+    DEZ é o **`procedimento_tuss_id` DESSA linha** (não o `codigo` TUSS de 8
+    dígitos, nem o `tuss_id`). Conferido em 6/6 amostras:
+    `21610 → 453 ECOCARDIOGRAMA · 21838 → 1114 HOLTER · 21813 → 444 MAPA ·
+    8504 → 436 RETORNO NEUROLOGISTA · 21602 → 511 NEUROLOGISTA ·
+    22026 → 1867 NEUROLOGISTA CRIANÇA`.
+    A ponte pronta (carregada uma vez, sem custo por linha):
+    ```sql
+    select procedimento_convenio_id, procedimento_tuss_id from ponto.tb_procedimento_convenio;
+    ```
+13. **`tb_agenda.medico_id` está vazio e `tb_agenda_exames.horarioagenda_id`
+    quase sempre vazio** → não há caminho óbvio grade→médico. O que sobrou para
+    testar é **`tb_agenda.medico_id_multiplo`** (texto). Sem isso, a única ponte
+    é por **nome**, e a grade usa **apelidos**.
+14. **`appointments` não tem `legacy_id`** e **exige `service_offering_id`** →
+    idempotência por `idempotency_key` (UUID v5 do `agenda_exames_id`) e
+    `--create-offerings` para o histórico.
 
 ### 22.5 Receitas prontas
 
@@ -1366,6 +1448,11 @@ where data >= current_date - interval '24 months' group by 1 order by 2 desc;
 | `stg:import-doctors` | **banco do legado** (`tb_operador`, via `--source=appointments|grade|agenda|percentual`) | `professionals` |
 | `stg:import-patients` | **banco do legado** (`tb_paciente`) | `patients` |
 | `stg:import-appointments` | **banco do legado** (`tb_agenda_exames`) | `service_offerings` (com `--create-offerings`) + `appointments` |
+
+**Números reais da importação (24 meses, 23/09/2026):** 22.871 pacientes ·
+47 médicos · 54.082 atendimentos · 1.289 ofertas do histórico · 2.793 ocorrências
+de agenda (caiu de 15.490 após o P12 — ver §20.6) · 22.871/54.082 dos registros
+vindos do banco `dez` por conexão **somente leitura**.
 
 > Todos os que leem o banco exigem `STG_DB_*` no `.env` e usam a conexão `stg`
 > **somente leitura**. Mudança de `.env` com `config` cacheada exige
