@@ -41,21 +41,18 @@ fi
 
 log() { printf '\n\033[1;34m==> [%s]\033[0m %s\n' "$LOG_TAG" "$*"; }
 
-log "1/4 fundindo os apelidos nos médicos reais (move as janelas)"
+log "1/3 fundindo os apelidos nos médicos reais (move as janelas)"
 "$ARTISAN" stg:merge-nickname-doctors "$OPT"
-
-log "2/4 removendo janelas duplicadas (a fusão pode criar mesma oferta × dia × horário)"
-"$ARTISAN" schedule:dedupe-windows "$OPT"
 
 if [ "$MODE" = "--dry-run" ]; then
 	log "dry-run concluído — nada foi gravado"
 	exit 0
 fi
 
-log "3/4 rematerializando a agenda (90 dias)"
+log "2/3 rematerializando a agenda (90 dias)"
 "$ARTISAN" schedule:materialize
 
-log "4/4 otimizando caches"
+log "3/3 otimizando caches"
 "$ARTISAN" optimize
 
 printf '\n\033[1;32m==> Unificação concluída\033[0m\n'

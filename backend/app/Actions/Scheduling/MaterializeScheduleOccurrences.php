@@ -28,7 +28,9 @@ class MaterializeScheduleOccurrences
 
         return DB::transaction(function () use ($offering, $from, $to): int {
             $offering = ServiceOffering::query()->lockForUpdate()->findOrFail($offering->id);
-            $offering->load(['procedure', 'unit', 'scheduleWindows', 'scheduleExceptions']);
+            $offering->load(['procedure', 'unit',
+                'scheduleWindows' => fn ($query) => $query->orderBy('starts_at')->orderBy('ends_at'),
+                'scheduleExceptions']);
 
             /** @var Collection<string, ScheduleOccurrence> $existing */
             $existing = ScheduleOccurrence::query()->where('service_offering_id', $offering->id)
@@ -48,6 +50,17 @@ class MaterializeScheduleOccurrences
                 ->groupBy('schedule_occurrence_id')
                 ->pluck('aggregate', 'schedule_occurrence_id');
 
+            /**
+             * Indexado por "data|starts_at": é a chave do upsert
+             * (service_offering_id, date, starts_at). Janelas sobrepostas da
+             * mesma oferta propõem o mesmo slot e o PostgreSQL recusa duas
+             * linhas com a mesma chave no mesmo comando ("ON CONFLICT DO
+             * UPDATE command cannot affect row a second time"). A primeira
+             * janela (ordem de starts_at) vence; a comparação com as consultas
+             * já marcadas continua valendo para cada candidata.
+             *
+             * @var array<string, array<string, mixed>>
+             */
             $rows = [];
             for ($date = $from->startOfDay(); $date->lessThanOrEqualTo($to); $date = $date->addDay()) {
                 $dateKey = $date->toDateString();
@@ -100,7 +113,7 @@ class MaterializeScheduleOccurrences
                             }
                         }
 
-                        $rows[] = $row;
+                        $rows[$dateKey.'|'.$startsAt] ??= $row;
                     }
                 }
             }
