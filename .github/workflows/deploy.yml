@@ -10,9 +10,8 @@ name: deploy
 
 on:
   workflow_dispatch:
-  # Depois de estável, descomente para publicar a cada push na main:
-  # push:
-  #   branches: [main]
+  push:
+    branches: [main]
 
 permissions:
   contents: read
