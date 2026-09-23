@@ -70,6 +70,7 @@ test('prontuário: alerta de alergia em destaque, notas e trilha preservada', as
   const root = await render(<ProntuarioPage user={user(['prontuario.view', 'prontuario.write'])} />);
   await typeCpf('111.444.777-35');
   await waitForText('Maria Prontuário');
+  await waitForText('Penicilina');
   expect(document.body.textContent).toContain('Penicilina');
   expect(document.body.textContent).toContain('Hipertensão');
   expect(document.body.textContent).toContain('Inativos (1)');

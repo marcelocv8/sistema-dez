@@ -1,8 +1,17 @@
 # Plano de Deploy — Sistema DEZ no servidor da Clínica DEZ
 
-> **Versão 1.6 — 23/09/2026**
+> **Versão 1.7 — 23/09/2026**
 > Documento **operacional** (infra/deploy). O plano de **produto** é
 > `docs/plano_sistema_dez.md` (lá está o §16, que aponta para este arquivo).
+>
+> **v1.7 — P12 CONCLUÍDA e deploy automático ligado.** Os apelidos da grade
+> foram fundidos nos médicos reais (`stg:merge-nickname-doctors`: **9 fundidos**,
+> 50 mantidos por não terem gêmeo) e a agenda voltou a **16.389 ocorrências**.
+> No caminho, o `schedule:materialize` quebrava com `ON CONFLICT DO UPDATE
+> command cannot affect row a second time`: a fusão deixou **janelas
+> sobrepostas** na mesma oferta, e duas janelas propõem o mesmo slot. Corrigido
+> em `MaterializeScheduleOccurrences` (§20.6). O workflow `deploy` agora publica
+> a cada `push` na `main` (§12.2).
 >
 > **v1.6 — F7 CONCLUÍDA.** `stg:import-appointments` importou **54.082
 > atendimentos** dos últimos 24 meses (a ponte de procedimento foi o último
@@ -14,12 +23,6 @@
 > atendimentos**.
 > Também foi criado `deploy/scripts/importar-stg.sh` (roda os 5 importadores na
 > ordem certa, idempotente, com `--dry-run`).
->
-> **P12 (unificação dos médicos por apelido) está PENDENTE DE UM AJUSTE:** a 1ª
-> execução removeu os 59 apelidos corretamente, mas a agenda desses médicos
-> ficou **sem as janelas** — porque o seed ainda resolveu o médico por NOME (que
-> casava com o apelido) e depois os apelidos foram removidos. A agenda caiu de
-> 15.490 para **2.793 ocorrências**. Detalhes, causa e correção no §20.6.
 >
 > **v1.5:** **F5 concluída** (catálogo, preços e modelos; MT dispensada — sem
 > dados no legado) e **F7 quase inteira**: pacientes importados (**22.844**),
@@ -653,7 +656,7 @@ isso é inaceitável. **Decisão:** GitHub Actions.
 ### 12.2 Workflow (`.github/workflows/deploy.yml`, anexo D)
 
 ```
-workflow_dispatch  ──►  build (ubuntu-latest)  ──►  deploy (self-hosted, label `dez`)
+push (main) / workflow_dispatch  ──►  build (ubuntu-latest)  ──►  deploy (self-hosted, label `dez`)
    │                        │                            │
    │                   testes + typecheck            baixa artefato
    │                   pnpm build (4 apps)           git pull --ff-only
@@ -668,7 +671,10 @@ workflow_dispatch  ──►  build (ubuntu-latest)  ──►  deploy (self-hos
   `/opt/dez/app/deploy/scripts/deploy.sh <caminho-do-tgz>` — **sem `sudo` na
   frente**: o sudoers do `dez` libera só 3 comandos `systemctl`, e o próprio
   `deploy.sh` chama `sudo systemctl` quando precisa.
-- Depois de estável, adicionar gatilho `push: branches: [main]` (opcional).
+- **Gatilho ligado (23/09/2026):** `push: branches: [main]` — cada push na `main`
+  publica sozinho. O `verify` (testes backend + typecheck/Vitest) barra o deploy
+  se falhar: push **não** garante publicação. Mudanças de **dados** (importadores,
+  `schedule:materialize`) continuam manuais.
 
 ### 12.3 `deploy.sh`
 
@@ -889,7 +895,7 @@ Leitura **read-only** do banco legado, com lotes e log de reconciliação.
 - [x] `stg:import-appointments --commit --create-offerings` — **54.082 atendimentos** (24 meses; `procedimento_via_convenio: 54.314`; 1.289 ofertas criadas; 469 sem procedimento, 80 sem paciente, 196 sem médico)
 - [x] Script `deploy/scripts/importar-stg.sh` — roda os 5 importadores na ordem correta, idempotente, com `--dry-run`
 - [ ] Amostragem validada com o dono (um paciente com histórico abrindo na recepção)
-- [~] **P12 em aberto** — apelidos removidos, mas a agenda precisa ser reamarrada aos médicos reais (§20.6)
+- [x] **P12 resolvido** — apelidos fundidos nos médicos reais; agenda em **16.389 ocorrências** (§20.6)
 
 ---
 
@@ -941,7 +947,7 @@ com os prefixos corretos) · **borda real** com FrankenPHP 8.5 e os dists reais
 | P9 | Executar a F1 no servidor | ✅ **concluído** | ver §20.3/§20.4 |
 | P10 | F5 — catálogo, preços e modelos | ✅ **concluído** | §20.5; MT dispensada (sem dados no legado) |
 | P11 | F7 — rodar `stg:import-appointments --create-offerings` (24 meses) | ✅ **concluído** | **54.082 atendimentos** importados (23/09); 1.289 ofertas criadas |
-| P12 | Unificar os médicos (apelido da grade × nome completo do atendimento) | ⚠️ **parcial** | apelidos removidos, **mas a agenda ficou sem as janelas** — ver §20.6 |
+| P12 | Unificar os médicos (apelido da grade × nome completo do atendimento) | ✅ **resolvido** | 9 apelidos fundidos nos médicos reais (50 sem gêmeo); agenda rematerializada em **16.389 ocorrências** — ver §20.6 |
 | P13 | Testar o **rollback automático** do deploy e o `dez-backup` | ⏳ pendente | resto do F6 |
 
 ### 20.3 Andamento da execução no servidor (22/09/2026)
@@ -1160,49 +1166,37 @@ STG_DB_SCHEMA=ponto
 > A sigla do conselho (`sigla_id` → CRM etc.) ainda precisa do mapa do legado —
 > pendência cosmética registrada.
 
-#### P12 — unificação dos médicos (executado em 23/09/2026) — **falta um ajuste**
+#### P12 — unificação dos médicos (executado em 23/09/2026) — **concluído**
 
-**O que foi feito:** `deploy/scripts/unificar-medicos-apelido.sh` (refaz a agenda
-pelo médico real + `--prune-nicknames`) rodou nos dois modos, com resultado:
+**O que foi feito:** os 59 apelidos da grade saíram (soft-delete) e foram fundidos
+nos médicos reais com `stg:merge-nickname-doctors --commit`:
 
 | Métrica | Valor |
 |---|---|
-| `apelidos_removidos` | **59** ✅ |
-| `ofertas_removidas` | **59** ✅ |
-| `apelidos_preservados_com_atendimento` | 0 ✅ (nenhum histórico foi perdido) |
-| `unmatched_names` | **vazio** ✅ |
-| `vinculados_por_agenda` | **1** ⚠️ |
-| `vinculados_por_nome` | 72 |
-| `schedule:materialize` depois | **2.793 ocorrências** (era 15.490) ⚠️ |
+| `fundidos_no_medico_real` | **9** ✅ |
+| `mantidos_sem_correspondencia` | 50 (sem gêmeo — inativos/ausentes; **não há duplicidade**) |
+| `janelas_movidas` | 9 |
+| `ofertas_removidas` | 9 |
 
-**O que deu errado (e por quê):** os apelidos saíram, mas a agenda desses médicos
-ficou **sem as janelas**. Causa: o seed resolve o profissional na ordem
-*agenda → nome*; o mapa `agenda → médico` só tinha **1** entrada, então 72 grupos
-casaram **pelo nome** — que, naquele momento, ainda encontrava o **apelido**
-(`CARLOS MOTA`) e criava a agenda nele. Logo em seguida o `--prune-nicknames`
-removeu esses profissionais **com a agenda junto** (as ofertas/windows), e o
-materialize caiu de 15.490 para 2.793 ocorrências.
+**O segundo obstáculo:** o `schedule:materialize` passou a falhar com
+`SQLSTATE[21000] ... ON CONFLICT DO UPDATE command cannot affect row a second
+time`, e a agenda ficou em 2.793 ocorrências. Causa: a fusão **move** a janela do
+apelido para a oferta do médico real, que já podia ter uma janela **sobreposta**
+(ex.: `08:00–12:00` + `08:30–12:00`). Duas janelas sobrepostas propõem o **mesmo
+slot** (`08:30`), e o upsert de `schedule_occurrences` — unique
+`(service_offering_id, date, starts_at)` — recusa duas linhas com a mesma chave no
+mesmo comando. Não eram janelas **idênticas**: `schedule_windows` não tem unique,
+só o índice `windows_lookup_index` — por isso um dedupe por
+`(oferta, dia, horário)` achou **0** e não resolvia.
 
-**Por que o mapa `agenda → médico` deu 1:** ele é montado por
-`tb_agenda_exames.horarioagenda_id → tb_horarioagenda.agenda_id`, e
-**`horarioagenda_id` está vazio na maioria dos atendimentos** (a clínica atende
-muito por ordem de chegada, sem vínculo com a faixa da grade).
+**Correção (no código, não nos dados):** `MaterializeScheduleOccurrences` agora
+indexa as linhas pela **própria chave do upsert** (`date|starts_at`) e ordena as
+janelas por `starts_at`/`ends_at`, de modo que a que abre mais cedo vence de forma
+determinística; o guard das consultas já marcadas continua valendo por candidata.
+Teste de regressão em `tests/Feature/MaterializeOverlappingWindowsTest.php`
+(reproduz o erro de produção quando a correção é revertida).
 
-**A correção (pendente de 1 dado):** a relação agenda→médico existe em
-`tb_agenda`, na coluna **`medico_id_multiplo`** (texto) — `medico_id` está vazio,
-mas o campo "múltiplo" pode carregar os ids. Basta confirmar com:
-
-```bash
-export PGPASS=$(sed -n '40p' /home/server/projetos/dezstg2/application/config/database.php | cut -d'"' -f2); PGPASSWORD="$PGPASS" psql -h 127.0.0.1 -p 5432 -U postgres -d dez -At -P pager=off -c "select agenda_id, nome, medico_id, medico_id_multiplo from ponto.tb_agenda where ativo order by nome limit 20;"
-```
-
-Se vierem ids em `medico_id_multiplo`, o `agendaDoctorMap()` passa a lê-los e a
-agenda é refeita para os médicos reais com **um** comando
-(`unificar-medicos-apelido.sh` de novo, agora com o mapa funcionando).
-
-> Enquanto isso, a agenda tem 2.793 ocorrências dos médicos que casaram **por
-> nome** (os que o cadastro tem o mesmo nome da grade) — funcional, mas
-> incompleta.
+**Resultado:** `schedule:materialize` → **16.389 ocorrências** ✅.
 
 
 
@@ -1409,9 +1403,12 @@ PGPASSWORD="$PGPASS" psql -h 127.0.0.1 -p 5432 -U postgres -d dez -At -P pager=o
     select procedimento_convenio_id, procedimento_tuss_id from ponto.tb_procedimento_convenio;
     ```
 13. **`tb_agenda.medico_id` está vazio e `tb_agenda_exames.horarioagenda_id`
-    quase sempre vazio** → não há caminho óbvio grade→médico. O que sobrou para
-    testar é **`tb_agenda.medico_id_multiplo`** (texto). Sem isso, a única ponte
-    é por **nome**, e a grade usa **apelidos**.
+    quase sempre vazio** → não há caminho grade→médico por id.
+    **Resolvido no P12** (§20.6): a ponte foi por **nome normalizado** — o
+    `stg:merge-nickname-doctors` casa o apelido da grade (`DR. CARLOS MOTA`) com o
+    nome completo do atendimento (`CARLOS JOSE MOTA DE LIMA`) via
+    `LegacyNameNormalizer` e funde as janelas no médico real.
+    `tb_agenda.medico_id_multiplo` **não** foi necessário.
 14. **`appointments` não tem `legacy_id`** e **exige `service_offering_id`** →
     idempotência por `idempotency_key` (UUID v5 do `agenda_exames_id`) e
     `--create-offerings` para o histórico.
@@ -1450,8 +1447,8 @@ where data >= current_date - interval '24 months' group by 1 order by 2 desc;
 | `stg:import-appointments` | **banco do legado** (`tb_agenda_exames`) | `service_offerings` (com `--create-offerings`) + `appointments` |
 
 **Números reais da importação (24 meses, 23/09/2026):** 22.871 pacientes ·
-47 médicos · 54.082 atendimentos · 1.289 ofertas do histórico · 2.793 ocorrências
-de agenda (caiu de 15.490 após o P12 — ver §20.6) · 22.871/54.082 dos registros
+47 médicos · 54.082 atendimentos · 1.289 ofertas do histórico · **16.389
+ocorrências de agenda** (depois do P12 — ver §20.6) · 22.871/54.082 dos registros
 vindos do banco `dez` por conexão **somente leitura**.
 
 > Todos os que leem o banco exigem `STG_DB_*` no `.env` e usam a conexão `stg`
@@ -1698,6 +1695,9 @@ log "deploy ok: $PREV -> $NEW"
 > ⚠️ **A fonte de verdade é o arquivo real:** `.github/workflows/deploy.yml`
 > (tem 3 jobs: `verify` → `build` → `deploy`). O bloco abaixo é o esboço
 > original (2 jobs) e **não** reflete o atual.
+>
+> **Gatilhos atuais:** `workflow_dispatch` **e** `push: branches: [main]`
+> (ligado em 23/09/2026).
 
 ### Esboço original (histórico)
 
