@@ -29,7 +29,7 @@ class ImportStgGrade extends Command
         {--agreement= : legacy_id ou nome do convênio (padrão: o convênio padrão)}
         {--unit= : legacy_id ou nome da unidade (padrão: a única unidade operacional)}
         {--online : Habilita as ofertas no agendamento online (padrão: somente interno)}
-        {--prune-nicknames : Remove os profissionais criados por APELIDO da grade (legacy_id nulo) e a agenda deles, quando nenhum atendimento usa a oferta}
+        {--prune-nicknames : (OBSOLETO — prefira stg:merge-nickname-doctors) remove os apelidos e a agenda deles; usar só depois de o mapa agenda→médico estar confiável, senão perde janelas (ver docs §20.6)}
         {--dry-run : Simula e desfaz a transação}
         {--commit : Confirma o seed}';
 
