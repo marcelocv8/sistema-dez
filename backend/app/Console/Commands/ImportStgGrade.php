@@ -7,10 +7,12 @@ use App\Enums\Modality;
 use App\Enums\PriceStatus;
 use App\Enums\ProcedureType;
 use App\Models\Agreement;
+use App\Models\Appointment;
 use App\Models\CatalogLink;
 use App\Models\Procedure;
 use App\Models\ProcedurePrice;
 use App\Models\Professional;
+use App\Models\ScheduleConflict;
 use App\Models\ScheduleWindow;
 use App\Models\ServiceOffering;
 use App\Models\Unit;
@@ -27,6 +29,7 @@ class ImportStgGrade extends Command
         {--agreement= : legacy_id ou nome do convênio (padrão: o convênio padrão)}
         {--unit= : legacy_id ou nome da unidade (padrão: a única unidade operacional)}
         {--online : Habilita as ofertas no agendamento online (padrão: somente interno)}
+        {--prune-nicknames : Remove os profissionais criados por APELIDO da grade (legacy_id nulo) e a agenda deles, quando nenhum atendimento usa a oferta}
         {--dry-run : Simula e desfaz a transação}
         {--commit : Confirma o seed}';
 
@@ -69,6 +72,11 @@ class ImportStgGrade extends Command
             $agreement = $this->resolveAgreement((string) ($this->option('agreement') ?: ''));
             $unit = $this->resolveUnit((string) ($this->option('unit') ?: ''));
             $rows = $this->readGrade($file);
+
+            // agenda do legado -> médico REAL (pelo atendimento). A grade usa
+            // apelidos ("DR. CARLOS MOTA") e o cadastro o nome completo.
+            $agendaDoctors = $this->agendaDoctorMap();
+            $professionalsById = Professional::query()->get(['id', 'name', 'active'])->keyBy('id');
         } catch (Throwable $exception) {
             $this->error($exception->getMessage());
 
@@ -84,7 +92,7 @@ class ImportStgGrade extends Command
         DB::beginTransaction();
 
         try {
-            $summary = (function () use ($rows, $procedure, $agreement, $unit, $online): array {
+            $summary = (function () use ($rows, $procedure, $agreement, $unit, $online, $agendaDoctors, $professionalsById): array {
                 $createdOffers = 0;
                 $createdWindows = 0;
                 $createdLinks = 0;
@@ -92,9 +100,30 @@ class ImportStgGrade extends Command
                 $inactiveNames = [];
                 $withoutPrice = [];
                 $byProfessional = [];
+                $linkedByAgenda = 0;
+                $linkedByName = 0;
 
                 foreach ($rows as $name => $windows) {
-                    $professional = Professional::query()->where('search_name', $name)->first();
+                    $professional = null;
+
+                    foreach ($windows as $candidate) {
+                        $professionalId = $agendaDoctors[(string) ($candidate['agenda_id'] ?? '')] ?? null;
+
+                        if ($professionalId !== null) {
+                            $professional = $professionalsById[$professionalId] ?? null;
+                            $linkedByAgenda += $professional instanceof Professional ? 1 : 0;
+
+                            break;
+                        }
+                    }
+
+                    if (! $professional instanceof Professional) {
+                        $professional = Professional::query()->where('search_name', $name)->first();
+
+                        if ($professional instanceof Professional) {
+                            $linkedByName++;
+                        }
+                    }
 
                     if (! $professional instanceof Professional) {
                         $unmatchedNames[$name] = count($windows);
@@ -193,6 +222,9 @@ class ImportStgGrade extends Command
                     'unmatched_names' => $unmatchedNames,
                     'inactive_names' => $inactiveNames,
                     'without_price' => $withoutPrice,
+                    'vinculados_por_agenda' => $linkedByAgenda,
+                    'vinculados_por_nome' => $linkedByName,
+                    ...$this->pruneNicknames(),
                 ];
             })();
 
@@ -217,7 +249,7 @@ class ImportStgGrade extends Command
         return self::SUCCESS;
     }
 
-    /** @return array<string, list<array{weekday: int, starts_at: string, ends_at: string, slot_minutes: int, capacity: int|null}>> */
+    /** @return array<string, list<array{weekday: int, starts_at: string, ends_at: string, slot_minutes: int, capacity: int|null, agenda_id: int|null}>> */
     private function readGrade(string $file): array
     {
         $handle = fopen($file, 'rb');
@@ -263,6 +295,7 @@ class ImportStgGrade extends Command
                 'ends_at' => $endsAt,
                 'slot_minutes' => $this->minutes((string) ($line[$index['tempo_consulta']] ?? ''), 10),
                 'capacity' => $this->capacity((string) ($line[$index['qtde']] ?? '')),
+                'agenda_id' => (int) ($line[$index['agenda_id']] ?? 0) ?: null,
             ];
         }
 
@@ -271,7 +304,7 @@ class ImportStgGrade extends Command
         return $rows;
     }
 
-    /** @param list<array{weekday: int, starts_at: string, ends_at: string, slot_minutes: int, capacity: int|null}> $windows */
+    /** @param list<array{weekday: int, starts_at: string, ends_at: string, slot_minutes: int, capacity: int|null, agenda_id: int|null}> $windows */
     private function slotMinutes(array $windows): int
     {
         $counts = [];
@@ -310,6 +343,86 @@ class ImportStgGrade extends Command
             ->where(fn ($query) => $query->whereNull('valid_until')->orWhere('valid_until', '>=', now()->toDateString()))
             ->orderBy('amount')
             ->first();
+    }
+
+    /**
+     * Mapa `agenda_id` do legado -> id do profissional no DEZ, usando os
+     * ATENDIMENTOS (o único lugar onde a relação agenda↔médico é por id):
+     * `tb_agenda_exames.horarioagenda_id -> tb_horarioagenda.agenda_id` e
+     * `tb_agenda_exames.medico_agenda -> tb_operador.operador_id`, cujo
+     * `operador_id` é o `legacy_id` do profissional importado.
+     *
+     * @return array<string, string>
+     */
+    private function agendaDoctorMap(): array
+    {
+        $professionalsByLegacy = Professional::query()->whereNotNull('legacy_id')->pluck('id', 'legacy_id');
+
+        $rows = DB::connection('stg')->table('tb_agenda_exames as ae')
+            ->join('tb_horarioagenda as h', 'h.horarioagenda_id', '=', 'ae.horarioagenda_id')
+            ->whereNotNull('ae.medico_agenda')
+            ->where('ae.data', '>=', now()->subMonths(24)->toDateString())
+            ->select(['h.agenda_id', 'ae.medico_agenda'])
+            ->distinct()
+            ->get();
+
+        $map = [];
+
+        foreach ($rows as $row) {
+            $professionalId = $professionalsByLegacy[(string) $row->medico_agenda] ?? null;
+
+            if ($professionalId !== null) {
+                $map[(string) $row->agenda_id] = $professionalId;
+            }
+        }
+
+        return $map;
+    }
+
+    /**
+     * P2/P12 — remove os profissionais criados por APELIDO na 1ª versão do seed
+     * (nome vindo da grade, sem `legacy_id`) e a agenda deles, que agora está
+     * duplicada com o médico real (`--source=appointments`). Só remove quando
+     * NENHUM atendimento usa uma oferta dele — histórico nunca é perdido.
+     *
+     * @return array<string, int>
+     */
+    private function pruneNicknames(): array
+    {
+        $result = [
+            'apelidos_removidos' => 0,
+            'apelidos_preservados_com_atendimento' => 0,
+            'ofertas_removidas' => 0,
+        ];
+
+        if (! (bool) $this->option('prune-nicknames')) {
+            return ['prune_nicknames' => 0];
+        }
+
+        foreach (Professional::query()->whereNull('legacy_id')->get() as $nickname) {
+            $offeringIds = ServiceOffering::query()->where('professional_id', $nickname->id)->pluck('id');
+
+            if ($offeringIds->isNotEmpty() && Appointment::query()->whereIn('service_offering_id', $offeringIds)->exists()) {
+                $result['apelidos_preservados_com_atendimento']++;
+
+                continue;
+            }
+
+            if ($offeringIds->isNotEmpty()) {
+                // schedule_conflicts é restrictOnDelete: precisa sair antes.
+                ScheduleConflict::query()->whereIn('service_offering_id', $offeringIds)->delete();
+                ScheduleWindow::query()->whereIn('service_offering_id', $offeringIds)->delete();
+                ServiceOffering::query()->whereIn('id', $offeringIds)->delete();
+                $result['ofertas_removidas'] += $offeringIds->count();
+            }
+
+            CatalogLink::query()->where('professional_id', $nickname->id)->delete();
+            $nickname->delete();
+
+            $result['apelidos_removidos']++;
+        }
+
+        return $result;
     }
 
     private function resolveProcedure(string $value): Procedure
